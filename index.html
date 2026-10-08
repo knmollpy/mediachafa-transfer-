@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaChafa</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            min-height: 100vh;
+            background: #0d0f12;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login {
+            width: 90%;
+            max-width: 400px;
+            background: #15181d;
+            border: 1px solid #292e36;
+            border-radius: 18px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,.4);
+        }
+
+        .logo {
+            text-align: center;
+            font-size: 30px;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+
+        .logo span {
+            color: #4f8cff;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #7f8792;
+            font-size: 14px;
+            margin-bottom: 28px;
+        }
+
+        label {
+            display: block;
+            color: #b8bec8;
+            font-size: 13px;
+            margin-bottom: 7px;
+        }
+
+        input {
+            width: 100%;
+            padding: 13px;
+            margin-bottom: 16px;
+            background: #0e1013;
+            color: white;
+            border: 1px solid #303640;
+            border-radius: 10px;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: #4f8cff;
+        }
+
+        button {
+            width: 100%;
+            padding: 13px;
+            border: 0;
+            border-radius: 10px;
+            background: #4f8cff;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #3979ee;
+        }
+
+        .register {
+            text-align: center;
+            margin-top: 20px;
+            color: #7f8792;
+            font-size: 13px;
+        }
+
+        .register a {
+            color: #4f8cff;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="login">
+
+        <div class="logo">
+            ☁ Media<span>Chafa</span>
+        </div>
+
+        <div class="subtitle">
+            Tu nube compartida
+        </div>
+
+        <label>Usuario</label>
+        <input type="text" placeholder="Tu usuario">
+
+        <label>Contraseña</label>
+        <input type="password" placeholder="Tu contraseña">
+
+        <button>Iniciar sesión</button>
+
+        <div class="register">
+            ¿No tenés cuenta?
+            <a>Crear cuenta</a>
+        </div>
+
+    </div>
+
+</body>
+</html>
