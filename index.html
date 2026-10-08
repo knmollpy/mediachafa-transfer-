@@ -4,35 +4,53 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0d12">
   <title>MediaChafa</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * { box-sizing: border-box; }
     body {
-      margin: 0; min-height: 100vh; display: grid; place-items: center;
-      background: #0b0d12; color: #f3f4f6;
-      font-family: Arial, sans-serif; padding: 20px;
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #0b0d12;
+      color: #f3f4f6;
+      font-family: Arial, sans-serif;
+      padding: 20px;
     }
     .panel {
-      width: 100%; max-width: 390px; padding: 28px;
-      background: #151922; border: 1px solid #292f3b;
+      width: 100%;
+      max-width: 400px;
+      padding: 28px;
+      background: #151922;
+      border: 1px solid #292f3b;
       border-radius: 18px;
     }
     h1 { margin: 0 0 8px; }
     p { color: #a5adbb; line-height: 1.5; }
     input, button {
-      width: 100%; padding: 13px; margin-top: 12px;
-      border-radius: 9px; font-size: 15px;
+      width: 100%;
+      padding: 13px;
+      margin-top: 12px;
+      border-radius: 9px;
+      font-size: 15px;
     }
     input {
-      background: #0b0d12; border: 1px solid #343b49;
-      color: white; outline: none;
+      background: #0b0d12;
+      border: 1px solid #343b49;
+      color: white;
+      outline: none;
     }
     button {
-      border: 0; background: #65e6a4; color: #092016;
-      font-weight: bold; cursor: pointer;
+      border: 0;
+      background: #65e6a4;
+      color: #092016;
+      font-weight: bold;
+      cursor: pointer;
     }
     button.secondary { background: #292f3b; color: white; }
+    button:disabled { opacity: .6; cursor: wait; }
     #message { overflow-wrap: anywhere; font-size: 14px; }
     .hidden { display: none; }
   </style>
@@ -43,25 +61,32 @@
     <p>Tu espacio compartido de archivos.</p>
 
     <section id="auth">
-      <input id="username" placeholder="Nombre de usuario" autocomplete="username">
-      <input id="email" type="email" placeholder="Correo electrónico" autocomplete="email">
-      <input id="password" type="password" placeholder="Contraseña (mínimo 6 caracteres)" autocomplete="current-password">
+      <input id="username" placeholder="Nombre de usuario"
+             autocomplete="username">
+      <input id="email" type="email" placeholder="Correo electrónico"
+             autocomplete="email">
+      <input id="password" type="password"
+             placeholder="Contraseña (mínimo 6 caracteres)"
+             autocomplete="current-password">
       <button id="register">Crear cuenta</button>
       <button id="login" class="secondary">Iniciar sesión</button>
     </section>
 
     <section id="account" class="hidden">
-      <h2 id="welcome"></h2>
+      <h2 id="welcome">¡Bienvenido!</h2>
       <p>Sesión iniciada correctamente.</p>
       <button id="logout" class="secondary">Cerrar sesión</button>
     </section>
 
-    <p id="message" role="status"></p>
+    <p id="message" role="status" aria-live="polite"></p>
   </main>
 
   <script>
-    const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
-    const SUPABASE_KEY = "PEGA_AQUI_TU_CLAVE_PUBLISHABLE";
+    const SUPABASE_URL =
+      "https://velxgwkujcabdaxbppyj.supabase.co";
+
+    const SUPABASE_KEY =
+      "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
 
     const client = window.supabase.createClient(
       SUPABASE_URL,
@@ -69,12 +94,18 @@
     );
 
     const $ = id => document.getElementById(id);
-    const message = text => $("message").textContent = text;
+    const message = text => { $("message").textContent = text; };
 
     function showAccount(user) {
       $("auth").classList.toggle("hidden", !!user);
       $("account").classList.toggle("hidden", !user);
-      $("welcome").textContent = user ? "¡Bienvenido!" : "";
+
+      if (user) {
+        $("welcome").textContent =
+          "¡Bienvenido, " +
+          (user.user_metadata?.username || user.email || "usuario") +
+          "!";
+      }
     }
 
     $("register").onclick = async () => {
@@ -83,22 +114,32 @@
       const password = $("password").value;
 
       if (!username || !email || password.length < 6) {
-        return message("Completá usuario, correo y una contraseña de al menos 6 caracteres.");
+        message("Completá todos los campos. La contraseña debe tener al menos 6 caracteres.");
+        return;
       }
 
+      $("register").disabled = true;
       message("Creando cuenta...");
-      const { data, error } = await client.auth.signUp({
-        email,
-        password,
-        options: { data: { username } }
-      });
 
-      if (error) return message(error.message);
+      try {
+        const { data, error } = await client.auth.signUp({
+          email,
+          password,
+          options: { data: { username } }
+        });
 
-      if (data.session) {
-        message("Cuenta creada correctamente.");
-      } else {
-        message("Cuenta creada. Revisá tu correo para confirmar el registro.");
+        if (error) throw error;
+
+        if (data.session && data.user) {
+          showAccount(data.user);
+          message("Cuenta creada correctamente.");
+        } else {
+          message("Cuenta creada. Revisá tu correo para confirmar el registro.");
+        }
+      } catch (error) {
+        message("No se pudo crear la cuenta: " + error.message);
+      } finally {
+        $("register").disabled = false;
       }
     };
 
@@ -106,21 +147,41 @@
       const email = $("email").value.trim();
       const password = $("password").value;
 
-      if (!email || !password) return message("Ingresá tu correo y contraseña.");
+      if (!email || !password) {
+        message("Ingresá tu correo y contraseña.");
+        return;
+      }
 
+      $("login").disabled = true;
       message("Iniciando sesión...");
-      const { data, error } = await client.auth.signInWithPassword({
-        email, password
-      });
 
-      if (error) return message(error.message);
-      showAccount(data.user);
-      message("Sesión iniciada.");
+      try {
+        const { data, error } = await client.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (error) throw error;
+
+        showAccount(data.user);
+        message("Sesión iniciada correctamente.");
+      } catch (error) {
+        message("No se pudo iniciar sesión: " + error.message);
+      } finally {
+        $("login").disabled = false;
+      }
     };
 
     $("logout").onclick = async () => {
+      message("Cerrando sesión...");
+
       const { error } = await client.auth.signOut();
-      if (error) return message(error.message);
+
+      if (error) {
+        message("No se pudo cerrar sesión: " + error.message);
+        return;
+      }
+
       showAccount(null);
       message("Sesión cerrada.");
     };
@@ -129,7 +190,12 @@
       showAccount(session?.user ?? null);
     });
 
-    client.auth.getSession().then(({ data }) => {
+    client.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        message("Error de sesión: " + error.message);
+        return;
+      }
+
       showAccount(data.session?.user ?? null);
     });
   </script>
