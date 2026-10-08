@@ -1,132 +1,137 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MediaChafa</title>
-
-    <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            min-height: 100vh;
-            background: #0d0f12;
-            color: #ffffff;
-            font-family: Arial, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .login {
-            width: 90%;
-            max-width: 400px;
-            background: #15181d;
-            border: 1px solid #292e36;
-            border-radius: 18px;
-            padding: 30px;
-            box-shadow: 0 20px 60px rgba(0,0,0,.4);
-        }
-
-        .logo {
-            text-align: center;
-            font-size: 30px;
-            font-weight: 800;
-            margin-bottom: 8px;
-        }
-
-        .logo span {
-            color: #4f8cff;
-        }
-
-        .subtitle {
-            text-align: center;
-            color: #7f8792;
-            font-size: 14px;
-            margin-bottom: 28px;
-        }
-
-        label {
-            display: block;
-            color: #b8bec8;
-            font-size: 13px;
-            margin-bottom: 7px;
-        }
-
-        input {
-            width: 100%;
-            padding: 13px;
-            margin-bottom: 16px;
-            background: #0e1013;
-            color: white;
-            border: 1px solid #303640;
-            border-radius: 10px;
-            outline: none;
-        }
-
-        input:focus {
-            border-color: #4f8cff;
-        }
-
-        button {
-            width: 100%;
-            padding: 13px;
-            border: 0;
-            border-radius: 10px;
-            background: #4f8cff;
-            color: white;
-            font-weight: bold;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background: #3979ee;
-        }
-
-        .register {
-            text-align: center;
-            margin-top: 20px;
-            color: #7f8792;
-            font-size: 13px;
-        }
-
-        .register a {
-            color: #4f8cff;
-            cursor: pointer;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MediaChafa</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: #0b0d12; color: #f3f4f6;
+      font-family: Arial, sans-serif; padding: 20px;
+    }
+    .panel {
+      width: 100%; max-width: 390px; padding: 28px;
+      background: #151922; border: 1px solid #292f3b;
+      border-radius: 18px;
+    }
+    h1 { margin: 0 0 8px; }
+    p { color: #a5adbb; line-height: 1.5; }
+    input, button {
+      width: 100%; padding: 13px; margin-top: 12px;
+      border-radius: 9px; font-size: 15px;
+    }
+    input {
+      background: #0b0d12; border: 1px solid #343b49;
+      color: white; outline: none;
+    }
+    button {
+      border: 0; background: #65e6a4; color: #092016;
+      font-weight: bold; cursor: pointer;
+    }
+    button.secondary { background: #292f3b; color: white; }
+    #message { overflow-wrap: anywhere; font-size: 14px; }
+    .hidden { display: none; }
+  </style>
 </head>
-
 <body>
+  <main class="panel">
+    <h1>MediaChafa</h1>
+    <p>Tu espacio compartido de archivos.</p>
 
-    <div class="login">
+    <section id="auth">
+      <input id="username" placeholder="Nombre de usuario" autocomplete="username">
+      <input id="email" type="email" placeholder="Correo electrónico" autocomplete="email">
+      <input id="password" type="password" placeholder="Contraseña (mínimo 6 caracteres)" autocomplete="current-password">
+      <button id="register">Crear cuenta</button>
+      <button id="login" class="secondary">Iniciar sesión</button>
+    </section>
 
-        <div class="logo">
-            ☁ Media<span>Chafa</span>
-        </div>
+    <section id="account" class="hidden">
+      <h2 id="welcome"></h2>
+      <p>Sesión iniciada correctamente.</p>
+      <button id="logout" class="secondary">Cerrar sesión</button>
+    </section>
 
-        <div class="subtitle">
-            Tu nube compartida
-        </div>
+    <p id="message" role="status"></p>
+  </main>
 
-        <label>Usuario</label>
-        <input type="text" placeholder="Tu usuario">
+  <script>
+    const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
+    const SUPABASE_KEY = "PEGA_AQUI_TU_CLAVE_PUBLISHABLE";
 
-        <label>Contraseña</label>
-        <input type="password" placeholder="Tu contraseña">
+    const client = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_KEY
+    );
 
-        <button>Iniciar sesión</button>
+    const $ = id => document.getElementById(id);
+    const message = text => $("message").textContent = text;
 
-        <div class="register">
-            ¿No tenés cuenta?
-            <a>Crear cuenta</a>
-        </div>
+    function showAccount(user) {
+      $("auth").classList.toggle("hidden", !!user);
+      $("account").classList.toggle("hidden", !user);
+      $("welcome").textContent = user ? "¡Bienvenido!" : "";
+    }
 
-    </div>
+    $("register").onclick = async () => {
+      const username = $("username").value.trim();
+      const email = $("email").value.trim();
+      const password = $("password").value;
 
+      if (!username || !email || password.length < 6) {
+        return message("Completá usuario, correo y una contraseña de al menos 6 caracteres.");
+      }
+
+      message("Creando cuenta...");
+      const { data, error } = await client.auth.signUp({
+        email,
+        password,
+        options: { data: { username } }
+      });
+
+      if (error) return message(error.message);
+
+      if (data.session) {
+        message("Cuenta creada correctamente.");
+      } else {
+        message("Cuenta creada. Revisá tu correo para confirmar el registro.");
+      }
+    };
+
+    $("login").onclick = async () => {
+      const email = $("email").value.trim();
+      const password = $("password").value;
+
+      if (!email || !password) return message("Ingresá tu correo y contraseña.");
+
+      message("Iniciando sesión...");
+      const { data, error } = await client.auth.signInWithPassword({
+        email, password
+      });
+
+      if (error) return message(error.message);
+      showAccount(data.user);
+      message("Sesión iniciada.");
+    };
+
+    $("logout").onclick = async () => {
+      const { error } = await client.auth.signOut();
+      if (error) return message(error.message);
+      showAccount(null);
+      message("Sesión cerrada.");
+    };
+
+    client.auth.onAuthStateChange((_event, session) => {
+      showAccount(session?.user ?? null);
+    });
+
+    client.auth.getSession().then(({ data }) => {
+      showAccount(data.session?.user ?? null);
+    });
+  </script>
 </body>
 </html>
