@@ -1,0 +1,733 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0d12">
+  <title>MediaChafa</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --panel: #151922;
+      --panel2: #1c222d;
+      --border: #2b3240;
+      --text: #f3f4f6;
+      --muted: #9ba5b5;
+      --green: #65e6a4;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      min-height: 100vh;
+    }
+
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+
+    .hidden { display: none !important; }
+
+    .auth-screen {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .auth-card {
+      width: 100%;
+      max-width: 410px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      padding: 28px;
+      border-radius: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .brand-icon {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: var(--green);
+      color: #092016;
+      font-weight: 900;
+    }
+
+    .muted { color: var(--muted); line-height: 1.5; }
+
+    input {
+      width: 100%;
+      padding: 13px;
+      margin-top: 12px;
+      color: white;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      outline: none;
+    }
+
+    input:focus { border-color: var(--green); }
+
+    .btn {
+      width: 100%;
+      border: 0;
+      border-radius: 9px;
+      padding: 13px;
+      margin-top: 12px;
+      background: var(--green);
+      color: #092016;
+      font-weight: 700;
+    }
+
+    .btn.secondary {
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    button:disabled { opacity: .55; }
+
+    #message {
+      min-height: 20px;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .app { min-height: 100vh; }
+
+    .topbar {
+      height: 70px;
+      padding: 0 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 15px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+
+    .top-user { color: var(--muted); font-size: 13px; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 225px minmax(0, 1fr);
+      min-height: calc(100vh - 70px);
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--border);
+      padding: 20px 14px;
+      background: #10131a;
+    }
+
+    .nav-label {
+      padding: 8px 12px;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      width: 100%;
+      text-align: left;
+      padding: 12px;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      color: #c6ccd6;
+      background: transparent;
+      margin-bottom: 5px;
+    }
+
+    .nav-btn:hover, .nav-btn.active {
+      color: var(--green);
+      background: #1b2925;
+      border-color: #29463a;
+    }
+
+    .side-bottom {
+      margin-top: 35px;
+      padding: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .main { min-width: 0; padding: 28px; }
+
+    .page-title {
+      font-size: 27px;
+      margin: 0 0 8px;
+    }
+
+    .page-subtitle {
+      margin: 0 0 25px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      min-width: 0;
+    }
+
+    .stat-number {
+      font-size: 29px;
+      font-weight: 800;
+      margin: 12px 0 5px;
+    }
+
+    .card-title { font-weight: 700; }
+    .card-description { color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+    .quick-btn {
+      padding: 11px 14px;
+      border: 1px solid var(--border);
+      background: var(--panel2);
+      color: var(--text);
+      border-radius: 9px;
+      margin: 6px 5px 0 0;
+    }
+
+    .quick-btn:hover { border-color: var(--green); }
+
+    .notice {
+      border: 1px solid #51452b;
+      background: #241f15;
+      color: #e8d4a6;
+      padding: 15px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.5;
+      margin-top: 20px;
+    }
+
+    .user-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .user-row:last-child { border-bottom: 0; }
+
+    .avatar {
+      width: 39px;
+      height: 39px;
+      display: grid;
+      place-items: center;
+      background: var(--panel2);
+      color: var(--green);
+      border-radius: 12px;
+      font-weight: bold;
+    }
+
+    .online-dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--green);
+      margin-right: 6px;
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 24px 0;
+      line-height: 1.6;
+    }
+
+    .profile-line {
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+      overflow-wrap: anywhere;
+    }
+
+    .profile-line:last-child { border-bottom: 0; }
+    .profile-label { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+    .profile-value { overflow-wrap: anywhere; }
+
+    .mobile-nav { display: none; }
+
+    @media (max-width: 720px) {
+      .topbar { padding: 0 15px; height: 62px; }
+      .top-user { display: none; }
+      .layout { display: block; min-height: calc(100vh - 62px); }
+      .sidebar { display: none; }
+      .main { padding: 22px 15px 95px; }
+      .page-title { font-size: 24px; }
+      .grid { grid-template-columns: 1fr; }
+      .mobile-nav {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 5;
+        background: #12161e;
+        border-top: 1px solid var(--border);
+        padding: 7px 4px;
+        justify-content: space-around;
+        padding-bottom: max(7px, env(safe-area-inset-bottom));
+      }
+      .mobile-nav .nav-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        font-size: 10px;
+        padding: 7px 3px;
+        margin: 0;
+      }
+      .mobile-nav .nav-btn span:first-child { font-size: 19px; }
+    }
+  </style>
+</head>
+<body>
+
+  <section id="authScreen" class="auth-screen">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="brand-icon">M</div>
+        <span>MediaChafa</span>
+      </div>
+      <p class="muted">Tu espacio compartido de archivos.</p>
+
+      <div id="authFields">
+        <input id="username" placeholder="Nombre de usuario"
+               autocomplete="username">
+        <input id="email" type="email" placeholder="Correo electrónico"
+               autocomplete="email">
+        <input id="password" type="password"
+               placeholder="Contraseña (mínimo 6 caracteres)"
+               autocomplete="current-password">
+        <button id="registerBtn" class="btn">Crear cuenta</button>
+        <button id="loginBtn" class="btn secondary">Iniciar sesión</button>
+      </div>
+
+      <p id="message" role="status" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <div id="app" class="app hidden">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon">M</div>
+        <span>MediaChafa</span>
+      </div>
+      <div class="top-user" id="topUsername"></div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="nav-label">Espacio de trabajo</div>
+        <button class="nav-btn active" data-page="home"><span>⌂</span> Inicio</button>
+        <button class="nav-btn" data-page="files"><span>▤</span> Archivos</button>
+        <button class="nav-btn" data-page="users"><span>◎</span> Usuarios en línea</button>
+        <button class="nav-btn" data-page="profile"><span>◉</span> Mi perfil</button>
+
+        <div class="side-bottom">
+          <div><span class="online-dot"></span> Sesión conectada</div>
+          <p>MediaChafa · Espacio compartido</p>
+        </div>
+      </aside>
+
+      <main class="main">
+        <section id="page-home" class="page">
+          <h1 class="page-title" id="greeting">Bienvenido a MediaChafa</h1>
+          <p class="page-subtitle">Tu espacio de trabajo en un solo lugar.</p>
+
+          <div class="grid">
+            <div class="card">
+              <div class="card-title">▤ Archivos compartidos</div>
+              <div class="stat-number">—</div>
+              <div class="card-description">El almacenamiento todavía no está conectado.</div>
+              <button class="quick-btn" data-go="files">Ver archivos</button>
+            </div>
+
+            <div class="card">
+              <div class="card-title">◎ Usuarios en línea</div>
+              <div class="stat-number" id="onlineCount">0</div>
+              <div class="card-description">Usuarios detectados recientemente.</div>
+              <button class="quick-btn" data-go="users">Ver usuarios</button>
+            </div>
+
+            <div class="card">
+              <div class="card-title">☁ Almacenamiento</div>
+              <div class="stat-number">Pendiente</div>
+              <div class="card-description">Todavía no hay un servicio de archivos conectado.</div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">◉ Mi cuenta</div>
+              <div class="stat-number" style="font-size:20px" id="homeUsername">Usuario</div>
+              <div class="card-description">Tu cuenta de MediaChafa.</div>
+              <button class="quick-btn" data-go="profile">Ver perfil</button>
+            </div>
+          </div>
+
+          <div class="notice">
+            <strong>Configuración pendiente</strong><br>
+            Esta versión ya tiene navegación e inicio de sesión. Para compartir archivos entre usuarios falta configurar el almacenamiento y sus permisos.
+          </div>
+        </section>
+
+        <section id="page-files" class="page hidden">
+          <h1 class="page-title">Archivos</h1>
+          <p class="page-subtitle">Tu espacio de archivos compartidos.</p>
+
+          <div class="card">
+            <div style="font-size:35px">▤</div>
+            <h3>El almacenamiento aún no está conectado</h3>
+            <p class="muted">
+              Cuando configuremos el almacenamiento, acá vas a poder subir,
+              descargar, buscar, renombrar y organizar archivos y carpetas.
+            </p>
+            <p class="card-description">
+              No se están guardando archivos todavía. No selecciones ni envíes archivos a servicios desconocidos.
+            </p>
+          </div>
+        </section>
+
+        <section id="page-users" class="page hidden">
+          <h1 class="page-title">Usuarios en línea</h1>
+          <p class="page-subtitle">Cuentas detectadas como activas recientemente.</p>
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+              <strong>Miembros conectados</strong>
+              <button id="refreshUsers" class="quick-btn">Actualizar</button>
+            </div>
+            <div id="usersList" class="empty">Cargando usuarios...</div>
+          </div>
+        </section>
+
+        <section id="page-profile" class="page hidden">
+          <h1 class="page-title">Mi perfil</h1>
+          <p class="page-subtitle">Información de tu cuenta.</p>
+          <div class="card">
+            <div class="profile-line">
+              <div class="profile-label">Nombre de usuario</div>
+              <div class="profile-value" id="profileUsername">—</div>
+            </div>
+            <div class="profile-line">
+              <div class="profile-label">Correo electrónico</div>
+              <div class="profile-value" id="profileEmail">—</div>
+            </div>
+            <div class="profile-line">
+              <div class="profile-label">Estado</div>
+              <div class="profile-value"><span class="online-dot"></span> Sesión iniciada</div>
+            </div>
+            <button id="logoutBtn" class="btn secondary">Cerrar sesión</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <nav class="mobile-nav">
+      <button class="nav-btn active" data-page="home"><span>⌂</span><span>Inicio</span></button>
+      <button class="nav-btn" data-page="files"><span>▤</span><span>Archivos</span></button>
+      <button class="nav-btn" data-page="users"><span>◎</span><span>Usuarios</span></button>
+      <button class="nav-btn" data-page="profile"><span>◉</span><span>Perfil</span></button>
+    </nav>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
+
+    const client = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_KEY
+    );
+
+    const $ = id => document.getElementById(id);
+    let currentUser = null;
+    let presenceTimer = null;
+
+    function showMessage(text) {
+      $("message").textContent = text;
+    }
+
+    function usernameFor(user) {
+      return user?.user_metadata?.username ||
+             user?.email?.split("@")[0] ||
+             "Usuario";
+    }
+
+    function showApp(user) {
+      currentUser = user || null;
+      $("authScreen").classList.toggle("hidden", !!user);
+      $("app").classList.toggle("hidden", !user);
+
+      if (!user) {
+        if (presenceTimer) clearInterval(presenceTimer);
+        presenceTimer = null;
+        return;
+      }
+
+      const name = usernameFor(user);
+      $("topUsername").textContent = name;
+      $("greeting").textContent = "¡Bienvenido, " + name + "!";
+      $("homeUsername").textContent = name;
+      $("profileUsername").textContent = name;
+      $("profileEmail").textContent = user.email || "—";
+
+      ensureProfile(user).then(() => updatePresence());
+      loadOnlineUsers();
+
+      if (presenceTimer) clearInterval(presenceTimer);
+      presenceTimer = setInterval(() => {
+        updatePresence();
+        loadOnlineUsers();
+      }, 30000);
+    }
+
+    async function ensureProfile(user) {
+      const username = usernameFor(user);
+
+      const { error } = await client
+        .from("profiles")
+        .upsert(
+          { id: user.id, username },
+          { onConflict: "id" }
+        );
+
+      if (error) {
+        console.warn("No se pudo guardar el perfil:", error.message);
+      }
+    }
+
+    async function updatePresence() {
+      if (!currentUser) return;
+
+      const { error } = await client
+        .from("user_presence")
+        .upsert({
+          user_id: currentUser.id,
+          last_seen: new Date().toISOString(),
+          activity: "En línea"
+        }, { onConflict: "user_id" });
+
+      if (error) {
+        console.warn("No se pudo actualizar la presencia:", error.message);
+      }
+    }
+
+    async function loadOnlineUsers() {
+      if (!currentUser) return;
+
+      $("usersList").textContent = "Cargando usuarios...";
+
+      const cutoff = new Date(Date.now() - 120000).toISOString();
+
+      const { data: presences, error } = await client
+        .from("user_presence")
+        .select("user_id,last_seen,activity")
+        .gte("last_seen", cutoff)
+        .order("last_seen", { ascending: false });
+
+      if (error) {
+        $("usersList").textContent =
+          "No se pudo cargar la lista. Revisá las políticas de seguridad de Supabase.";
+        $("onlineCount").textContent = "—";
+        return;
+      }
+
+      const { data: profiles, error: profileError } = await client
+        .from("profiles")
+        .select("id,username");
+
+      if (profileError) {
+        $("usersList").textContent = "No se pudieron cargar los perfiles.";
+        return;
+      }
+
+      const names = new Map((profiles || []).map(p => [p.id, p.username]));
+      const list = presences || [];
+      $("onlineCount").textContent = String(list.length);
+
+      if (!list.length) {
+        $("usersList").innerHTML =
+          '<div class="empty">Todavía no hay usuarios detectados en línea.</div>';
+        return;
+      }
+
+      $("usersList").replaceChildren();
+
+      list.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "user-row";
+
+        const avatar = document.createElement("div");
+        avatar.className = "avatar";
+        const name = names.get(item.user_id) || "Usuario";
+        avatar.textContent = name.charAt(0).toUpperCase();
+
+        const info = document.createElement("div");
+        info.style.flex = "1";
+
+        const title = document.createElement("div");
+        title.style.fontWeight = "700";
+        title.textContent = name;
+
+        const status = document.createElement("div");
+        status.className = "card-description";
+        status.innerHTML = '<span class="online-dot"></span>En línea';
+
+        info.append(title, status);
+        row.append(avatar, info);
+        $("usersList").append(row);
+      });
+    }
+
+    function navigate(page) {
+      document.querySelectorAll(".page").forEach(section => {
+        section.classList.toggle("hidden", section.id !== "page-" + page);
+      });
+
+      document.querySelectorAll("[data-page]").forEach(button => {
+        button.classList.toggle("active", button.dataset.page === page);
+      });
+
+      if (page === "users") loadOnlineUsers();
+    }
+
+    document.querySelectorAll("[data-page]").forEach(button => {
+      button.addEventListener("click", () => navigate(button.dataset.page));
+    });
+
+    document.querySelectorAll("[data-go]").forEach(button => {
+      button.addEventListener("click", () => navigate(button.dataset.go));
+    });
+
+    $("refreshUsers").addEventListener("click", loadOnlineUsers);
+
+    $("registerBtn").addEventListener("click", async () => {
+      const username = $("username").value.trim();
+      const email = $("email").value.trim();
+      const password = $("password").value;
+
+      if (!username || !email || password.length < 6) {
+        showMessage("Completá usuario y correo. La contraseña debe tener al menos 6 caracteres.");
+        return;
+      }
+
+      $("registerBtn").disabled = true;
+      showMessage("Creando cuenta...");
+
+      try {
+        const { data, error } = await client.auth.signUp({
+          email,
+          password,
+          options: { data: { username } }
+        });
+
+        if (error) throw error;
+
+        if (data.session && data.user) {
+          showApp(data.user);
+          navigate("home");
+          showMessage("");
+        } else {
+          showMessage("Cuenta creada. Revisá tu correo y confirmá el registro antes de iniciar sesión.");
+        }
+      } catch (error) {
+        showMessage("No se pudo crear la cuenta: " + error.message);
+      } finally {
+        $("registerBtn").disabled = false;
+      }
+    });
+
+    $("loginBtn").addEventListener("click", async () => {
+      const email = $("email").value.trim();
+      const password = $("password").value;
+
+      if (!email || !password) {
+        showMessage("Ingresá tu correo y contraseña.");
+        return;
+      }
+
+      $("loginBtn").disabled = true;
+      showMessage("Iniciando sesión...");
+
+      try {
+        const { data, error } = await client.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (error) throw error;
+
+        showApp(data.user);
+        navigate("home");
+        showMessage("");
+      } catch (error) {
+        showMessage("No se pudo iniciar sesión: " + error.message);
+      } finally {
+        $("loginBtn").disabled = false;
+      }
+    });
+
+    $("logoutBtn").addEventListener("click", async () => {
+      const { error } = await client.auth.signOut();
+
+      if (error) {
+        alert("No se pudo cerrar sesión: " + error.message);
+        return;
+      }
+
+      showApp(null);
+      showMessage("Sesión cerrada.");
+    });
+
+    client.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        showApp(session.user);
+      } else {
+        showApp(null);
+      }
+    });
+
+    client.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        showMessage("Error de sesión: " + error.message);
+        return;
+      }
+
+      if (data.session?.user) {
+        showApp(data.session.user);
+        navigate("home");
+      }
+    });
+  </script>
+</body>
+</html>
