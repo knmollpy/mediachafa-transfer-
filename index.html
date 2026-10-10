@@ -406,15 +406,19 @@
           <p class="page-subtitle">Tu espacio de archivos compartidos.</p>
 
           <div class="card">
-            <div style="font-size:35px">▤</div>
-            <h3>El almacenamiento aún no está conectado</h3>
-            <p class="muted">
-              Cuando configuremos el almacenamiento, acá vas a poder subir,
-              descargar, buscar, renombrar y organizar archivos y carpetas.
-            </p>
-            <p class="card-description">
-              No se están guardando archivos todavía. No selecciones ni envíes archivos a servicios desconocidos.
-            </p>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+              <div>
+                <div style="font-size:35px">▤</div>
+                <h3 style="margin:8px 0">Archivos compartidos</h3>
+                <p class="muted" style="margin:0">Subí archivos al almacenamiento de MediaChafa.</p>
+              </div>
+              <div>
+                <input id="fileInput" type="file" multiple style="display:none">
+                <button id="uploadBtn" class="btn" style="width:auto;margin:0">⬆ Subir archivos</button>
+              </div>
+            </div>
+            <p id="filesMessage" class="card-description" style="margin-top:14px"></p>
+            <div id="filesList" class="empty">Cargando archivos...</div>
           </div>
         </section>
 
@@ -472,6 +476,7 @@
     const $ = id => document.getElementById(id);
     let currentUser = null;
     let presenceTimer = null;
+    const STORAGE_BUCKET = "games";
 
     function showMessage(text) {
       $("message").textContent = text;
@@ -503,6 +508,7 @@
 
       ensureProfile(user).then(() => updatePresence());
       loadOnlineUsers();
+      loadFiles();
 
       if (presenceTimer) clearInterval(presenceTimer);
       presenceTimer = setInterval(() => {
@@ -619,6 +625,7 @@
       });
 
       if (page === "users") loadOnlineUsers();
+      if (page === "files") loadFiles();
     }
 
     document.querySelectorAll("[data-page]").forEach(button => {
@@ -630,6 +637,135 @@
     });
 
     $("refreshUsers").addEventListener("click", loadOnlineUsers);
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes) || bytes < 0) return "—";
+      if (bytes < 1024) return bytes + " B";
+      const units = ["KB", "MB", "GB", "TB"];
+      let value = bytes;
+      let unit = -1;
+      while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit++;
+      }
+      return value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2) + " " + units[unit];
+    }
+
+    function fileRow(file) {
+      const row = document.createElement("div");
+      row.className = "user-row";
+
+      const info = document.createElement("div");
+      info.style.flex = "1";
+      info.style.minWidth = "0";
+
+      const title = document.createElement("div");
+      title.style.fontWeight = "700";
+      title.style.overflowWrap = "anywhere";
+      title.textContent = file.name;
+
+      const meta = document.createElement("div");
+      meta.className = "card-description";
+      meta.textContent = formatBytes(file.metadata?.size) + " · " + new Date(file.created_at || Date.now()).toLocaleString();
+
+      info.append(title, meta);
+
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.gap = "6px";
+      actions.style.flexWrap = "wrap";
+
+      const download = document.createElement("button");
+      download.className = "quick-btn";
+      download.textContent = "⬇ Descargar";
+      download.addEventListener("click", () => {
+        const { data } = client.storage.from(STORAGE_BUCKET).getPublicUrl(file.name);
+        window.open(data.publicUrl, "_blank", "noopener,noreferrer");
+      });
+
+      const remove = document.createElement("button");
+      remove.className = "quick-btn";
+      remove.textContent = "🗑 Eliminar";
+      remove.addEventListener("click", async () => {
+        if (!confirm("¿Eliminar " + file.name + "?")) return;
+        remove.disabled = true;
+        const { error } = await client.storage.from(STORAGE_BUCKET).remove([file.name]);
+        if (error) {
+          alert("No se pudo eliminar: " + error.message);
+          remove.disabled = false;
+          return;
+        }
+        loadFiles();
+      });
+
+      actions.append(download, remove);
+      row.append(info, actions);
+      return row;
+    }
+
+    async function loadFiles() {
+      if (!currentUser || !$("filesList")) return;
+      $("filesList").textContent = "Cargando archivos...";
+
+      const { data, error } = await client.storage
+        .from(STORAGE_BUCKET)
+        .list("", { limit: 100, sortBy: { column: "created_at", order: "desc" } });
+
+      if (error) {
+        $("filesList").textContent = "No se pudieron cargar los archivos: " + error.message;
+        return;
+      }
+
+      const files = (data || []).filter(item => item.id);
+      if (!files.length) {
+        $("filesList").innerHTML = "Todavía no hay archivos. Subí el primero con el botón de arriba.";
+        $("filesMessage").textContent = "";
+        updateFileCount(0);
+        return;
+      }
+
+      $("filesList").replaceChildren(...files.map(fileRow));
+      $("filesMessage").textContent = files.length + " archivo" + (files.length === 1 ? "" : "s") + " en games.";
+      updateFileCount(files.length);
+    }
+
+    function updateFileCount(count) {
+      const stat = document.querySelector("#page-home .card:first-child .stat-number");
+      if (stat) stat.textContent = String(count);
+    }
+
+    $("uploadBtn").addEventListener("click", () => $("fileInput").click());
+
+    $("fileInput").addEventListener("change", async (event) => {
+      const files = Array.from(event.target.files || []);
+      if (!files.length || !currentUser) return;
+
+      const button = $("uploadBtn");
+      button.disabled = true;
+      $("filesMessage").textContent = "Subiendo " + files.length + " archivo" + (files.length === 1 ? "" : "s") + "...";
+
+      let ok = 0;
+      for (const file of files) {
+        const safeName = file.name.replace(/[\\\\/]+/g, "_").trim();
+        const path = Date.now() + "_" + Math.random().toString(36).slice(2, 8) + "_" + safeName;
+        const { error } = await client.storage.from(STORAGE_BUCKET).upload(path, file, {
+          cacheControl: "3600",
+          upsert: false
+        });
+        if (error) {
+          $("filesMessage").textContent = "Error subiendo " + file.name + ": " + error.message;
+          break;
+        }
+        ok++;
+      }
+
+      if (ok === files.length) {
+        $("filesMessage").textContent = "Subida completada: " + ok + " archivo" + (ok === 1 ? "" : "s") + ".";
+      }
+      event.target.value = "";
+      button.disabled = false;
+      await loadFiles();
+    });
 
     $("registerBtn").addEventListener("click", async () => {
       const username = $("username").value.trim();
