@@ -1,4 +1,3 @@
-// MediaChafa private R2 storage service.
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, PUT, POST, DELETE, OPTIONS",
@@ -6,7 +5,9 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+// R2 supports individual objects up to 5 TiB. Keep the UI aligned with the
+// library quota; multipart uploads avoid sending large bodies through Worker.
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
 const SHARE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 function json(body, status = 200, headers = {}) {
@@ -72,14 +73,14 @@ function safeEqual(a, b) {
   return difference === 0;
 }
 
-async function serveObject(object, filename = "") {
+async function serveObject(object, filename = "", disposition = "attachment") {
   if (!object) return json({ error: "Archivo no encontrado." }, 404);
   const headers = new Headers();
   if (object.httpMetadata?.contentType) headers.set("Content-Type", object.httpMetadata.contentType);
   else headers.set("Content-Type", "application/octet-stream");
   headers.set("Content-Length", String(object.size));
   headers.set("Cache-Control", "private, max-age=60");
-  if (filename) headers.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  if (filename) headers.set("Content-Disposition", `${disposition}; filename*=UTF-8''${encodeURIComponent(filename)}`);
   for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
   return new Response(object.body, { headers });
 }
@@ -157,7 +158,8 @@ export default {
         const path = objectKey(url.pathname, "/object/");
         if (!path) return json({ error: "Archivo inválido." }, 400);
         const object = await env.MEDIA_BUCKET.get(path);
-        return withCors(await serveObject(object, path.split("/").pop()));
+        const mode = url.searchParams.get("preview") === "1" ? "inline" : "attachment";
+        return withCors(await serveObject(object, path.split("/").pop(), mode));
       }
 
       if (url.pathname === "/migrate" && request.method === "POST") {
@@ -175,11 +177,65 @@ export default {
         if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
         if (session.user.id !== env.OWNER_USER_ID && !path.startsWith(`${session.user.id}/`)) return json({ error: "Ruta de archivo no autorizada." }, 403);
         const size = Number(request.headers.get("Content-Length") || 0);
-        if (size > MAX_UPLOAD_BYTES) return json({ error: "El límite por archivo es 50 MB." }, 413);
+        if (size > MAX_UPLOAD_BYTES) return json({ error: "El máximo por archivo es 10 GB." }, 413);
+        if (size > 100 * 1024 * 1024) return json({ error: "Para archivos mayores a 100 MB usá carga multipart." }, 413);
         if (!request.body) return json({ error: "El archivo está vacío." }, 400);
         const contentType = request.headers.get("Content-Type") || "application/octet-stream";
         const object = await env.MEDIA_BUCKET.put(path, request.body, { httpMetadata: { contentType } });
         return json({ ok: true, path, etag: object.etag });
+      }
+
+      if (url.pathname === "/multipart/create" && request.method === "POST") {
+        const session = await getUser(request, env);
+        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
+        const input = await request.json().catch(() => ({}));
+        const path = typeof input.path === "string" ? input.path : "";
+        const size = Number(input.size);
+        const contentType = typeof input.contentType === "string" ? input.contentType : "application/octet-stream";
+        if (!path || path.length > 1024 || path.split("/").some(part => part === "..")) return json({ error: "Ruta inválida." }, 400);
+        if (session.user.id !== env.OWNER_USER_ID && !path.startsWith(`${session.user.id}/`)) return json({ error: "Ruta de archivo no autorizada." }, 403);
+        if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) return json({ error: "El máximo por archivo es 10 GB." }, 413);
+        const upload = await env.MEDIA_BUCKET.createMultipartUpload(path, { httpMetadata: { contentType } });
+        return json({ ok: true, path, uploadId: upload.uploadId, partSize: 32 * 1024 * 1024 });
+      }
+
+      if (url.pathname === "/multipart/part" && request.method === "PUT") {
+        const session = await getUser(request, env);
+        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
+        const path = url.searchParams.get("path") || "";
+        const uploadId = url.searchParams.get("uploadId") || "";
+        const partNumber = Number(url.searchParams.get("partNumber"));
+        if (!path || !uploadId || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) return json({ error: "Parte inválida." }, 400);
+        if (session.user.id !== env.OWNER_USER_ID && !path.startsWith(`${session.user.id}/`)) return json({ error: "Ruta de archivo no autorizada." }, 403);
+        const upload = env.MEDIA_BUCKET.resumeMultipartUpload(path, uploadId);
+        const part = await upload.uploadPart(partNumber, request.body);
+        return json({ ok: true, partNumber, etag: part.etag });
+      }
+
+      if (url.pathname === "/multipart/complete" && request.method === "POST") {
+        const session = await getUser(request, env);
+        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
+        const input = await request.json().catch(() => ({}));
+        const path = typeof input.path === "string" ? input.path : "";
+        const uploadId = typeof input.uploadId === "string" ? input.uploadId : "";
+        const parts = Array.isArray(input.parts) ? input.parts : [];
+        if (!path || !uploadId || !parts.length || parts.length > 10000) return json({ error: "Datos de finalización inválidos." }, 400);
+        if (session.user.id !== env.OWNER_USER_ID && !path.startsWith(`${session.user.id}/`)) return json({ error: "Ruta de archivo no autorizada." }, 403);
+        const upload = env.MEDIA_BUCKET.resumeMultipartUpload(path, uploadId);
+        const object = await upload.complete(parts.map(part => ({ partNumber: Number(part.partNumber), etag: String(part.etag) })));
+        return json({ ok: true, path, etag: object.etag, size: object.size });
+      }
+
+      if (url.pathname === "/multipart/abort" && request.method === "POST") {
+        const session = await getUser(request, env);
+        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
+        const input = await request.json().catch(() => ({}));
+        const path = typeof input.path === "string" ? input.path : "";
+        const uploadId = typeof input.uploadId === "string" ? input.uploadId : "";
+        if (!path || !uploadId) return json({ error: "Datos de cancelación inválidos." }, 400);
+        if (session.user.id !== env.OWNER_USER_ID && !path.startsWith(`${session.user.id}/`)) return json({ error: "Ruta de archivo no autorizada." }, 403);
+        await env.MEDIA_BUCKET.resumeMultipartUpload(path, uploadId).abort();
+        return json({ ok: true });
       }
 
       if (url.pathname.startsWith("/object/") && request.method === "DELETE") {
