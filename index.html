@@ -229,7 +229,7 @@
         return;
       }
       files = (fileResult.data || []).map(row => ({
-        id:row.id, path:row.storage_path, name:row.file_name, type:row.file_type, createdBy:row.created_by,
+        id:row.id, path:row.storage_path, name:row.file_name, type:row.file_type, createdBy:row.created_by, mimeType:inferMime(row.file_name),
         size:Number(row.size_bytes), description:row.description || '', folder:row.folder || 'Sin carpeta',
         date:new Intl.DateTimeFormat('es-AR').format(new Date(row.created_at))
       }));
