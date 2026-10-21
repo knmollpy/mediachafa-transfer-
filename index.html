@@ -33,9 +33,9 @@
     :root[data-theme="dark"] .folder:hover,:root[data-theme="dark"] .folder.selected,:root[data-theme="dark"] .role-chip{background:#263a2c;color:#a8dfb5}
     :root[data-theme="dark"] .notice,:root[data-theme="dark"] .drop{background:#202f25;color:#bcc9c0}
     :root[data-theme="dark"] .empty h3{color:#e7eee9}
-    :root[data-theme="dark"] .theme-toggle{background:#152019;border-color:#3b5042;color:#e7eee9}
+    :root[data-theme="dark"] .theme-toggle{background:#152019;border-color:#3b5042;color:#e7eee9}\n    :root[data-theme="dark"] .login-note{background:#202f25;color:#bcc9c0}\n    :root[data-theme="dark"] .navitem.active{background:#263a2c;color:#a8dfb5}\n    :root[data-theme="dark"] .logout,:root[data-theme="dark"] .side-heading{color:#a8b5ac}
     :root[data-theme="dark"] .share-btn{background:#24382a;border-color:#3a5c44;color:#a8dfb5}
-    @media(max-width:800px){.topbar{padding:0 18px}.topnav{margin-left:0}.topnav .navitem:not(.active){display:none}.wrap{padding:24px 16px}.layout{grid-template-columns:1fr}.sidebar{min-height:0}.sidebar-hint{display:none}.sidebar-list{display:flex;gap:4px;overflow:auto}.folder{white-space:nowrap;width:auto}.file-card{grid-template-columns:42px minmax(90px,1fr) auto;gap:10px;padding:11px}.file-icon{height:46px;width:40px}.file-actions{gap:4px}.download{padding:8px 9px}.icon-btn{display:inline-grid;place-items:center}}
+    @media(max-width:800px){.theme-toggle .theme-label{display:none}.topbar{padding:0 18px;gap:12px}.topnav{margin-left:0}.topnav .navitem:not(.active){display:none}.wrap{padding:24px 16px}.layout{grid-template-columns:1fr}.sidebar{min-height:0}.sidebar-hint{display:none}.sidebar-list{display:flex;gap:4px;overflow:auto}.folder{white-space:nowrap;width:auto}.file-card{grid-template-columns:42px minmax(90px,1fr) auto;gap:10px;padding:11px}.file-icon{height:46px;width:40px}.file-actions{gap:4px}.download{padding:8px 9px}.icon-btn{display:inline-grid;place-items:center}}
     @media(max-width:520px){.theme-toggle .theme-label{display:none}.login-card{padding:29px 23px}.date{display:none}.welcome h1{font-size:25px}.content{padding:15px}.content-head{gap:8px}.content-title{width:100%}.search{flex:1;width:130px}.file-card{grid-template-columns:40px minmax(0,1fr)}.file-actions{grid-column:2;justify-content:flex-start}.file-desc{font-size:10px}.topbar{height:62px}.topbar .brand{font-size:16px}.topnav{display:none}.logout{font-size:11px}}
   </style>
 </head>
@@ -55,7 +55,7 @@
     </div>
   </section>
   <main id="app" class="app hidden">
-    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><span class="navitem active">Mis archivos</span></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
+    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><span class="navitem active">Mis archivos</span></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span> 👋</h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Espacio utilizado</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong>1 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">1 GB disponibles</span><span>Plan gratuito · 1 GB</span></div></section>
@@ -233,6 +233,7 @@
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
       const button = $('#theme-toggle');
       button.setAttribute('aria-pressed', String(dark));
+      button.setAttribute('aria-label', dark ? 'Activar modo claro' : 'Activar modo oscuro');
       button.querySelector('.theme-icon').textContent = dark ? '☀' : '☾';
       button.querySelector('.theme-label').textContent = dark ? 'Claro' : 'Oscuro';
     }
