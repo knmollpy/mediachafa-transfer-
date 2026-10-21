@@ -40,7 +40,7 @@
     </div>
   </section>
   <main id="app" class="app hidden">
-    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><button class="navitem active">Mis archivos</button><button class="navitem">Compartidos</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="logout" id="logout">Cerrar sesión</button></div></header>
+    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><button class="navitem active">Mis archivos</button><button class="navitem">Compartidos</button><button class="navitem hidden" id="users-button">Usuarios</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span> 👋</h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Espacio utilizado</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong>1 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">1 GB disponibles</span><span>Plan gratuito · 1 GB</span></div></section>
@@ -61,6 +61,7 @@
     const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     let ownerMode = false;
+    let uploaderMode = false;
     let currentUser = null;
     let currentFolder = 'Todos los archivos';
     let files = [];
@@ -84,13 +85,14 @@
       document.body.append(node); setTimeout(() => node.remove(), 3000);
     }
 
-    async function enterLibrary(isOwner, user = null) {
-      ownerMode = isOwner; currentUser = user;
+    async function enterLibrary(isOwner, user = null, isUploader = false) {
+      ownerMode = isOwner; uploaderMode = isUploader; currentUser = user;
       $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
-      $('#role-chip').textContent = ownerMode ? 'Dueño' : 'Invitado';
-      $('#avatar').textContent = ownerMode ? 'N' : 'I';
-      $('#welcome-name').textContent = ownerMode ? 'nxmollpy' : 'Invitado';
-      $('#add-file').classList.toggle('hidden', !ownerMode);
+      $('#role-chip').textContent = ownerMode ? 'Dueño' : (uploaderMode ? 'Colaborador' : 'Invitado');
+      $('#avatar').textContent = ownerMode ? 'N' : (uploaderMode ? (user?.user_metadata?.username?.[0]?.toUpperCase() || 'C') : 'I');
+      $('#welcome-name').textContent = ownerMode ? 'nxmollpy' : (uploaderMode ? (user?.user_metadata?.username || 'Colaborador') : 'Invitado');
+      $('#add-file').classList.toggle('hidden', !ownerMode && !uploaderMode);
+      $('#users-button').classList.toggle('hidden', !ownerMode);
       $('#new-folder').classList.toggle('hidden', !ownerMode);
       $('#guest-note').classList.toggle('hidden', ownerMode);
       $('#today').textContent = new Intl.DateTimeFormat('es-AR', {dateStyle:'full'}).format(new Date());
@@ -107,21 +109,21 @@
         await enterLibrary(false);
         return;
       }
-      if (username !== OWNER_USER || !password) {
-        errorBox.textContent = 'Usá invitado sin contraseña, o el usuario del dueño y su contraseña de cuenta.';
-        return;
-      }
+      if (!password) { errorBox.textContent = 'Escribí tu contraseña.'; return; }
       const submit = $('#login-form button[type="submit"]');
       submit.disabled = true; submit.textContent = 'Verificando…';
       try {
-        const {data, error} = await client.auth.signInWithPassword({email:OWNER_EMAIL, password});
-        if (error) throw error;
-        const email = (data.user?.email || '').toLowerCase();
-        if (email !== OWNER_EMAIL || data.user?.is_anonymous) {
-          await client.auth.signOut();
-          throw new Error('Esta cuenta no tiene acceso de dueño.');
+        if (username === OWNER_USER) {
+          const {data, error} = await client.auth.signInWithPassword({email:OWNER_EMAIL, password});
+          if (error) throw error;
+          if ((data.user?.email || '').toLowerCase() !== OWNER_EMAIL || data.user?.is_anonymous) { await client.auth.signOut(); throw new Error('Esta cuenta no tiene acceso de dueño.'); }
+          await enterLibrary(true, data.user);
+        } else {
+          const response = await fetch(`${SUPABASE_URL}/functions/v1/create-uploader`, {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({action:'login',username,password})});
+          const result = await response.json(); if (!response.ok) throw new Error(result.error || 'No se pudo iniciar sesión.');
+          const {error} = await client.auth.setSession(result.session); if (error) throw error;
+          await enterLibrary(false, result.user, true);
         }
-        await enterLibrary(true, data.user);
       } catch (error) {
         errorBox.textContent = error.message || 'No se pudo iniciar sesión.';
       } finally {
@@ -131,7 +133,7 @@
 
     $('#logout').onclick = async () => {
       if (ownerMode) await client.auth.signOut();
-      ownerMode = false; currentUser = null; files = [];
+      ownerMode = false; uploaderMode = false; currentUser = null; files = [];
       $('#app').classList.add('hidden'); $('#login').classList.remove('hidden');
       $('#login-form').reset(); $('#login-error').textContent = '';
       currentFolder = 'Todos los archivos';
@@ -193,6 +195,23 @@
     }
     $('#search').oninput = render; $('#type-filter').onchange = render;
 
+    async function showUsers() {
+      const {data:accounts,error} = await client.from('media_users').select('username,email,created_at').order('created_at',{ascending:false});
+      if (error) { toast('No se pudieron cargar los usuarios: '+error.message); return; }
+      let rows = (accounts || []).map(u => '<div class="file-card" style="grid-template-columns:1fr auto"><div><div class="file-name">'+esc(u.username)+'</div><div class="file-meta">'+esc(u.email)+' · Puede subir y descargar</div></div><span class="role-chip">Colaborador</span></div>').join('');
+      if (!rows) rows = '<div class="notice">Todavía no hay usuarios registrados.</div>';
+      modal('Usuarios registrados', '<div class="file-list">'+rows+'</div><hr style="border:0;border-top:1px solid #e5ece7;margin:22px 0"><h3 style="font:700 15px Manrope">Crear usuario colaborador</h3><label class="field-label">Nombre de usuario</label><input class="field" id="new-username" autocomplete="off" placeholder="por ejemplo, juan_01"><label class="field-label">Correo para recuperar la cuenta</label><input class="field" id="new-email" type="email" placeholder="correo@ejemplo.com"><label class="field-label">Contraseña inicial</label><input class="field" id="new-password" type="password" minlength="8" placeholder="Mínimo 8 caracteres"><div class="notice">Este usuario podrá subir y descargar. Solo vos podés cambiar descripciones, mover o borrar archivos.</div>', 'Crear usuario', async root => {
+        const username=root.querySelector('#new-username').value.trim().toLowerCase(), email=root.querySelector('#new-email').value.trim(), password=root.querySelector('#new-password').value;
+        if(!username||!email||password.length<8){toast('Completá los datos. La contraseña necesita al menos 8 caracteres.');return;}
+        const {data:{session}}=await client.auth.getSession();
+        const response=await fetch(SUPABASE_URL+'/functions/v1/create-uploader',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY,'Authorization':'Bearer '+(session?.access_token||'')},body:JSON.stringify({action:'create',username,email,password})});
+        const result=await response.json(); if(!response.ok){toast(result.error||'No se pudo crear el usuario.');return;}
+        root.replaceChildren(); toast('Usuario creado. Ya puede iniciar sesión.'); showUsers();
+      });
+    }
+
+    $('#users-button').onclick = showUsers;
+
     async function downloadFile(file) {
       const {data, error} = await client.storage.from(BUCKET).download(file.path);
       if (error) { toast('No se pudo descargar: ' + error.message); return; }
@@ -210,10 +229,10 @@
     }
 
     $('#add-file').onclick = () => {
-      if (!ownerMode) return;
+      if (!ownerMode && !uploaderMode) return;
       let selected = null;
       const used = files.reduce((sum, file) => sum + file.size, 0);
-      modal('Subir un archivo', `<div class="drop" id="drop"><strong>Elegí un archivo para subir</strong>o arrastralo hasta acá<br><span style="font-size:10px">Cualquier tipo · Hasta 50 MB por archivo · ${formatBytes(Math.max(0,MAX_BYTES-used))} disponibles</span><input id="file-input" type="file" style="display:none"></div><label class="field-label">Descripción</label><textarea class="field" id="description" rows="3" placeholder="¿Qué contiene este archivo?"></textarea><label class="field-label">Carpeta</label><select class="field" id="folder-select">${folders.filter(folder=>folder!=='Todos los archivos').map(folder=>`<option>${esc(folder)}</option>`).join('')}</select><div id="selected-name" style="font-size:11px;color:#718078;margin-top:9px"></div>`, 'Subir', async root => {
+      modal('Subir un archivo', `<div class="drop" id="drop"><strong>Elegí un archivo para subir</strong>o arrastralo hasta acá<br><span style="font-size:10px">Cualquier tipo · Hasta 50 MB por archivo · ${formatBytes(Math.max(0,MAX_BYTES-used))} disponibles</span><input id="file-input" type="file" style="display:none"></div>${ownerMode?'<label class="field-label">Descripción</label><textarea class="field" id="description" rows="3" placeholder="¿Qué contiene este archivo?"></textarea>':'<div class="notice">La descripción la administra el dueño.</div>'}<label class="field-label">Carpeta</label><select class="field" id="folder-select">${folders.filter(folder=>folder!=='Todos los archivos').map(folder=>`<option>${esc(folder)}</option>`).join('')}</select><div id="selected-name" style="font-size:11px;color:#718078;margin-top:9px"></div>`, 'Subir', async root => {
         if (!selected) { toast('Elegí un archivo primero.'); return; }
         const currentUsed = files.reduce((sum, file) => sum + file.size, 0);
         if (selected.size > MAX_FILE_BYTES) { toast('En el plan gratuito, el máximo por archivo es 50 MB.'); return; }
@@ -223,7 +242,7 @@
         const path = `${Date.now()}_${crypto.randomUUID()}_${safeName}`;
         const {error: uploadError} = await client.storage.from(BUCKET).upload(path, selected, {cacheControl:'3600', upsert:false, contentType:selected.type || 'application/octet-stream'});
         if (uploadError) { button.disabled = false; button.textContent = 'Subir'; toast('No se pudo subir: ' + uploadError.message); return; }
-        const row = {storage_path:path, file_name:selected.name, file_type:ext(selected.name), size_bytes:selected.size, description:root.querySelector('#description').value.trim(), folder:root.querySelector('#folder-select').value || 'Sin carpeta', created_by:currentUser.id};
+        const row = {storage_path:path, file_name:selected.name, file_type:ext(selected.name), size_bytes:selected.size, description:ownerMode ? root.querySelector('#description').value.trim() : '', folder:root.querySelector('#folder-select').value || 'Sin carpeta', created_by:currentUser.id};
         const {error: insertError} = await client.from('media_files').insert(row);
         if (insertError) {
           await client.storage.from(BUCKET).remove([path]);
@@ -256,6 +275,15 @@
       });
     }
 
+    async function moveFile(id) {
+      const file = files.find(item => item.id === id); if (!file) return;
+      const options = folders.filter(folder => folder !== 'Todos los archivos').map(folder => `<option value="${esc(folder)}" ${folder===file.folder?'selected':''}>${esc(folder)}</option>`).join('');
+      modal('Mover archivo', `<p class="sub">${esc(file.name)}</p><label class="field-label">Nueva carpeta</label><select class="field" id="move-folder">${options}</select>`, 'Mover', async root => {
+        const {error} = await client.from('media_files').update({folder:root.querySelector('#move-folder').value === 'Sin carpeta' ? null : root.querySelector('#move-folder').value, updated_at:new Date().toISOString()}).eq('id',id);
+        if (error) { toast('No se pudo mover: '+error.message); return; } root.replaceChildren(); await loadLibrary(); toast('Archivo movido.');
+      });
+    }
+
     async function deleteFile(id) {
       const file = files.find(item => item.id === id); if (!file || !confirm(`¿Eliminar ${file.name} de la biblioteca?`)) return;
       const {error: storageError} = await client.storage.from(BUCKET).remove([file.path]);
@@ -269,7 +297,7 @@
       if (error || !data.session?.user) return;
       const user = data.session.user;
       if ((user.email || '').toLowerCase() === OWNER_EMAIL && !user.is_anonymous) await enterLibrary(true, user);
-      else await client.auth.signOut();
+      else { const {data:account} = await client.from('media_users').select('username').eq('id',user.id).maybeSingle(); if (account) await enterLibrary(false,user,true); else await client.auth.signOut(); }
     });
   </script>
 </body>
