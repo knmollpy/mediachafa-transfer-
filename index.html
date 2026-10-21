@@ -189,6 +189,7 @@
         if (ownerMode) {
           card.querySelector('.edit').onclick = () => editDescription(file.id);
           card.querySelector('.delete').onclick = () => deleteFile(file.id);
+           const move = document.createElement('button'); move.className='icon-btn move'; move.title='Mover a otra carpeta'; move.textContent='↗'; move.onclick=()=>moveFile(file.id); card.querySelector('.file-actions').append(move);
         }
         output.append(card);
       });
