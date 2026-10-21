@@ -1,3 +1,4 @@
+// MediaChafa private R2 storage service.
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, PUT, POST, DELETE, OPTIONS",
