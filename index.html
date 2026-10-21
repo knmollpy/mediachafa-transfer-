@@ -57,7 +57,7 @@
   <main id="app" class="app hidden">
     <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><span class="navitem active">Mis archivos</span></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
-      <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span> 👋</h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
+      <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Espacio utilizado</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong>1 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">1 GB disponibles</span><span>Plan gratuito · 1 GB</span></div></section>
       <div class="layout"><aside class="sidebar"><div class="side-heading">Carpetas <button id="new-folder" title="Crear carpeta">+</button></div><div class="sidebar-list" id="folder-list"></div><div class="sidebar-hint">Archivos almacenados en la nube. El invitado puede consultar y descargar; solo el dueño puede subir, editar o borrar.</div></aside>
         <section class="content"><div class="content-head"><div class="content-title" id="section-title">Todos los archivos</div><input class="search" id="search" placeholder="⌕  Buscar archivos…"><select class="select" id="type-filter"><option value="all">Todos los tipos</option><option value="apk">APK</option><option value="pkg">PKG</option><option value="pdf">PDF</option><option value="zip">ZIP</option><option value="other">Otros</option></select><button id="add-file" class="add-btn">＋ Subir archivo</button></div><div id="file-list" class="file-list"></div><div id="guest-note" class="notice hidden">Estás en modo invitado. Podés descargar los archivos y leer sus descripciones; las herramientas de edición están disponibles solo para el dueño.</div></section>
@@ -244,10 +244,13 @@
     };
 
     async function shareFile(file) {
-      const {data,error} = await client.storage.from(BUCKET).createSignedUrl(file.path, 60 * 60 * 24 * 7, {download:true});
+      const expiresIn = 60 * 60 * 24 * 7;
+      const expiresAt = new Date(Date.now() + expiresIn * 1000);
+      const expiresLabel = new Intl.DateTimeFormat('es-AR', {dateStyle:'full', timeStyle:'short'}).format(expiresAt);
+      const {data,error} = await client.storage.from(BUCKET).createSignedUrl(file.path, expiresIn, {download:true});
       if (error) { toast('No se pudo crear el enlace: ' + error.message); return; }
       const signedUrl = data.signedUrl.startsWith('http') ? data.signedUrl : SUPABASE_URL + data.signedUrl;
-      modal('Enlace de descarga', '<p class="sub">Este enlace descarga solo este archivo y vence en 7 días. Cualquiera que lo reciba podrá descargarlo.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="' + esc(signedUrl) + '">', 'Copiar enlace', async root => {
+      modal('Enlace de descarga', '<p class="sub">Este enlace permite descargar solo este archivo. Dura 7 días y vence el <strong>\${expiresLabel}</strong>. Después de esa fecha dejará de funcionar. Cualquiera que tenga el enlace podrá descargarlo.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="' + esc(signedUrl) + '">', 'Copiar enlace', async root => {
         const input = root.querySelector('#share-link');
         try { await navigator.clipboard.writeText(input.value); toast('Enlace copiado.'); root.replaceChildren(); }
         catch { input.focus(); input.select(); toast('Copiá el enlace seleccionado.'); }
