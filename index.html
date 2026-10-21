@@ -58,9 +58,9 @@
     <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><span class="navitem active">Mis archivos</span></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
-      <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Espacio utilizado</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong>1 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">1 GB disponibles</span><span>Plan gratuito · 1 GB</span></div></section>
+      <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Espacio utilizado</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong>10 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">10 GB disponibles</span><span>Cloudflare R2 · nivel gratuito</span></div></section>
       <div class="layout"><aside class="sidebar"><div class="side-heading">Carpetas <button id="new-folder" title="Crear carpeta">+</button></div><div class="sidebar-list" id="folder-list"></div><div class="sidebar-hint">Archivos almacenados en la nube. El invitado puede consultar y descargar; solo el dueño puede subir, editar o borrar.</div></aside>
-        <section class="content"><div class="content-head"><div class="content-title" id="section-title">Todos los archivos</div><input class="search" id="search" placeholder="⌕  Buscar archivos…"><select class="select" id="type-filter"><option value="all">Todos los tipos</option><option value="apk">APK</option><option value="pkg">PKG</option><option value="pdf">PDF</option><option value="zip">ZIP</option><option value="other">Otros</option></select><button id="add-file" class="add-btn">＋ Subir archivo</button></div><div id="file-list" class="file-list"></div><div id="guest-note" class="notice hidden">Estás en modo invitado. Podés descargar los archivos y leer sus descripciones; las herramientas de edición están disponibles solo para el dueño.</div></section>
+        <section class="content"><div class="content-head"><div class="content-title" id="section-title">Todos los archivos</div><input class="search" id="search" placeholder="⌕  Buscar archivos…"><select class="select" id="type-filter"><option value="all">Todos los tipos</option><option value="apk">APK</option><option value="pkg">PKG</option><option value="pdf">PDF</option><option value="zip">ZIP</option><option value="other">Otros</option></select><button id="migrate-r2" class="secondary hidden">Migrar almacenamiento a R2</button><button id="add-file" class="add-btn">＋ Subir archivo</button></div><div id="file-list" class="file-list"></div><div id="guest-note" class="notice hidden">Estás en modo invitado. Podés descargar los archivos y leer sus descripciones; las herramientas de edición están disponibles solo para el dueño.</div></section>
       </div>
     </div>
   </main>
@@ -71,7 +71,8 @@
     const OWNER_USER = 'nxmollpy';
     const OWNER_EMAIL = 'nxmollpy@gmail.com';
     const BUCKET = 'games';
-    const MAX_BYTES = 1024 * 1024 * 1024;
+    const R2_WORKER_URL = 'https://mediachafa-storage.nxmollpy.workers.dev';
+    const MAX_BYTES = 10 * 1024 * 1024 * 1024;
     const MAX_FILE_BYTES = 50 * 1024 * 1024;
     const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -109,6 +110,7 @@
       $('#add-file').classList.toggle('hidden', !ownerMode && !uploaderMode);
       $('#users-button').classList.toggle('hidden', !ownerMode);
       $('#new-folder').classList.toggle('hidden', !ownerMode);
+      $('#migrate-r2').classList.toggle('hidden', !ownerMode);
       $('#guest-note').classList.toggle('hidden', ownerMode);
       $('#today').textContent = new Intl.DateTimeFormat('es-AR', {dateStyle:'full'}).format(new Date());
       await loadLibrary();
@@ -247,9 +249,16 @@
       const expiresIn = 60 * 60 * 24 * 7;
       const expiresAt = new Date(Date.now() + expiresIn * 1000);
       const expiresLabel = new Intl.DateTimeFormat('es-AR', {dateStyle:'full', timeStyle:'short'}).format(expiresAt);
-      const {data,error} = await client.storage.from(BUCKET).createSignedUrl(file.path, expiresIn, {download:true});
-      if (error) { toast('No se pudo crear el enlace: ' + error.message); return; }
-      const signedUrl = data.signedUrl.startsWith('http') ? data.signedUrl : SUPABASE_URL + data.signedUrl;
+      let signedUrl;
+      try {
+        const response = await fetch(`${R2_WORKER_URL}/sign`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:file.path})});
+        if (response.ok) signedUrl = (await response.json()).url;
+      } catch {}
+      if (!signedUrl) {
+        const {data,error} = await client.storage.from(BUCKET).createSignedUrl(file.path, expiresIn, {download:true});
+        if (error) { toast('No se pudo crear el enlace: ' + error.message); return; }
+        signedUrl = data.signedUrl.startsWith('http') ? data.signedUrl : SUPABASE_URL + data.signedUrl;
+      }
       modal('Enlace de descarga', '<p class="sub">Este enlace permite descargar solo este archivo. Dura 7 días y vence el <strong>' + expiresLabel + '</strong>. Después de esa fecha dejará de funcionar. Cualquiera que tenga el enlace podrá descargarlo.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="' + esc(signedUrl) + '">', 'Copiar enlace', async root => {
         const input = root.querySelector('#share-link');
         try { await navigator.clipboard.writeText(input.value); toast('Enlace copiado.'); root.replaceChildren(); }
@@ -258,8 +267,9 @@
     }
 
     async function downloadFile(file) {
-      const {data, error} = await client.storage.from(BUCKET).download(file.path);
-      if (error) { toast('No se pudo descargar: ' + error.message); return; }
+      let data;
+      try { const response = await fetch(`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`); if (response.ok) data = await response.blob(); } catch {}
+      if (!data) { const {data:legacy,error} = await client.storage.from(BUCKET).download(file.path); if (error) { toast('No se pudo descargar: ' + error.message); return; } data = legacy; }
       const link = document.createElement('a'); const url = URL.createObjectURL(data);
       link.href = url; link.download = file.name; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 30000);
@@ -284,13 +294,18 @@
         if (currentUsed + selected.size > MAX_BYTES) { toast('El archivo supera el espacio libre de la biblioteca.'); return; }
         const button = root.querySelector('.submit'); button.disabled = true; button.textContent = 'Subiendo…';
         const safeName = selected.name.replace(/[\\/]+/g, '_').trim();
-        const path = `${Date.now()}_${crypto.randomUUID()}_${safeName}`;
-        const {error: uploadError} = await client.storage.from(BUCKET).upload(path, selected, {cacheControl:'3600', upsert:false, contentType:selected.type || 'application/octet-stream'});
-        if (uploadError) { button.disabled = false; button.textContent = 'Subir'; toast('No se pudo subir: ' + uploadError.message); return; }
+        const path = `${currentUser.id}/${Date.now()}_${crypto.randomUUID()}_${safeName}`;
+        const {data:{session}} = await client.auth.getSession();
+        let uploadMessage = '';
+        try {
+          const response = await fetch(`${R2_WORKER_URL}/object/${path.split('/').map(encodeURIComponent).join('/')}`, {method:'PUT',headers:{'Authorization':`Bearer ${session?.access_token || ''}`,'Content-Type':selected.type || 'application/octet-stream'},body:selected});
+          if (!response.ok) uploadMessage = (await response.json().catch(()=>({}))).error || `Error ${response.status}`;
+        } catch (error) { uploadMessage = error.message; }
+        if (uploadMessage) { button.disabled = false; button.textContent = 'Subir'; toast('No se pudo subir a R2: ' + uploadMessage); return; }
         const row = {storage_path:path, file_name:selected.name, file_type:ext(selected.name), size_bytes:selected.size, description:ownerMode ? root.querySelector('#description').value.trim() : '', folder:root.querySelector('#folder-select').value || 'Sin carpeta', created_by:currentUser.id};
         const {error: insertError} = await client.from('media_files').insert(row);
         if (insertError) {
-          await client.storage.from(BUCKET).remove([path]);
+          await fetch(`${R2_WORKER_URL}/object/${path.split('/').map(encodeURIComponent).join('/')}`, {method:'DELETE',headers:{'Authorization':`Bearer ${session?.access_token || ''}`}});
           button.disabled = false; button.textContent = 'Subir'; toast('No se pudo guardar la descripción: ' + insertError.message); return;
         }
         root.replaceChildren(); await loadLibrary(); toast('Archivo guardado en la nube.');
@@ -309,6 +324,20 @@
       if (error) { toast(error.code === '23505' ? 'Esa carpeta ya existe.' : 'No se pudo crear: ' + error.message); return; }
       currentFolder = name; root.replaceChildren(); await loadLibrary();
     });
+
+    $('#migrate-r2').onclick = async () => {
+      const {data:{session}} = await client.auth.getSession();
+      if (!session) { toast('Iniciá sesión como dueño para migrar.'); return; }
+      const button = $('#migrate-r2'); button.disabled = true; button.textContent = 'Migrando…';
+      try {
+        const response = await fetch(`${R2_WORKER_URL}/migrate`, {method:'POST',headers:{'Authorization':`Bearer ${session.access_token}`,'Content-Type':'application/json'},body:JSON.stringify({files:files.map(file=>({path:file.path,size:file.size}))})});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `Error ${response.status}`);
+        const failed = (result.results || []).filter(item=>!item.ok);
+        toast(failed.length ? `Migrados/verificados ${result.verified} de ${files.length}. Revisá ${failed.length} errores.` : `Listo: ${result.verified} archivos verificados en Cloudflare R2.`);
+      } catch (error) { toast('No se pudo migrar: '+error.message); }
+      finally { button.disabled = false; button.textContent = 'Migrar almacenamiento a R2'; }
+    };
 
     function editDescription(id) {
       const file = files.find(item => item.id === id); if (!file) return;
@@ -331,8 +360,14 @@
 
     async function deleteFile(id) {
       const file = files.find(item => item.id === id); if (!file || !confirm(`¿Eliminar ${file.name} de la biblioteca?`)) return;
-      const {error: storageError} = await client.storage.from(BUCKET).remove([file.path]);
+      const {data:{session}} = await client.auth.getSession();
+      let storageError = null;
+      try {
+        const response = await fetch(`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`, {method:'DELETE',headers:{'Authorization':`Bearer ${session?.access_token || ''}`}});
+        if (!response.ok && response.status !== 404) storageError = new Error((await response.json().catch(()=>({}))).error || `Error ${response.status}`);
+      } catch (error) { storageError = error; }
       if (storageError) { toast('No se pudo eliminar el archivo: ' + storageError.message); return; }
+      await client.storage.from(BUCKET).remove([file.path]);
       const {error: rowError} = await client.from('media_files').delete().eq('id',id);
       if (rowError) { toast('Se borró el archivo, pero no su ficha: ' + rowError.message); return; }
       await loadLibrary(); toast('Archivo eliminado.');
@@ -347,4 +382,5 @@
   </script>
 </body>
 </html>
+
 
