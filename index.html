@@ -78,11 +78,13 @@
 
     let ownerMode = false;
     let uploaderMode = false;
+    let r2Available = false;
     let currentUser = null;
     let currentFolder = 'Todos los archivos';
     let files = [];
     let folders = ['Todos los archivos', 'Sin carpeta'];
     const $ = selector => document.querySelector(selector);
+    const getCapacity = () => r2Available ? MAX_BYTES : 1024 * 1024 * 1024;
 
     function formatBytes(bytes) {
       if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -110,7 +112,11 @@
       $('#add-file').classList.toggle('hidden', !ownerMode && !uploaderMode);
       $('#users-button').classList.toggle('hidden', !ownerMode);
       $('#new-folder').classList.toggle('hidden', !ownerMode);
-      $('#migrate-r2').classList.toggle('hidden', !ownerMode);
+      try { const health = await fetch(`${R2_WORKER_URL}/health`); const status = await health.json(); r2Available = health.ok && status.storage && status.configured; } catch { r2Available = false; }
+      $('#migrate-r2').classList.toggle('hidden', !ownerMode || !r2Available);
+      const capacity = getCapacity();
+      document.querySelector('.storage-amount strong:last-child').textContent = formatBytes(capacity);
+      document.querySelector('.storage-foot span:last-child').textContent = r2Available ? 'Cloudflare R2 · nivel gratuito' : 'Almacenamiento actual · 1 GB';
       $('#guest-note').classList.toggle('hidden', ownerMode);
       $('#today').textContent = new Intl.DateTimeFormat('es-AR', {dateStyle:'full'}).format(new Date());
       await loadLibrary();
@@ -178,8 +184,9 @@
     function render() {
       const used = files.reduce((sum, file) => sum + file.size, 0);
       $('#used-label').textContent = formatBytes(used);
-      $('#remaining-label').textContent = `${formatBytes(Math.max(0, MAX_BYTES - used))} disponibles`;
-      $('#bar-fill').style.width = `${Math.min(100, used / MAX_BYTES * 100)}%`;
+      const capacity = getCapacity();
+      $('#remaining-label').textContent = `${formatBytes(Math.max(0, capacity - used))} disponibles`;
+      $('#bar-fill').style.width = `${Math.min(100, used / capacity * 100)}%`;
       const folderList = $('#folder-list'); folderList.replaceChildren();
       folders.forEach(folder => {
         const count = folder === 'Todos los archivos' ? files.length : files.filter(file => file.folder === folder).length;
@@ -251,6 +258,7 @@
       const expiresLabel = new Intl.DateTimeFormat('es-AR', {dateStyle:'full', timeStyle:'short'}).format(expiresAt);
       let signedUrl;
       try {
+        if (!r2Available) throw new Error('R2 no está activo');
         const response = await fetch(`${R2_WORKER_URL}/sign`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:file.path})});
         if (response.ok) signedUrl = (await response.json()).url;
       } catch {}
@@ -268,7 +276,7 @@
 
     async function downloadFile(file) {
       let data;
-      try { const response = await fetch(`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`); if (response.ok) data = await response.blob(); } catch {}
+      try { if (r2Available) { const response = await fetch(`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`); if (response.ok && response.headers.has('Content-Disposition')) data = await response.blob(); } } catch {}
       if (!data) { const {data:legacy,error} = await client.storage.from(BUCKET).download(file.path); if (error) { toast('No se pudo descargar: ' + error.message); return; } data = legacy; }
       const link = document.createElement('a'); const url = URL.createObjectURL(data);
       link.href = url; link.download = file.name; link.click();
@@ -287,25 +295,30 @@
       if (!ownerMode && !uploaderMode) return;
       let selected = null;
       const used = files.reduce((sum, file) => sum + file.size, 0);
-      modal('Subir un archivo', `<div class="drop" id="drop"><strong>Elegí un archivo para subir</strong>o arrastralo hasta acá<br><span style="font-size:10px">Cualquier tipo · Hasta 50 MB por archivo · ${formatBytes(Math.max(0,MAX_BYTES-used))} disponibles</span><input id="file-input" type="file" style="display:none"></div>${ownerMode?'<label class="field-label">Descripción</label><textarea class="field" id="description" rows="3" placeholder="¿Qué contiene este archivo?"></textarea>':'<div class="notice">La descripción la administra el dueño.</div>'}<label class="field-label">Carpeta</label><select class="field" id="folder-select">${folders.filter(folder=>folder!=='Todos los archivos').map(folder=>`<option>${esc(folder)}</option>`).join('')}</select><div id="selected-name" style="font-size:11px;color:#718078;margin-top:9px"></div>`, 'Subir', async root => {
+      modal('Subir un archivo', `<div class="drop" id="drop"><strong>Elegí un archivo para subir</strong>o arrastralo hasta acá<br><span style="font-size:10px">Cualquier tipo · Hasta 50 MB por archivo · ${formatBytes(Math.max(0,getCapacity()-used))} disponibles</span><input id="file-input" type="file" style="display:none"></div>${ownerMode?'<label class="field-label">Descripción</label><textarea class="field" id="description" rows="3" placeholder="¿Qué contiene este archivo?"></textarea>':'<div class="notice">La descripción la administra el dueño.</div>'}<label class="field-label">Carpeta</label><select class="field" id="folder-select">${folders.filter(folder=>folder!=='Todos los archivos').map(folder=>`<option>${esc(folder)}</option>`).join('')}</select><div id="selected-name" style="font-size:11px;color:#718078;margin-top:9px"></div>`, 'Subir', async root => {
         if (!selected) { toast('Elegí un archivo primero.'); return; }
         const currentUsed = files.reduce((sum, file) => sum + file.size, 0);
         if (selected.size > MAX_FILE_BYTES) { toast('En el plan gratuito, el máximo por archivo es 50 MB.'); return; }
-        if (currentUsed + selected.size > MAX_BYTES) { toast('El archivo supera el espacio libre de la biblioteca.'); return; }
+        if (currentUsed + selected.size > getCapacity()) { toast('El archivo supera el espacio libre de la biblioteca.'); return; }
         const button = root.querySelector('.submit'); button.disabled = true; button.textContent = 'Subiendo…';
         const safeName = selected.name.replace(/[\\/]+/g, '_').trim();
-        const path = `${currentUser.id}/${Date.now()}_${crypto.randomUUID()}_${safeName}`;
+        const path = `${r2Available ? `${currentUser.id}/` : ''}${Date.now()}_${crypto.randomUUID()}_${safeName}`;
         const {data:{session}} = await client.auth.getSession();
         let uploadMessage = '';
-        try {
+        try { if (r2Available) {
           const response = await fetch(`${R2_WORKER_URL}/object/${path.split('/').map(encodeURIComponent).join('/')}`, {method:'PUT',headers:{'Authorization':`Bearer ${session?.access_token || ''}`,'Content-Type':selected.type || 'application/octet-stream'},body:selected});
           if (!response.ok) uploadMessage = (await response.json().catch(()=>({}))).error || `Error ${response.status}`;
+        } else {
+          const {error} = await client.storage.from(BUCKET).upload(path, selected, {cacheControl:'3600',upsert:false,contentType:selected.type||'application/octet-stream'});
+          if (error) uploadMessage = error.message;
+        }
         } catch (error) { uploadMessage = error.message; }
         if (uploadMessage) { button.disabled = false; button.textContent = 'Subir'; toast('No se pudo subir a R2: ' + uploadMessage); return; }
         const row = {storage_path:path, file_name:selected.name, file_type:ext(selected.name), size_bytes:selected.size, description:ownerMode ? root.querySelector('#description').value.trim() : '', folder:root.querySelector('#folder-select').value || 'Sin carpeta', created_by:currentUser.id};
         const {error: insertError} = await client.from('media_files').insert(row);
         if (insertError) {
-          await fetch(`${R2_WORKER_URL}/object/${path.split('/').map(encodeURIComponent).join('/')}`, {method:'DELETE',headers:{'Authorization':`Bearer ${session?.access_token || ''}`}});
+          if (r2Available) await fetch(`${R2_WORKER_URL}/object/${path.split('/').map(encodeURIComponent).join('/')}`, {method:'DELETE',headers:{'Authorization':`Bearer ${session?.access_token || ''}`}});
+          else await client.storage.from(BUCKET).remove([path]);
           button.disabled = false; button.textContent = 'Subir'; toast('No se pudo guardar la descripción: ' + insertError.message); return;
         }
         root.replaceChildren(); await loadLibrary(); toast('Archivo guardado en la nube.');
@@ -363,11 +376,16 @@
       const {data:{session}} = await client.auth.getSession();
       let storageError = null;
       try {
+        if (r2Available) {
         const response = await fetch(`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`, {method:'DELETE',headers:{'Authorization':`Bearer ${session?.access_token || ''}`}});
         if (!response.ok && response.status !== 404) storageError = new Error((await response.json().catch(()=>({}))).error || `Error ${response.status}`);
+        } else {
+          const {error} = await client.storage.from(BUCKET).remove([file.path]);
+          if (error) storageError = error;
+        }
       } catch (error) { storageError = error; }
       if (storageError) { toast('No se pudo eliminar el archivo: ' + storageError.message); return; }
-      await client.storage.from(BUCKET).remove([file.path]);
+      if (r2Available) await client.storage.from(BUCKET).remove([file.path]);
       const {error: rowError} = await client.from('media_files').delete().eq('id',id);
       if (rowError) { toast('Se borró el archivo, pero no su ficha: ' + rowError.message); return; }
       await loadLibrary(); toast('Archivo eliminado.');
@@ -382,5 +400,6 @@
   </script>
 </body>
 </html>
+
 
 
