@@ -11,7 +11,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0"></script>
   <style>
     :root{--ink:#17251f;--muted:#718078;--green:#278957;--green2:#48aa70;--line:#e5ece7;--paper:#fff;--wash:#f3f7f4;--mint:#e9f5ed;--shadow:0 12px 35px #193a2510}
-    *{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font-family:'DM Sans',sans-serif}button,input,textarea{font:inherit}button{cursor:pointer}.hidden{display:none!important}
+    *{box-sizing:border-box}body{margin:0;background:var(--user-wash,var(--wash));color:var(--ink);font-family:'DM Sans',sans-serif}button,input,textarea{font:inherit}button{cursor:pointer}.hidden{display:none!important}
     .login-screen{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 20% 15%,#e1f3e7 0,transparent 35%),radial-gradient(ellipse at 85% 80%,#e5f1e8 0,transparent 34%),#f7faf7}
     .login-card{width:min(430px,100%);padding:42px;background:#fff;border:1px solid #e8eee9;border-radius:22px;box-shadow:0 22px 80px #1e42251a}.brand{display:flex;align-items:center;gap:12px;font:800 20px Manrope,sans-serif;letter-spacing:-.5px}.brand-mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:#e6f4ea;color:var(--green)}.login-card h1{font:800 29px Manrope,sans-serif;letter-spacing:-1px;margin:33px 0 8px}.sub{color:var(--muted);font-size:14px;line-height:1.6;margin:0 0 26px}.field-label{display:block;font-size:12px;font-weight:700;margin:17px 0 8px}.field{width:100%;padding:13px 14px;border:1px solid #dfe7e1;border-radius:10px;outline:0;background:#fbfdfb}.field:focus{border-color:#62ad7c;box-shadow:0 0 0 3px #48aa701c}.primary{width:100%;border:0;border-radius:10px;background:var(--green);color:#fff;font-weight:700;padding:13px 16px;margin-top:22px;transition:.18s}.primary:hover{background:#20784a;transform:translateY(-1px)}.login-note{margin-top:19px;padding:12px 13px;border-radius:10px;background:#f2f7f3;color:#69776f;font-size:12px;line-height:1.5}.error{color:#ad3e32;font-size:13px;margin-top:10px;min-height:16px}
     .app{min-height:100vh}.topbar{height:70px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 max(26px,calc((100vw - 1320px)/2));gap:28px}.topbar .brand{font-size:18px}.topnav{display:flex;gap:6px;margin-left:25px}.navitem{border:0;background:none;color:#718078;font-weight:600;padding:9px 12px;border-radius:8px}.navitem.active{background:#eef6f0;color:var(--green)}.topright{margin-left:auto;display:flex;align-items:center;gap:12px}.topright .navitem{font-size:13px}.role-chip{font-size:12px;font-weight:700;color:var(--green);background:#eaf5ed;padding:7px 11px;border-radius:20px}.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#dcefe2;color:#278957;font-weight:700}.logout{border:0;background:none;color:#758179;font-size:13px}
@@ -24,8 +24,9 @@
     .preview-btn{border:1px solid #dcebe0;background:#f4faf5;color:#398857;border-radius:8px;padding:8px 10px;font-size:11px;font-weight:700;white-space:nowrap}.preview-thumb{width:64px;height:52px;object-fit:cover;border-radius:8px;background:#edf2ee;cursor:zoom-in}.preview-video{width:150px;max-height:96px;border-radius:8px;background:#111}\n    .preview-btn{border:1px solid #dcebe0;background:#f4faf5;color:#398857;border-radius:8px;padding:8px 10px;font-size:11px;font-weight:700;white-space:nowrap}.preview-thumb{width:64px;height:52px;object-fit:cover;border-radius:8px;background:#edf2ee;cursor:zoom-in}.preview-video{width:150px;max-height:96px;border-radius:8px;background:#111}
     .theme-toggle{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:9px;padding:8px 10px;font-size:12px;font-weight:600;white-space:nowrap}
     .share-btn{border:1px solid #dcebe0;background:#f0f7f2;color:#278957;border-radius:9px;padding:8px 10px;font-size:11px;font-weight:700;white-space:nowrap}
+    .link-card{border:1px solid #e9efea;border-radius:12px;padding:15px 16px;display:flex;align-items:center;gap:14px}.link-card-main{min-width:0;flex:1}.link-card-title{font-size:14px;font-weight:700;color:var(--ink);overflow-wrap:anywhere}.link-card-url{display:block;margin-top:5px;color:#398857;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.link-card-meta{margin-top:5px;color:#849087;font-size:10px}.link-actions{display:flex;gap:7px;align-items:center}.custom-colors{display:flex;gap:8px;margin:14px 0}.color-swatch{width:34px;height:34px;border:2px solid #fff;outline:1px solid var(--line);border-radius:50%;padding:0}.color-field{width:58px;height:38px;padding:3px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
     :root[data-theme="dark"]{color-scheme:dark;--ink:#e7eee9;--muted:#a8b5ac;--line:#35453b;--paper:#1b2720;--wash:#111914;--mint:#24362a}
-    :root[data-theme="dark"] body{background:var(--wash);color:var(--ink)}
+    :root[data-theme="dark"] body{background:var(--user-wash,var(--wash));color:var(--ink)}
     :root[data-theme="dark"] .topbar,:root[data-theme="dark"] .sidebar,:root[data-theme="dark"] .content,:root[data-theme="dark"] .storage,:root[data-theme="dark"] .login-card,:root[data-theme="dark"] .modal{background:#1b2720;border-color:#35453b;color:var(--ink)}
     :root[data-theme="dark"] .login-screen{background:radial-gradient(ellipse at 20% 15%,#1d3827 0,transparent 35%),radial-gradient(ellipse at 85% 80%,#1b3023 0,transparent 34%),#111914}
     :root[data-theme="dark"] .file-card{background:#1b2720;border-color:#35453b}
@@ -37,8 +38,9 @@
     :root[data-theme="dark"] .theme-toggle{background:#152019;border-color:#3b5042;color:#e7eee9}\n    :root[data-theme="dark"] .preview-btn{background:#24382a;border-color:#3a5c44;color:#a8dfb5}\n    :root[data-theme="dark"] .preview-btn{background:#24382a;border-color:#3a5c44;color:#a8dfb5}
     :root[data-theme="dark"] .login-note{background:#202f25;color:#bcc9c0}\n    :root[data-theme="dark"] .navitem.active{background:#263a2c;color:#a8dfb5}\n    :root[data-theme="dark"] .logout,:root[data-theme="dark"] .side-heading{color:#a8b5ac}
     :root[data-theme="dark"] .share-btn{background:#24382a;border-color:#3a5c44;color:#a8dfb5}
-    @media(max-width:800px){.theme-toggle .theme-label{display:none}.topbar{padding:0 18px;gap:12px}.topnav{margin-left:0}.topnav .navitem:not(.active){display:none}.wrap{padding:24px 16px}.layout{grid-template-columns:1fr}.sidebar{min-height:0}.sidebar-hint{display:none}.sidebar-list{display:flex;gap:4px;overflow:auto}.folder{white-space:nowrap;width:auto}.file-card{grid-template-columns:42px minmax(90px,1fr) auto;gap:10px;padding:11px}.file-icon{height:46px;width:40px}.file-actions{gap:4px}.download{padding:8px 9px}.icon-btn{display:inline-grid;place-items:center}}
-    @media(max-width:520px){.theme-toggle .theme-label{display:none}.login-card{padding:29px 23px}.date{display:none}.welcome h1{font-size:25px}.content{padding:15px}.content-head{gap:8px}.content-title{width:100%}.search{flex:1;width:130px}.file-card{grid-template-columns:40px minmax(0,1fr)}.file-actions{grid-column:2;justify-content:flex-start}.file-desc{font-size:10px}.topbar{height:62px}.topbar .brand{font-size:16px}.topnav{display:none}.logout{font-size:11px}}
+    :root[data-theme="dark"] .link-card{background:#1b2720;border-color:#35453b}:root[data-theme="dark"] .link-card-url{color:#a8dfb5}:root[data-theme="dark"] .color-field{background:#152019}
+    @media(max-width:800px){.theme-toggle .theme-label{display:none}.topbar{height:auto;min-height:70px;flex-wrap:wrap;padding:8px 18px;gap:8px}.topnav{margin-left:0;order:3;width:100%;justify-content:flex-start}.wrap{padding:24px 16px}.layout{grid-template-columns:1fr}.sidebar{min-height:0}.sidebar-hint{display:none}.sidebar-list{display:flex;gap:4px;overflow:auto}.folder{white-space:nowrap;width:auto}.file-card{grid-template-columns:42px minmax(90px,1fr) auto;gap:10px;padding:11px}.file-icon{height:46px;width:40px}.file-actions{gap:4px}.download{padding:8px 9px}.icon-btn{display:inline-grid;place-items:center}}
+    @media(max-width:520px){.theme-toggle .theme-label{display:none}.login-card{padding:29px 23px}.date{display:none}.welcome h1{font-size:25px}.content{padding:15px}.content-head{gap:8px}.content-title{width:100%}.search{flex:1;width:130px}.file-card{grid-template-columns:40px minmax(0,1fr)}.file-actions{grid-column:2;justify-content:flex-start}.file-desc{font-size:10px}.topbar{min-height:62px}.topbar .brand{font-size:15px}.topnav{display:flex;gap:2px}.topnav .navitem{padding:7px 9px;font-size:11px}.topright{gap:6px}.topright .avatar,.topright .role-chip{display:none}.logout{font-size:11px}.link-card{align-items:flex-start;padding:12px}.link-actions{flex-wrap:wrap;justify-content:flex-end}}
   </style>
 </head>
 <body>
@@ -57,13 +59,14 @@
     </div>
   </section>
   <main id="app" class="app hidden">
-    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><span class="navitem active">Mis archivos</span></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
+    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Espacio utilizado</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong>10 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">10 GB disponibles</span><span>Cloudflare R2 · nivel gratuito</span></div></section>
-      <div class="layout"><aside class="sidebar"><div class="side-heading">Carpetas <button id="new-folder" title="Crear carpeta">+</button></div><div class="sidebar-list" id="folder-list"></div><div class="sidebar-hint">Archivos almacenados en la nube. El invitado puede consultar y descargar; solo el dueño puede subir, editar o borrar.</div></aside>
+      <div class="layout" id="files-layout"><aside class="sidebar"><div class="side-heading">Carpetas <button id="new-folder" title="Crear carpeta">+</button></div><div class="sidebar-list" id="folder-list"></div><div class="sidebar-hint">Archivos almacenados en la nube. Los colaboradores pueden crear carpetas, mover archivos y editar la descripción de sus propios archivos; solo el dueño puede borrarlos.</div></aside>
         <section class="content"><div class="content-head"><div class="content-title" id="section-title">Todos los archivos</div><input class="search" id="search" placeholder="⌕  Buscar archivos…"><select class="select" id="type-filter"><option value="all">Todos los tipos</option><option value="apk">APK</option><option value="pkg">PKG</option><option value="pdf">PDF</option><option value="zip">ZIP</option><option value="rar">RAR</option><option value="other">Otros</option></select><button id="add-file" class="add-btn">＋ Subir archivo</button></div><div id="file-list" class="file-list"></div><div id="guest-note" class="notice hidden">Estás en modo invitado. Podés descargar los archivos y leer sus descripciones. Los colaboradores también pueden editar la descripción de los archivos que subieron.</div></section>
       </div>
+      <section class="content hidden" id="links-panel"><div class="content-head"><div class="content-title">Enlaces guardados</div><input class="search" id="links-search" placeholder="⌕  Buscar enlaces…"><button id="all-links" class="navitem active" type="button">Todos</button><button id="own-links" class="navitem" type="button">Propios</button><button id="add-link" class="add-btn">＋ Guardar enlace</button></div><div id="links-list" class="file-list"></div></section>
     </div>
   </main>
   <div id="modal-root"></div>
@@ -85,6 +88,10 @@
     let r2Available = false;
     let currentUser = null;
     let currentFolder = 'Todos los archivos';
+    let currentView = 'files';
+    let currentLinkFilter = 'all';
+    let links = [];
+    let backgroundColor = '#f3f7f4';
     let files = [];
     let folders = ['Todos los archivos', 'Sin carpeta'];
     const $ = selector => document.querySelector(selector);
@@ -163,13 +170,17 @@
 
     async function enterLibrary(isOwner, user = null, isUploader = false) {
       ownerMode = isOwner; uploaderMode = isUploader; currentUser = user;
+      currentLinkFilter = 'all'; $('#all-links').classList.add('active'); $('#own-links').classList.remove('active');
       $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
       $('#role-chip').textContent = ownerMode ? 'Dueño' : (uploaderMode ? 'Colaborador' : 'Invitado');
       $('#avatar').textContent = ownerMode ? 'N' : (uploaderMode ? (user?.user_metadata?.username?.[0]?.toUpperCase() || 'C') : 'I');
       $('#welcome-name').textContent = ownerMode ? 'nxmollpy' : (uploaderMode ? (user?.user_metadata?.username || 'Colaborador') : 'Invitado');
       $('#add-file').classList.toggle('hidden', !ownerMode && !uploaderMode);
       $('#users-button').classList.toggle('hidden', !ownerMode);
-      $('#new-folder').classList.toggle('hidden', !ownerMode);
+      $('#new-folder').classList.toggle('hidden', !ownerMode && !uploaderMode);
+      $('#add-link').classList.toggle('hidden', !ownerMode && !uploaderMode);
+      $('#customize-button').classList.toggle('hidden', !ownerMode && !uploaderMode);
+      $('#own-links').classList.toggle('hidden', !currentUser);
       try { const health = await fetch(`${R2_WORKER_URL}/health`); const status = await health.json(); r2Available = health.ok && status.storage && status.configured; } catch { r2Available = false; }
       const capacity = getCapacity();
       document.querySelector('.storage-amount strong:last-child').textContent = formatBytes(capacity);
@@ -177,6 +188,8 @@
       $('#guest-note').classList.toggle('hidden', ownerMode);
       $('#today').textContent = new Intl.DateTimeFormat('es-AR', {dateStyle:'full'}).format(new Date());
       await loadLibrary();
+      await Promise.all([loadLinks(), loadPreferences()]);
+      switchView('files');
     }
 
     $('#login-form').addEventListener('submit', async event => {
@@ -213,10 +226,11 @@
 
     $('#logout').onclick = async () => {
       if (ownerMode) await client.auth.signOut();
-      ownerMode = false; uploaderMode = false; currentUser = null; files = [];
+      ownerMode = false; uploaderMode = false; currentUser = null; files = []; links = [];
       $('#app').classList.add('hidden'); $('#login').classList.remove('hidden');
       $('#login-form').reset(); $('#login-error').textContent = '';
       currentFolder = 'Todos los archivos';
+      document.documentElement.style.removeProperty('--user-wash');
     };
 
     async function loadLibrary() {
@@ -272,9 +286,9 @@
         card.querySelector('.share-btn').onclick = () => shareFile(file);
         if (canEditDescription) card.querySelector('.edit').onclick = () => editDescription(file.id);
         if (canPreview) card.querySelector('.preview-btn').onclick = () => previewFile(file);
-        if (ownerMode) {
-          card.querySelector('.delete').onclick = () => deleteFile(file.id);
-           const move = document.createElement('button'); move.className='icon-btn move'; move.title='Mover a otra carpeta'; move.textContent='↗'; move.onclick=()=>moveFile(file.id); card.querySelector('.file-actions').append(move);
+        if (ownerMode || uploaderMode) {
+          if (ownerMode) card.querySelector('.delete').onclick = () => deleteFile(file.id);
+          const move = document.createElement('button'); move.className='icon-btn move'; move.title='Mover a otra carpeta'; move.textContent='↗'; move.onclick=()=>moveFile(file.id); card.querySelector('.file-actions').append(move);
         }
         output.append(card);
       });
@@ -288,7 +302,7 @@
       files.forEach(file => { if (file.createdBy) usageByUser.set(file.createdBy, (usageByUser.get(file.createdBy)||0) + file.size); });
       let rows = (accounts || []).map(u => '<div class="file-card" style="grid-template-columns:1fr auto"><div><div class="file-name">'+esc(u.username)+'</div><div class="file-meta">Puede subir y descargar · espacio usado: '+formatBytes(usageByUser.get(u.id)||0)+'</div></div><span class="role-chip">Colaborador</span></div>').join('');
       if (!rows) rows = '<div class="notice">Todavía no hay usuarios registrados.</div>';
-      modal('Usuarios registrados', '<div class="file-list">'+rows+'</div><hr style="border:0;border-top:1px solid #e5ece7;margin:22px 0"><h3 style="font:700 15px Manrope">Crear usuario colaborador</h3><label class="field-label">Nombre de usuario</label><input class="field" id="new-username" autocomplete="off" placeholder="por ejemplo, juan_01"><label class="field-label">Contraseña inicial</label><input class="field" id="new-password" type="password" minlength="8" placeholder="Mínimo 8 caracteres"><div class="notice">Este usuario podrá subir y descargar. Puede editar las descripciones de sus archivos. Solo vos podés mover o borrar.</div>', 'Crear usuario', async root => {
+      modal('Usuarios registrados', '<div class="file-list">'+rows+'</div><hr style="border:0;border-top:1px solid #e5ece7;margin:22px 0"><h3 style="font:700 15px Manrope">Crear usuario colaborador</h3><label class="field-label">Nombre de usuario</label><input class="field" id="new-username" autocomplete="off" placeholder="por ejemplo, juan_01"><label class="field-label">Contraseña inicial</label><input class="field" id="new-password" type="password" minlength="8" placeholder="Mínimo 8 caracteres"><div class="notice">Este usuario podrá subir, descargar, editar las descripciones de sus archivos, crear carpetas y mover archivos. Solo vos podés borrar.</div>', 'Crear usuario', async root => {
         const username=root.querySelector('#new-username').value.trim().toLowerCase(), password=root.querySelector('#new-password').value;
         if(!username||password.length<8){toast('Completá el usuario y una contraseña de al menos 8 caracteres.');return;}
         const {data:{session}}=await client.auth.getSession();
@@ -299,6 +313,94 @@
     }
 
     $('#users-button').onclick = showUsers;
+    function switchView(view) {
+      currentView = view;
+      const filesActive = view === 'files';
+      $('#files-layout').classList.toggle('hidden', !filesActive);
+      $('.storage').classList.toggle('hidden', !filesActive);
+      $('#links-panel').classList.toggle('hidden', filesActive);
+      $('#files-tab').classList.toggle('active', filesActive);
+      $('#links-tab').classList.toggle('active', !filesActive);
+    }
+    $('#files-tab').onclick = () => switchView('files');
+    $('#links-tab').onclick = () => switchView('links');
+
+    async function loadLinks() {
+      const pageSize=500,all=[];
+      for(let start=0;;start+=pageSize){
+        const {data,error}=await client.from('media_links').select('id,title,url,created_by,created_at').order('created_at',{ascending:false}).range(start,start+pageSize-1);
+        if(error){$('#links-list').innerHTML=`<div class="empty"><div class="empty-icon">!</div><h3>No se pudieron cargar los enlaces</h3><p>${esc(error.message)}</p></div>`;return;}
+        all.push(...(data||[]));if(!data||data.length<pageSize)break;
+      }
+      links = all;
+      renderLinks();
+    }
+    function renderLinks() {
+      const output = $('#links-list'); if (!output) return;
+      const query = ($('#links-search')?.value || '').trim().toLowerCase();
+      const shown = links.filter(link => currentLinkFilter !== 'own' || link.created_by === currentUser?.id)
+        .filter(link => `${link.title} ${link.url}`.toLowerCase().includes(query))
+        .sort((a,b) => a.title.localeCompare(b.title,'es',{sensitivity:'base'}));
+      output.replaceChildren();
+      if (!shown.length) {
+        output.innerHTML = `<div class="empty"><div class="empty-icon">↗</div><h3>${currentLinkFilter==='own'?'Todavía no guardaste enlaces':'Todavía no hay enlaces guardados'}</h3><p>${ownerMode||uploaderMode?'Guardá un enlace para que quede disponible para todos.':'Cuando alguien guarde enlaces, los vas a ver acá.'}</p></div>`;
+        return;
+      }
+      shown.forEach(link => {
+        const card = document.createElement('article'); card.className='link-card';
+        let host=''; try { host=new URL(link.url).hostname; } catch {}
+        const canManage = ownerMode || (uploaderMode && link.created_by === currentUser?.id);
+        card.innerHTML = `<div class="link-card-main"><div class="link-card-title">${esc(link.title)}</div><a class="link-card-url" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">${esc(host ? `${host} · ${link.url}` : link.url)}</a><div class="link-card-meta">${new Intl.DateTimeFormat('es-AR',{dateStyle:'medium'}).format(new Date(link.created_at))}</div></div><div class="link-actions"><a class="preview-btn" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">Abrir</a>${canManage?'<button class="icon-btn edit-link" title="Editar enlace">✎</button><button class="icon-btn delete-link" title="Eliminar enlace">×</button>':''}</div>`;
+        if (canManage) {
+          card.querySelector('.edit-link').onclick=()=>openLinkEditor(link);
+          card.querySelector('.delete-link').onclick=async()=>{if(!confirm(`¿Eliminar el enlace “${link.title}”?`))return;const {error}=await client.from('media_links').delete().eq('id',link.id);if(error){toast('No se pudo eliminar el enlace: '+error.message);return;}await loadLinks();toast('Enlace eliminado.');};
+        }
+        output.append(card);
+      });
+    }
+    $('#all-links').onclick=()=>{currentLinkFilter='all';$('#all-links').classList.add('active');$('#own-links').classList.remove('active');renderLinks();};
+    $('#own-links').onclick=()=>{currentLinkFilter='own';$('#own-links').classList.add('active');$('#all-links').classList.remove('active');renderLinks();};
+    $('#links-search').oninput=renderLinks;
+    function openLinkEditor(link=null) {
+      const editing=Boolean(link);
+      modal(editing?'Editar enlace':'Guardar enlace','<label class="field-label" for="link-title">Nombre</label><input class="field" id="link-title" maxlength="120" placeholder="Por ejemplo, GitHub" value="'+esc(link?.title||'')+'"><label class="field-label" for="link-url">Enlace</label><input class="field" id="link-url" type="url" maxlength="2048" placeholder="https://github.com/" value="'+esc(link?.url||'')+'">',editing?'Guardar':'Agregar',async root=>{
+        const title=root.querySelector('#link-title').value.trim(),rawUrl=root.querySelector('#link-url').value.trim();
+        let url;try{url=new URL(rawUrl);if(!['http:','https:'].includes(url.protocol))throw new Error();}catch{toast('Ingresá un enlace válido que empiece con http:// o https://.');return;}
+        if(!title){toast('Escribí un nombre para el enlace.');return;}
+        const payload={title,url:url.href};
+        const result=editing?await client.from('media_links').update(payload).eq('id',link.id):await client.from('media_links').insert({...payload,created_by:currentUser.id});
+        if(result.error){toast('No se pudo guardar el enlace: '+result.error.message);return;}
+        root.replaceChildren();await loadLinks();toast(editing?'Enlace actualizado.':'Enlace guardado para todos.');
+      });
+    }
+    $('#add-link').onclick=()=>openLinkEditor();
+
+    function applyBackground(color) {
+      backgroundColor = /^#[0-9a-f]{6}$/i.test(color) ? color : '#f3f7f4';
+      document.documentElement.style.setProperty('--user-wash',backgroundColor);
+    }
+    async function loadPreferences() {
+      if (!currentUser?.id) { applyBackground('#f3f7f4'); return; }
+      const {data,error}=await client.from('media_preferences').select('background_color').eq('user_id',currentUser.id).maybeSingle();
+      if (error) { applyBackground('#f3f7f4'); return; }
+      applyBackground(data?.background_color||'#f3f7f4');
+    }
+    $('#customize-button').onclick=()=>{
+      const presets=['#f3f7f4','#e8f1fa','#fff3e8','#f4eafa','#e9f4ed','#202b38'];
+      const swatches=presets.map(color=>`<button class="color-swatch" type="button" data-color="${color}" style="background:${color}" aria-label="Fondo ${color}"></button>`).join('');
+      modal('Personalizar fondo',`<p class="sub">El cambio se guarda en tu cuenta y lo vas a ver cuando vuelvas a iniciar sesión.</p><label class="field-label" for="background-color">Elegí un color</label><input class="color-field" id="background-color" type="color" value="${esc(backgroundColor)}"><div class="custom-colors">${swatches}</div>`, 'Guardar fondo',async root=>{
+        const color=root.querySelector('#background-color').value;
+        const {error}=await client.from('media_preferences').upsert({user_id:currentUser.id,background_color:color,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+        if(error){toast('No se pudo guardar el fondo: '+error.message);return;}
+        applyBackground(color);root.replaceChildren();toast('Fondo guardado para tu cuenta.');
+      });
+      const root=$('#modal-root'),picker=root.querySelector('#background-color');
+      picker.oninput=()=>applyBackground(picker.value);
+      root.querySelectorAll('.color-swatch').forEach(button=>button.onclick=()=>{picker.value=button.dataset.color;applyBackground(button.dataset.color);});
+      const restore=()=>applyBackground(backgroundColor);
+      root.querySelector('.close').addEventListener('click',restore);root.querySelector('.cancel').addEventListener('click',restore);
+      root.querySelector('.modal-backdrop').addEventListener('click',event=>{if(event.target.classList.contains('modal-backdrop'))restore();});
+    };
     function setTheme(theme) {
       const dark = theme === 'dark';
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
@@ -452,5 +554,6 @@
   </script>
 </body>
 </html>
+
 
 
