@@ -40,7 +40,7 @@
     </div>
   </section>
   <main id="app" class="app hidden">
-    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><button class="navitem active">Mis archivos</button><button class="navitem">Compartidos</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
+    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><span class="navitem active">Mis archivos</span></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span> 👋</h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Espacio utilizado</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong>1 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">1 GB disponibles</span><span>Plan gratuito · 1 GB</span></div></section>
@@ -199,13 +199,13 @@
     async function showUsers() {
       const {data:accounts,error} = await client.from('media_users').select('username,email,created_at').order('created_at',{ascending:false});
       if (error) { toast('No se pudieron cargar los usuarios: '+error.message); return; }
-      let rows = (accounts || []).map(u => '<div class="file-card" style="grid-template-columns:1fr auto"><div><div class="file-name">'+esc(u.username)+'</div><div class="file-meta">'+esc(u.email)+' · Puede subir y descargar</div></div><span class="role-chip">Colaborador</span></div>').join('');
+      let rows = (accounts || []).map(u => '<div class="file-card" style="grid-template-columns:1fr auto"><div><div class="file-name">'+esc(u.username)+'</div><div class="file-meta">Puede subir y descargar</div></div><span class="role-chip">Colaborador</span></div>').join('');
       if (!rows) rows = '<div class="notice">Todavía no hay usuarios registrados.</div>';
-      modal('Usuarios registrados', '<div class="file-list">'+rows+'</div><hr style="border:0;border-top:1px solid #e5ece7;margin:22px 0"><h3 style="font:700 15px Manrope">Crear usuario colaborador</h3><label class="field-label">Nombre de usuario</label><input class="field" id="new-username" autocomplete="off" placeholder="por ejemplo, juan_01"><label class="field-label">Correo para recuperar la cuenta</label><input class="field" id="new-email" type="email" placeholder="correo@ejemplo.com"><label class="field-label">Contraseña inicial</label><input class="field" id="new-password" type="password" minlength="8" placeholder="Mínimo 8 caracteres"><div class="notice">Este usuario podrá subir y descargar. Solo vos podés cambiar descripciones, mover o borrar archivos.</div>', 'Crear usuario', async root => {
-        const username=root.querySelector('#new-username').value.trim().toLowerCase(), email=root.querySelector('#new-email').value.trim(), password=root.querySelector('#new-password').value;
-        if(!username||!email||password.length<8){toast('Completá los datos. La contraseña necesita al menos 8 caracteres.');return;}
+      modal('Usuarios registrados', '<div class="file-list">'+rows+'</div><hr style="border:0;border-top:1px solid #e5ece7;margin:22px 0"><h3 style="font:700 15px Manrope">Crear usuario colaborador</h3><label class="field-label">Nombre de usuario</label><input class="field" id="new-username" autocomplete="off" placeholder="por ejemplo, juan_01"><label class="field-label">Contraseña inicial</label><input class="field" id="new-password" type="password" minlength="8" placeholder="Mínimo 8 caracteres"><div class="notice">Este usuario podrá subir y descargar. Solo vos podés cambiar descripciones, mover o borrar archivos.</div>', 'Crear usuario', async root => {
+        const username=root.querySelector('#new-username').value.trim().toLowerCase(), password=root.querySelector('#new-password').value;
+        if(!username||password.length<8){toast('Completá el usuario y una contraseña de al menos 8 caracteres.');return;}
         const {data:{session}}=await client.auth.getSession();
-        const response=await fetch(SUPABASE_URL+'/functions/v1/create-uploader',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY,'Authorization':'Bearer '+(session?.access_token||'')},body:JSON.stringify({action:'create',username,email,password})});
+        const response=await fetch(SUPABASE_URL+'/functions/v1/create-uploader',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY,'Authorization':'Bearer '+(session?.access_token||'')},body:JSON.stringify({action:'create',username,password})});
         const result=await response.json(); if(!response.ok){toast(result.error||'No se pudo crear el usuario.');return;}
         root.replaceChildren(); toast('Usuario creado. Ya puede iniciar sesión.'); showUsers();
       });
