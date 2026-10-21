@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mediachafa-storage",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-21",
+  "workers_dev": true,
+  "r2_buckets": [
+    { "binding": "MEDIA_BUCKET", "bucket_name": "mediachafa-files" }
+  ],
+  "vars": {
+    "SUPABASE_URL": "https://velxgwkujcabdaxbppyj.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-",
+    "OWNER_USER_ID": "3da2624d-d1cc-49e9-a536-ed8c0c480779"
+  }
+}
