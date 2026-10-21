@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f2f7f3" />
   <title>MediaChafa — biblioteca de archivos</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -39,8 +39,25 @@
     :root[data-theme="dark"] .login-note{background:#202f25;color:#bcc9c0}\n    :root[data-theme="dark"] .navitem.active{background:#263a2c;color:#a8dfb5}\n    :root[data-theme="dark"] .logout,:root[data-theme="dark"] .side-heading{color:#a8b5ac}
     :root[data-theme="dark"] .share-btn{background:#24382a;border-color:#3a5c44;color:#a8dfb5}
     :root[data-theme="dark"] .link-card{background:#1b2720;border-color:#35453b}:root[data-theme="dark"] .link-card-url{color:#a8dfb5}:root[data-theme="dark"] .color-field{background:#152019}
-    @media(max-width:800px){.theme-toggle .theme-label{display:none}.topbar{height:auto;min-height:70px;flex-wrap:wrap;padding:8px 18px;gap:8px}.topnav{margin-left:0;order:3;width:100%;justify-content:flex-start}.wrap{padding:24px 16px}.layout{grid-template-columns:1fr}.sidebar{min-height:0}.sidebar-hint{display:none}.sidebar-list{display:flex;gap:4px;overflow:auto}.folder{white-space:nowrap;width:auto}.file-card{grid-template-columns:42px minmax(90px,1fr) auto;gap:10px;padding:11px}.file-icon{height:46px;width:40px}.file-actions{gap:4px}.download{padding:8px 9px}.icon-btn{display:inline-grid;place-items:center}}
-    @media(max-width:520px){.theme-toggle .theme-label{display:none}.login-card{padding:29px 23px}.date{display:none}.welcome h1{font-size:25px}.content{padding:15px}.content-head{gap:8px}.content-title{width:100%}.search{flex:1;width:130px}.file-card{grid-template-columns:40px minmax(0,1fr)}.file-actions{grid-column:2;justify-content:flex-start}.file-desc{font-size:10px}.topbar{min-height:62px}.topbar .brand{font-size:15px}.topnav{display:flex;gap:2px}.topnav .navitem{padding:7px 9px;font-size:11px}.topright{gap:6px}.topright .avatar,.topright .role-chip{display:none}.logout{font-size:11px}.link-card{align-items:flex-start;padding:12px}.link-actions{flex-wrap:wrap;justify-content:flex-end}}
+    @media(max-width:1024px){.topbar{padding-left:20px;padding-right:20px;gap:18px}.topnav{margin-left:6px}.topright{gap:8px}.wrap{padding-left:20px;padding-right:20px}.layout{grid-template-columns:210px minmax(0,1fr);gap:16px}.file-card{grid-template-columns:44px minmax(0,1fr)}.file-actions{grid-column:1/-1;flex-wrap:wrap;gap:7px}}
+    @media(max-width:860px){.topbar{height:auto;min-height:70px;flex-wrap:wrap;padding:10px 18px;gap:8px}.topnav{margin-left:0;order:3;width:100%;justify-content:flex-start}.topright{margin-left:auto}.wrap{padding:22px 16px 40px}.layout{grid-template-columns:1fr}.sidebar{min-height:0;padding:12px}.sidebar-hint{display:none}.sidebar-list{display:flex;gap:4px;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:3px}.folder{white-space:nowrap;width:auto;min-height:40px;flex:0 0 auto}.side-heading button{width:36px;height:36px}.file-card{grid-template-columns:44px minmax(0,1fr)}.file-actions{grid-column:1/-1;flex-wrap:wrap;gap:7px}.download,.share-btn,.preview-btn,.icon-btn{min-height:40px}.icon-btn{width:40px;display:inline-grid;place-items:center}}
+    @media(max-width:600px){
+      .topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"brand actions" "nav nav";gap:9px 10px;padding:10px 12px;min-height:0}
+      .topbar>.brand{grid-area:brand;font-size:15px;gap:8px;min-width:0}.topbar .brand-mark{width:34px;height:34px;flex:0 0 auto}
+      .topnav{grid-area:nav;display:grid;grid-template-columns:1fr 1fr;order:initial;width:100%;margin:0;padding:4px;gap:4px;border-radius:11px;background:#f1f6f2}
+      .topnav .navitem{display:block;min-height:40px;padding:8px 10px;font-size:12px}
+      .topright{grid-area:actions;display:flex;gap:4px;margin:0;min-width:0;justify-content:flex-end}.topright .avatar,.topright .role-chip{display:none}.topright .theme-toggle{padding:7px 8px;font-size:11px}.topright .theme-label{display:none}.topright .logout{font-size:11px;padding:7px 2px;white-space:nowrap}.topright #users-button{padding:7px 5px;font-size:11px;white-space:nowrap}
+      .wrap{padding:17px 11px calc(30px + env(safe-area-inset-bottom))}.welcome{display:block;margin-bottom:15px}.welcome h1{font-size:26px}.welcome p{font-size:13px}.date{display:none}
+      .storage{padding:14px;margin-bottom:14px}.storage-head{align-items:flex-start;gap:8px;flex-wrap:wrap}.storage-title,.storage-amount{font-size:11px}.storage-foot{flex-wrap:wrap;gap:4px 10px;font-size:10px}
+      .layout{gap:11px}.sidebar{padding:10px;border-radius:12px}.side-heading{padding:3px 5px 8px}.sidebar-list{margin:0 -2px}.folder{padding:8px 10px;font-size:12px}
+      .content{min-height:unset;padding:13px;border-radius:12px}.content-head{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:14px}.content-title{grid-column:1/-1;width:auto;margin:0;font-size:18px}.search{grid-column:1/-1;width:100%;min-height:44px;font-size:14px}.select{width:100%;min-height:44px;padding:9px;font-size:12px}.add-btn{width:100%;min-height:44px;padding:9px;font-size:12px}
+      .file-card{grid-template-columns:42px minmax(0,1fr);gap:9px;padding:11px;min-width:0}.file-icon{height:46px;width:40px}.file-name{white-space:normal;overflow-wrap:anywhere;line-height:1.35}.file-meta{line-height:1.5;overflow-wrap:anywhere}.file-desc{font-size:11px}.file-actions{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap;gap:7px}.download,.share-btn,.preview-btn{min-height:42px;padding:9px 11px}.icon-btn{width:42px;height:42px;min-height:42px}
+      #links-panel .content-head>#all-links,#links-panel .content-head>#own-links{min-height:40px}.link-card{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:12px}.link-card-url{white-space:normal;overflow-wrap:anywhere;line-height:1.45}.link-actions{justify-content:flex-start;flex-wrap:wrap}.link-actions a,.link-actions button{min-height:40px}
+      .login-screen{padding:14px;min-height:100svh}.login-card{width:min(430px,100%);padding:28px 21px;border-radius:18px}.login-card h1{font-size:26px;margin-top:26px}.field{min-height:46px;font-size:16px}.login-card .primary{min-height:48px}
+      .modal-backdrop{align-items:end;padding:8px 8px calc(8px + env(safe-area-inset-bottom))}.modal{width:100%;max-height:88vh;max-height:88dvh;border-radius:18px 18px 10px 10px;padding:20px 16px}.modal .field{min-height:46px;font-size:16px}.modal textarea.field{min-height:100px}.modal-actions{position:sticky;bottom:-20px;margin:16px -2px -4px;padding:10px 2px 4px;background:inherit}.modal-actions button{min-height:44px}
+      .toast{left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));transform:none;text-align:center}
+    }
+    @media(pointer:coarse){button,a,.folder{touch-action:manipulation}button{min-height:40px}}
   </style>
 </head>
 <body>
@@ -96,6 +113,15 @@
     let folders = ['Todos los archivos', 'Sin carpeta'];
     const $ = selector => document.querySelector(selector);
     const getCapacity = () => r2Available ? MAX_BYTES : 1024 * 1024 * 1024;
+    function updateDeviceMode() {
+      const width = window.visualViewport?.width || document.documentElement.clientWidth;
+      const touch = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+      document.documentElement.dataset.device = width <= 600 ? 'phone' : (touch && width <= 1100 ? 'tablet' : (width <= 900 ? 'compact' : 'desktop'));
+    }
+    updateDeviceMode();
+    window.addEventListener('resize', updateDeviceMode, {passive:true});
+    window.addEventListener('orientationchange', updateDeviceMode, {passive:true});
+    window.visualViewport?.addEventListener('resize', updateDeviceMode, {passive:true});
 
     function formatBytes(bytes) {
       if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
