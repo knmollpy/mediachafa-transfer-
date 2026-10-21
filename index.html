@@ -250,7 +250,7 @@
       const {data,error} = await client.storage.from(BUCKET).createSignedUrl(file.path, expiresIn, {download:true});
       if (error) { toast('No se pudo crear el enlace: ' + error.message); return; }
       const signedUrl = data.signedUrl.startsWith('http') ? data.signedUrl : SUPABASE_URL + data.signedUrl;
-      modal('Enlace de descarga', '<p class="sub">Este enlace permite descargar solo este archivo. Dura 7 días y vence el <strong>\${expiresLabel}</strong>. Después de esa fecha dejará de funcionar. Cualquiera que tenga el enlace podrá descargarlo.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="' + esc(signedUrl) + '">', 'Copiar enlace', async root => {
+      modal('Enlace de descarga', '<p class="sub">Este enlace permite descargar solo este archivo. Dura 7 días y vence el <strong>${expiresLabel}</strong>. Después de esa fecha dejará de funcionar. Cualquiera que tenga el enlace podrá descargarlo.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="' + esc(signedUrl) + '">', 'Copiar enlace', async root => {
         const input = root.querySelector('#share-link');
         try { await navigator.clipboard.writeText(input.value); toast('Enlace copiado.'); root.replaceChildren(); }
         catch { input.focus(); input.select(); toast('Copiá el enlace seleccionado.'); }
