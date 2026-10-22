@@ -153,15 +153,22 @@
       const auth={Authorization:`Bearer ${token}`,'Content-Type':'application/json'};
       const created=await fetch(`${R2_WORKER_URL}/multipart/create`,{method:'POST',headers:auth,body:JSON.stringify({path,size:file.size,contentType:file.type||'application/octet-stream'})});
       const upload=await created.json(); if(!created.ok) throw new Error(upload.error||`Error ${created.status}`);
-      const parts=[]; const count=Math.ceil(file.size/upload.partSize); let uploaded=0;
+      const count=Math.ceil(file.size/upload.partSize), parts=new Array(count); let uploaded=0, nextPart=0;
       try {
-        for(let i=0;i<count;i++) {
-          const number=i+1, start=i*upload.partSize, end=Math.min(file.size,start+upload.partSize);
-          button.textContent=`Subiendo ${Math.round(end/file.size*100)}%…`;
-          const response=await fetch(`${R2_WORKER_URL}/multipart/part?path=${encodeURIComponent(path)}&uploadId=${encodeURIComponent(upload.uploadId)}&partNumber=${number}`,{method:'PUT',headers:{Authorization:`Bearer ${token}`},body:file.slice(start,end)});
-          const result=await response.json(); if(!response.ok) throw new Error(result.error||`Falló la parte ${number}`);
-          parts.push({partNumber:number,etag:result.etag}); uploaded=Math.min(file.size,uploaded+end-start); onProgress(uploaded);
-        }
+        const uploadNextPart=async()=>{
+          while(true) {
+            const index=nextPart++;
+            if(index>=count) return;
+            const number=index+1, start=index*upload.partSize, end=Math.min(file.size,start+upload.partSize);
+            const response=await fetch(`${R2_WORKER_URL}/multipart/part?path=${encodeURIComponent(path)}&uploadId=${encodeURIComponent(upload.uploadId)}&partNumber=${number}`,{method:'PUT',headers:{Authorization:`Bearer ${token}`},body:file.slice(start,end)});
+            const result=await response.json(); if(!response.ok) throw new Error(result.error||`Falló la parte ${number}`);
+            parts[index]={partNumber:number,etag:result.etag}; uploaded=Math.min(file.size,uploaded+end-start);
+            button.textContent=`Subiendo ${Math.floor(uploaded/file.size*100)}%…`; onProgress(uploaded);
+          }
+        };
+        const results=await Promise.allSettled(Array.from({length:Math.min(3,count)},()=>uploadNextPart()));
+        const failed=results.find(result=>result.status==='rejected');
+        if(failed) throw failed.reason;
         const done=await fetch(`${R2_WORKER_URL}/multipart/complete`,{method:'POST',headers:auth,body:JSON.stringify({path,uploadId:upload.uploadId,parts})});
         const result=await done.json(); if(!done.ok) throw new Error(result.error||`Error ${done.status}`);
       } catch(error) {
@@ -565,7 +572,6 @@
         }
       } catch (error) { storageError = error; }
       if (storageError) { toast('No se pudo eliminar el archivo: ' + storageError.message); return; }
-      if (r2Available) await client.storage.from(BUCKET).remove([file.path]);
       const {error: rowError} = await client.from('media_files').delete().eq('id',id);
       if (rowError) { toast('Se borró el archivo, pero no su ficha: ' + rowError.message); return; }
       await loadLibrary(); toast('Archivo eliminado.');
