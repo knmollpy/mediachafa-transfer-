@@ -394,15 +394,16 @@
       shown.forEach(file => {
         const card = document.createElement('article'); card.className = 'file-card';
         const canEditDescription = ownerMode || (uploaderMode && file.createdBy === currentUser?.id);
+        const canDelete = ownerMode || (uploaderMode && file.createdBy === currentUser?.id);
         const canPreview = isPreviewable(file.mimeType);
-        card.innerHTML = `<div class="file-icon ${typeClass(file.type)}">${esc(file.type.toUpperCase().slice(0,5))}</div><div><div class="file-name" title="${esc(file.name)}">${esc(file.name)}</div><div class="file-meta">${formatBytes(file.size)} · Agregado ${esc(file.date)}</div><div class="file-desc">${esc(file.description || 'Sin descripción.')}</div></div><div class="file-actions">${canPreview?'<button class="preview-btn">Vista previa</button>':''}<button class="download">↓ Descargar</button><button class="share-btn" title="Crear enlace de descarga">🔗 Compartir</button>${canEditDescription?'<button class="icon-btn edit" title="Editar descripción">✎</button>':''}${ownerMode?'<button class="icon-btn delete" title="Eliminar">×</button>':''}</div>`;
+        card.innerHTML = `<div class="file-icon ${typeClass(file.type)}">${esc(file.type.toUpperCase().slice(0,5))}</div><div><div class="file-name" title="${esc(file.name)}">${esc(file.name)}</div><div class="file-meta">${formatBytes(file.size)} · Agregado ${esc(file.date)}</div><div class="file-desc">${esc(file.description || 'Sin descripción.')}</div></div><div class="file-actions">${canPreview?'<button class="preview-btn">Vista previa</button>':''}<button class="download">↓ Descargar</button><button class="share-btn" title="Crear enlace de descarga">🔗 Compartir</button>${canEditDescription?'<button class="icon-btn edit" title="Editar descripción">✎</button>':''}${canDelete?'<button class="icon-btn delete" title="Eliminar">×</button>':''}</div>`;
         card.querySelector('.file-meta').insertAdjacentHTML('beforeend', `<span class="storage-badge">${storageProviderLabel(file)}</span>`);
         card.querySelector('.download').onclick = () => downloadFile(file);
         card.querySelector('.share-btn').onclick = () => shareFile(file);
         if (canEditDescription) card.querySelector('.edit').onclick = () => editDescription(file.id);
         if (canPreview) card.querySelector('.preview-btn').onclick = () => previewFile(file);
+        if (canDelete) card.querySelector('.delete').onclick = () => deleteFile(file.id);
         if (ownerMode || uploaderMode) {
-          if (ownerMode) card.querySelector('.delete').onclick = () => deleteFile(file.id);
           const move = document.createElement('button'); move.className='icon-btn move'; move.title='Mover a otra carpeta'; move.textContent='↗'; move.onclick=()=>moveFile(file.id); card.querySelector('.file-actions').append(move);
         }
         if (ownerMode || uploaderMode) {
@@ -420,7 +421,7 @@
       files.forEach(file => { if (file.createdBy) usageByUser.set(file.createdBy, (usageByUser.get(file.createdBy)||0) + file.size); });
       let rows = (accounts || []).map(u => '<div class="file-card" style="grid-template-columns:1fr auto"><div><div class="file-name">'+esc(u.username)+'</div><div class="file-meta">Puede subir y descargar · espacio usado: '+formatBytes(usageByUser.get(u.id)||0)+'</div></div><span class="role-chip">Colaborador</span></div>').join('');
       if (!rows) rows = '<div class="notice">Todavía no hay usuarios registrados.</div>';
-      modal('Usuarios registrados', '<div class="file-list">'+rows+'</div><hr style="border:0;border-top:1px solid #e5ece7;margin:22px 0"><h3 style="font:700 15px Manrope">Crear usuario colaborador</h3><label class="field-label">Nombre de usuario</label><input class="field" id="new-username" autocomplete="off" placeholder="por ejemplo, juan_01"><label class="field-label">Contraseña inicial</label><input class="field" id="new-password" type="password" minlength="8" placeholder="Mínimo 8 caracteres"><div class="notice">Este usuario podrá subir, descargar, editar las descripciones de sus archivos, crear carpetas, mover y transferir archivos entre los almacenamientos conectados. Solo vos podés borrar.</div>', 'Crear usuario', async root => {
+      modal('Usuarios registrados', '<div class="file-list">'+rows+'</div><hr style="border:0;border-top:1px solid #e5ece7;margin:22px 0"><h3 style="font:700 15px Manrope">Crear usuario colaborador</h3><label class="field-label">Nombre de usuario</label><input class="field" id="new-username" autocomplete="off" placeholder="por ejemplo, juan_01"><label class="field-label">Contraseña inicial</label><input class="field" id="new-password" type="password" minlength="8" placeholder="Mínimo 8 caracteres"><div class="notice">Este usuario podrá subir, descargar, editar las descripciones de sus archivos, crear carpetas, mover y transferir archivos. También podrá borrar únicamente los archivos que subió; vos podés borrar cualquiera.</div>', 'Crear usuario', async root => {
         const username=root.querySelector('#new-username').value.trim().toLowerCase(), password=root.querySelector('#new-password').value;
         if(!username||password.length<8){toast('Completá el usuario y una contraseña de al menos 8 caracteres.');return;}
         const {data:{session}}=await client.auth.getSession();
@@ -751,16 +752,32 @@
       modal('Transferir archivo',`<p class="sub">${esc(file.name)}</p><div class="notice">Origen: <strong>${esc(source)}</strong><br>Destino: <strong>${esc(targetLabel)}</strong><br>Se copiará el archivo, se actualizará la biblioteca y se quitará el original cuando la copia quede confirmada.</div><div id="transfer-progress" class="hidden" style="margin-top:14px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:7px"><strong id="transfer-label">Preparando…</strong><span id="transfer-stats">0% · 0 MB/s</span></div><div class="bar"><div class="bar-fill" id="transfer-bar" style="width:0%"></div></div></div>`, 'Transferir', async root=>{
         const button=root.querySelector('.submit'),dialog=root.querySelector('.modal'),backdrop=root.querySelector('.modal-backdrop'),progress=root.querySelector('#transfer-progress'),bar=root.querySelector('#transfer-bar'),label=root.querySelector('#transfer-label'),stats=root.querySelector('#transfer-stats');
         button.disabled=true;backdrop.dataset.locked='true';root.querySelector('.close').disabled=true;root.querySelector('.cancel').disabled=true;progress.classList.remove('hidden');label.textContent=`Iniciando transferencia a ${targetLabel}`;
-        const {data:{session}}=await client.auth.getSession(),headers={Authorization:`Bearer ${session?.access_token||''}`,'Content-Type':'application/json'};
+        const requestId=crypto.randomUUID(),headers={'Content-Type':'application/json'};
         try{
-          const started=await fetch(`${R2_WORKER_URL}/transfer`,{method:'POST',headers,body:JSON.stringify({fileId:id,target})});
+          const {data:{session}}=await client.auth.getSession();headers.Authorization=`Bearer ${session?.access_token||''}`;
+          const payload=JSON.stringify({fileId:id,target,requestId});
+          let started;
+          for(let attempt=0;;attempt++){
+            try{started=await fetch(`${R2_WORKER_URL}/transfer`,{method:'POST',headers,body:payload});if(started.status<500||attempt>=3)break;}
+            catch(error){if(attempt>=3)throw error;}
+            await new Promise(resolve=>setTimeout(resolve,500*Math.pow(2,attempt)));
+          }
           const startResult=await started.json().catch(()=>({}));
           if(!started.ok||!startResult.transferId)throw new Error(startResult.error||`No se pudo iniciar la transferencia (${started.status}).`);
           let lastDone=0,lastTime=performance.now();
           while(true){
-            const response=await fetch(`${R2_WORKER_URL}/transfer/status?id=${encodeURIComponent(startResult.transferId)}`,{headers:{Authorization:headers.Authorization, 'Cache-Control':'no-cache'}});
+            let response;
+            for(let attempt=0;;attempt++){
+              try{
+                response=target==='google'
+                  ?await fetch(`${R2_WORKER_URL}/transfer/step?id=${encodeURIComponent(startResult.transferId)}`,{method:'POST',headers})
+                  :await fetch(`${R2_WORKER_URL}/transfer/status?id=${encodeURIComponent(startResult.transferId)}`,{headers:{Authorization:headers.Authorization,'Cache-Control':'no-cache'}});
+                if(response.status<500||attempt>=4)break;
+              }catch(error){if(attempt>=4)throw error;}
+              await new Promise(resolve=>setTimeout(resolve,600*Math.pow(2,attempt)));
+            }
             const state=await response.json().catch(()=>({}));
-            if(!response.ok)throw new Error(state.error||`No se pudo consultar el progreso (${response.status}).`);
+            if(!response.ok){if(state.retryable){await new Promise(resolve=>setTimeout(resolve,1000));continue;}throw new Error(state.error||`No se pudo consultar el progreso (${response.status}).`);}
             const now=performance.now(),done=Number(state.done||0),size=Number(state.size||file.size),percent=size?Math.min(100,Math.floor(done/size*100)):100,seconds=Math.max(.1,(now-lastTime)/1000),speed=Math.max(0,done-lastDone)/seconds/1024/1024;
             label.textContent=state.phase||'Transfiriendo archivo';bar.style.width=`${percent}%`;stats.textContent=`${percent}% · ${speed.toFixed(1)} MB/s`;
             lastDone=done;lastTime=now;
@@ -768,14 +785,15 @@
               bar.style.width='100%';stats.textContent=`100% · ${formatBytes(size)} completados`;if(root.querySelector('.modal')===dialog)root.replaceChildren();await loadLibrary();await loadGoogleDriveStatus();toast(state.message||`Archivo transferido a ${targetLabel}.`);return;
             }
             if(state.status==='error')throw new Error(state.error||'La transferencia no se pudo completar.');
-            await new Promise(resolve=>setTimeout(resolve,700));
+            if(target!=='google')await new Promise(resolve=>setTimeout(resolve,700));
           }
-        }catch(error){button.disabled=false;backdrop.dataset.locked='false';root.querySelector('.close').disabled=false;root.querySelector('.cancel').disabled=false;label.textContent='Transferencia detenida';toast(error.message||'No se pudo transferir el archivo.');}
+        }catch(error){button.disabled=false;backdrop.dataset.locked='false';root.querySelector('.close').disabled=false;root.querySelector('.cancel').disabled=false;label.textContent='Transferencia detenida';toast(error.message==='Failed to fetch'?'Se perdió la conexión durante la transferencia. Volvé a intentarlo; el archivo original sigue guardado.':error.message||'No se pudo transferir el archivo.');}
       });
     }
 
     async function deleteFile(id) {
-      const file = files.find(item => item.id === id); if (!file || !confirm(`¿Eliminar ${file.name} de la biblioteca?`)) return;
+      const file = files.find(item => item.id === id); if (!file || (!ownerMode&&(!uploaderMode||file.createdBy!==currentUser?.id))) return;
+      if (!confirm(`¿Eliminar ${file.name} de la biblioteca?`)) return;
       const {data:{session}} = await client.auth.getSession();
       let storageError = null;
       try {
