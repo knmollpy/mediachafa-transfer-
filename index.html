@@ -11,24 +11,34 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0"></script>
   <style>
     :root{--ink:#17251f;--muted:#718078;--green:#278957;--green2:#48aa70;--line:#e5ece7;--paper:#fff;--wash:#f3f7f4;--mint:#e9f5ed;--shadow:0 12px 35px #193a2510}
-    *{box-sizing:border-box}body{margin:0;background:var(--user-wash,var(--wash));color:var(--ink);font-family:'DM Sans',sans-serif}button,input,textarea{font:inherit}button{cursor:pointer}.hidden{display:none!important}
+    *{box-sizing:border-box}body{margin:0;background-color:var(--wash);background-image:var(--user-wallpaper,none);background-size:cover;background-position:center;background-attachment:fixed;color:var(--ink);font-family:'DM Sans',sans-serif}button,input,textarea{font:inherit}button{cursor:pointer}.hidden{display:none!important}
     .login-screen{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 20% 15%,#e1f3e7 0,transparent 35%),radial-gradient(ellipse at 85% 80%,#e5f1e8 0,transparent 34%),#f7faf7}
-    .login-card{width:min(430px,100%);padding:42px;background:#fff;border:1px solid #e8eee9;border-radius:22px;box-shadow:0 22px 80px #1e42251a}.brand{display:flex;align-items:center;gap:12px;font:800 20px Manrope,sans-serif;letter-spacing:-.5px}.brand-mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:#e6f4ea;color:var(--green)}.login-card h1{font:800 29px Manrope,sans-serif;letter-spacing:-1px;margin:33px 0 8px}.sub{color:var(--muted);font-size:14px;line-height:1.6;margin:0 0 26px}.field-label{display:block;font-size:12px;font-weight:700;margin:17px 0 8px}.field{width:100%;padding:13px 14px;border:1px solid #dfe7e1;border-radius:10px;outline:0;background:#fbfdfb}.field:focus{border-color:#62ad7c;box-shadow:0 0 0 3px #48aa701c}.primary{width:100%;border:0;border-radius:10px;background:var(--green);color:#fff;font-weight:700;padding:13px 16px;margin-top:22px;transition:.18s}.primary:hover{background:#20784a;transform:translateY(-1px)}.login-note{margin-top:19px;padding:12px 13px;border-radius:10px;background:#f2f7f3;color:#69776f;font-size:12px;line-height:1.5}.error{color:#ad3e32;font-size:13px;margin-top:10px;min-height:16px}
-    .app{min-height:100vh}.topbar{height:70px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 max(26px,calc((100vw - 1320px)/2));gap:28px}.topbar .brand{font-size:18px}.topnav{display:flex;gap:6px;margin-left:25px}.navitem{border:0;background:none;color:#718078;font-weight:600;padding:9px 12px;border-radius:8px}.navitem.active{background:#eef6f0;color:var(--green)}.topright{margin-left:auto;display:flex;align-items:center;gap:12px}.topright .navitem{font-size:13px}.role-chip{font-size:12px;font-weight:700;color:var(--green);background:#eaf5ed;padding:7px 11px;border-radius:20px}.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#dcefe2;color:#278957;font-weight:700}.logout{border:0;background:none;color:#758179;font-size:13px}
+    .login-card{width:min(430px,100%);padding:42px;background:var(--paper);border:1px solid #e8eee9;border-radius:22px;box-shadow:0 22px 80px #1e42251a}.brand{display:flex;align-items:center;gap:12px;font:800 20px Manrope,sans-serif;letter-spacing:-.5px}.brand-mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:#e6f4ea;color:var(--green)}.login-card h1{font:800 29px Manrope,sans-serif;letter-spacing:-1px;margin:33px 0 8px}.sub{color:var(--muted);font-size:14px;line-height:1.6;margin:0 0 26px}.field-label{display:block;font-size:12px;font-weight:700;margin:17px 0 8px}.field{width:100%;padding:13px 14px;border:1px solid #dfe7e1;border-radius:10px;outline:0;background:#fbfdfb}.field:focus{border-color:#62ad7c;box-shadow:0 0 0 3px #48aa701c}.primary{width:100%;border:0;border-radius:10px;background:var(--green);color:#fff;font-weight:700;padding:13px 16px;margin-top:22px;transition:.18s}.primary:hover{background:#20784a;transform:translateY(-1px)}.login-note{margin-top:19px;padding:12px 13px;border-radius:10px;background:#f2f7f3;color:#69776f;font-size:12px;line-height:1.5}.error{color:#ad3e32;font-size:13px;margin-top:10px;min-height:16px}
+    .app{min-height:100vh}.topbar{height:70px;background:var(--paper);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 max(26px,calc((100vw - 1320px)/2));gap:28px}.topbar .brand{font-size:18px}.topnav{display:flex;gap:6px;margin-left:25px}.navitem{border:0;background:none;color:#718078;font-weight:600;padding:9px 12px;border-radius:8px}.navitem.active{background:#eef6f0;color:var(--green)}.topright{margin-left:auto;display:flex;align-items:center;gap:12px}.topright .navitem{font-size:13px}.role-chip{font-size:12px;font-weight:700;color:var(--green);background:#eaf5ed;padding:7px 11px;border-radius:20px}.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#dcefe2;color:#278957;font-weight:700}.logout{border:0;background:none;color:#758179;font-size:13px}
     .wrap{max-width:1320px;margin:0 auto;padding:32px 26px 60px}.welcome{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:23px}.eyebrow{text-transform:uppercase;letter-spacing:1.5px;color:#75847b;font-size:10px;font-weight:700}.welcome h1{font:800 30px Manrope,sans-serif;letter-spacing:-1px;margin:7px 0}.welcome p{margin:0;color:var(--muted);font-size:14px}.date{color:#7d8982;font-size:12px}
-    .storage{background:#fff;border:1px solid var(--line);border-radius:14px;padding:19px 22px;margin-bottom:25px;box-shadow:var(--shadow)}.storage-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}.storage-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}.storage-amount{font-size:12px;color:#6e7d74}.storage-amount strong{color:#2c3a32}.bar{height:8px;border-radius:8px;background:#edf2ee;overflow:hidden}.bar-fill{height:100%;width:0;background:linear-gradient(90deg,#43a66c,#82c895);border-radius:8px;transition:width .3s}.storage-foot{display:flex;justify-content:space-between;color:#88948c;font-size:11px;margin-top:9px}
-    .layout{display:grid;grid-template-columns:232px minmax(0,1fr);gap:23px;align-items:start}.sidebar,.content{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}.sidebar{padding:17px 13px;min-height:360px}.side-heading{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:700;color:#78847c;text-transform:uppercase;letter-spacing:1px;padding:5px 9px 13px}.side-heading button{border:0;background:#eff6f1;color:var(--green);border-radius:7px;width:25px;height:25px;font-size:17px}.folder{width:100%;text-align:left;border:0;background:none;padding:10px 11px;border-radius:8px;color:#66746b;font-weight:600;font-size:13px;display:flex;align-items:center;gap:10px}.folder:hover,.folder.selected{background:#edf6ef;color:var(--green)}.folder-count{margin-left:auto;color:#98a49c;font-size:11px}.sidebar-hint{border-top:1px solid var(--line);margin:18px 8px 0;padding-top:15px;font-size:11px;line-height:1.55;color:#89958d}
-    .content{min-height:470px;padding:22px}.content-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:19px}.content-title{font:700 19px Manrope,sans-serif;letter-spacing:-.4px;margin-right:auto}.search{width:min(245px,100%);padding:9px 12px;border-radius:9px;border:1px solid #e3eae5;background:#fafcfb;outline:0;font-size:12px}.search:focus{border-color:#62ad7c}.select{padding:9px 12px;border:1px solid #e3eae5;background:#fff;border-radius:9px;color:#68766d;font-size:12px}.add-btn{border:0;background:#278957;color:#fff;border-radius:9px;padding:10px 14px;font-size:12px;font-weight:700}.add-btn:hover{background:#20784a}.file-list{display:grid;gap:11px}.file-card{border:1px solid #e9efea;border-radius:12px;padding:14px;display:grid;grid-template-columns:50px minmax(140px,1fr) auto;gap:14px;align-items:center;transition:.15s}.file-card:hover{border-color:#d1e4d6;box-shadow:0 5px 16px #193a250a}.file-icon{height:52px;width:45px;border-radius:8px 8px 8px 3px;display:grid;place-items:center;font-size:10px;font-weight:800;letter-spacing:.3px;color:#fff;background:#45b5ad;position:relative}.file-icon:after{content:'';position:absolute;right:0;top:0;border-style:solid;border-width:0 12px 12px 0;border-color:transparent #ffffff80 transparent transparent}.file-icon.apk{background:#65b968}.file-icon.pkg{background:#8170c9}.file-icon.zip{background:#df9d4d}.file-icon.pdf{background:#dd6b5b}.file-icon.exe{background:#538fd2}.file-name{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-meta{color:#849087;font-size:10px;margin-top:5px}.file-desc{color:#68766e;font-size:11px;margin-top:8px;line-height:1.4}.file-actions{display:flex;align-items:center;gap:8px}.download{background:#70bf62;color:white;border:0;border-radius:22px;padding:9px 13px;font-size:11px;font-weight:700}.download:hover{background:#58a94d}.icon-btn{border:1px solid #e6ece7;background:#fff;color:#738077;border-radius:8px;width:31px;height:31px}.empty{padding:65px 15px;text-align:center;color:#849188}.empty .empty-icon{font-size:32px}.empty h3{font:700 16px Manrope;margin:14px 0 6px;color:#344239}.empty p{font-size:12px;margin:0}.notice{padding:12px 14px;background:#f4f8f5;border-radius:9px;color:#748078;font-size:11px;line-height:1.5;margin-top:15px}
-    .modal-backdrop{position:fixed;inset:0;background:#15251db3;display:grid;place-items:center;padding:18px;z-index:5}.modal{width:min(500px,100%);max-height:calc(100vh - 36px);overflow-y:auto;background:#fff;border-radius:16px;padding:24px;box-shadow:0 24px 80px #0003}.modal-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.modal-top h2{font:800 20px Manrope;margin:0}.close{border:0;background:#f1f5f2;border-radius:8px;width:32px;height:32px;font-size:19px;color:#637169}.drop{border:1.5px dashed #cddbd0;background:#f7faf7;border-radius:12px;padding:24px;text-align:center;color:#718078;font-size:12px;cursor:pointer}.drop strong{display:block;color:#398857;font-size:13px;margin-bottom:5px}.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}.secondary{border:1px solid #e0e8e2;background:#fff;padding:10px 14px;border-radius:9px;font-size:12px;color:#637169}.modal-actions .primary{width:auto;margin:0;padding:10px 17px}.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);padding:12px 17px;background:#22372a;color:white;border-radius:10px;font-size:12px;box-shadow:0 8px 30px #0002;z-index:10}
+    .storage{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:19px 22px;margin-bottom:25px;box-shadow:var(--shadow)}.storage-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}.storage-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}.storage-amount{font-size:12px;color:#6e7d74}.storage-amount strong{color:#2c3a32}.bar{height:8px;border-radius:8px;background:#edf2ee;overflow:hidden}.bar-fill{height:100%;width:0;background:linear-gradient(90deg,#43a66c,#82c895);border-radius:8px;transition:width .3s}.storage-foot{display:flex;justify-content:space-between;color:#88948c;font-size:11px;margin-top:9px}
+    .layout{display:grid;grid-template-columns:232px minmax(0,1fr);gap:23px;align-items:start}.sidebar,.content{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}.sidebar{padding:17px 13px;min-height:360px}.side-heading{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:700;color:#78847c;text-transform:uppercase;letter-spacing:1px;padding:5px 9px 13px}.side-heading button{border:0;background:#eff6f1;color:var(--green);border-radius:7px;width:25px;height:25px;font-size:17px}.folder{width:100%;text-align:left;border:0;background:none;padding:10px 11px;border-radius:8px;color:#66746b;font-weight:600;font-size:13px;display:flex;align-items:center;gap:10px}.folder:hover,.folder.selected{background:#edf6ef;color:var(--green)}.folder-count{margin-left:auto;color:#98a49c;font-size:11px}.sidebar-hint{border-top:1px solid var(--line);margin:18px 8px 0;padding-top:15px;font-size:11px;line-height:1.55;color:#89958d}
+    .content{min-height:470px;padding:22px}.content-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:19px}.content-title{font:700 19px Manrope,sans-serif;letter-spacing:-.4px;margin-right:auto}.search{width:min(245px,100%);padding:9px 12px;border-radius:9px;border:1px solid #e3eae5;background:#fafcfb;outline:0;font-size:12px}.search:focus{border-color:#62ad7c}.select{padding:9px 12px;border:1px solid #e3eae5;background:#fff;border-radius:9px;color:#68766d;font-size:12px}.add-btn{border:0;background:#278957;color:#fff;border-radius:9px;padding:10px 14px;font-size:12px;font-weight:700}.add-btn:hover{background:#20784a}.file-list{display:grid;gap:11px}.file-card{background:var(--paper);border:1px solid #e9efea;border-radius:12px;padding:14px;display:grid;grid-template-columns:50px minmax(140px,1fr) auto;gap:14px;align-items:center;transition:.15s}.file-card:hover{border-color:#d1e4d6;box-shadow:0 5px 16px #193a250a}.file-icon{height:52px;width:45px;border-radius:8px 8px 8px 3px;display:grid;place-items:center;font-size:10px;font-weight:800;letter-spacing:.3px;color:#fff;background:#45b5ad;position:relative}.file-icon:after{content:'';position:absolute;right:0;top:0;border-style:solid;border-width:0 12px 12px 0;border-color:transparent #ffffff80 transparent transparent}.file-icon.apk{background:#65b968}.file-icon.pkg{background:#8170c9}.file-icon.zip{background:#df9d4d}.file-icon.pdf{background:#dd6b5b}.file-icon.exe{background:#538fd2}.file-name{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-meta{color:#849087;font-size:10px;margin-top:5px}.file-desc{color:#68766e;font-size:11px;margin-top:8px;line-height:1.4}.file-actions{display:flex;align-items:center;gap:8px}.download{background:#70bf62;color:white;border:0;border-radius:22px;padding:9px 13px;font-size:11px;font-weight:700}.download:hover{background:#58a94d}.icon-btn{border:1px solid #e6ece7;background:#fff;color:#738077;border-radius:8px;width:31px;height:31px}.empty{padding:65px 15px;text-align:center;color:#849188}.empty .empty-icon{font-size:32px}.empty h3{font:700 16px Manrope;margin:14px 0 6px;color:#344239}.empty p{font-size:12px;margin:0}.notice{padding:12px 14px;background:#f4f8f5;border-radius:9px;color:#748078;font-size:11px;line-height:1.5;margin-top:15px}
+    .modal-backdrop{position:fixed;inset:0;background:#15251db3;display:grid;place-items:center;padding:18px;z-index:5}.modal{width:min(500px,100%);max-height:calc(100vh - 36px);overflow-y:auto;background:var(--paper);border-radius:16px;padding:24px;box-shadow:0 24px 80px #0003}.modal-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.modal-top h2{font:800 20px Manrope;margin:0}.close{border:0;background:#f1f5f2;border-radius:8px;width:32px;height:32px;font-size:19px;color:#637169}.drop{border:1.5px dashed #cddbd0;background:#f7faf7;border-radius:12px;padding:24px;text-align:center;color:#718078;font-size:12px;cursor:pointer}.drop strong{display:block;color:#398857;font-size:13px;margin-bottom:5px}.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}.secondary{border:1px solid #e0e8e2;background:#fff;padding:10px 14px;border-radius:9px;font-size:12px;color:#637169}.modal-actions .primary{width:auto;margin:0;padding:10px 17px}.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);padding:12px 17px;background:#22372a;color:white;border-radius:10px;font-size:12px;box-shadow:0 8px 30px #0002;z-index:10}
 
+    .folder-row{display:flex;align-items:center;gap:4px}.folder-row>.folder{min-width:0;flex:1}.folder-edit{flex:0 0 auto;width:30px;height:30px;border:1px solid var(--line);border-radius:7px;background:var(--paper);color:var(--muted);font-size:13px;padding:0}
+    .drop-overlay{position:fixed;inset:14px;z-index:4;border:3px dashed var(--green2);border-radius:24px;background:rgba(255,255,255,.94);display:grid;place-items:center;text-align:center;color:var(--ink);pointer-events:none;box-shadow:0 0 0 9999px #14271c55}.drop-overlay strong{font:800 23px Manrope,sans-serif;color:var(--green);display:block;margin-bottom:8px}.drop-overlay span{font-size:14px;color:var(--muted)}
     .preview-btn{border:1px solid #dcebe0;background:#f4faf5;color:#398857;border-radius:8px;padding:8px 10px;font-size:11px;font-weight:700;white-space:nowrap}.preview-thumb{width:64px;height:52px;object-fit:cover;border-radius:8px;background:#edf2ee;cursor:zoom-in}.preview-video{width:150px;max-height:96px;border-radius:8px;background:#111}\n    .preview-btn{border:1px solid #dcebe0;background:#f4faf5;color:#398857;border-radius:8px;padding:8px 10px;font-size:11px;font-weight:700;white-space:nowrap}.preview-thumb{width:64px;height:52px;object-fit:cover;border-radius:8px;background:#edf2ee;cursor:zoom-in}.preview-video{width:150px;max-height:96px;border-radius:8px;background:#111}
     .theme-toggle{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:9px;padding:8px 10px;font-size:12px;font-weight:600;white-space:nowrap}
     .share-btn{border:1px solid #dcebe0;background:#f0f7f2;color:#278957;border-radius:9px;padding:8px 10px;font-size:11px;font-weight:700;white-space:nowrap}
     .link-card{border:1px solid #e9efea;border-radius:12px;padding:15px 16px;display:flex;align-items:center;gap:14px}.link-card-main{min-width:0;flex:1}.link-card-title{font-size:14px;font-weight:700;color:var(--ink);overflow-wrap:anywhere}.link-card-url{display:block;margin-top:5px;color:#398857;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.link-card-meta{margin-top:5px;color:#849087;font-size:10px}.link-actions{display:flex;gap:7px;align-items:center}.custom-colors{display:flex;gap:8px;margin:14px 0}.color-swatch{width:34px;height:34px;border:2px solid #fff;outline:1px solid var(--line);border-radius:50%;padding:0}.color-field{width:58px;height:38px;padding:3px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
     :root[data-theme="dark"]{color-scheme:dark;--ink:#e7eee9;--muted:#a8b5ac;--line:#35453b;--paper:#1b2720;--wash:#111914;--mint:#24362a}
-    :root[data-theme="dark"] body{background:var(--user-wash,var(--wash));color:var(--ink)}
+    :root[data-theme="dark"] body{background-color:var(--wash);background-image:var(--user-wallpaper,none);background-size:cover;background-position:center;background-attachment:fixed;color:var(--ink)}
     :root[data-theme="dark"] .topbar,:root[data-theme="dark"] .sidebar,:root[data-theme="dark"] .content,:root[data-theme="dark"] .storage,:root[data-theme="dark"] .login-card,:root[data-theme="dark"] .modal{background:#1b2720;border-color:#35453b;color:var(--ink)}
     :root[data-theme="dark"] .login-screen{background:radial-gradient(ellipse at 20% 15%,#1d3827 0,transparent 35%),radial-gradient(ellipse at 85% 80%,#1b3023 0,transparent 34%),#111914}
+    :root[data-has-wallpaper="true"] .login-screen{background:transparent}
+    :root[data-theme="dark"] .topnav{background:#152019}
+    :root[data-theme="dark"] .side-heading button,:root[data-theme="dark"] .close{background:#263a2c;color:#a8dfb5}
+    :root[data-theme="dark"] .storage-head,:root[data-theme="dark"] .storage-foot,:root[data-theme="dark"] .storage-amount{color:#a8b5ac}
+    :root[data-theme="dark"] .bar{background:#2a382f}
+    :root[data-theme="dark"] .empty{color:#a8b5ac}
+    :root[data-theme="dark"] .folder-edit{background:#152019;border-color:#3b5042;color:#a8b5ac}
+    :root[data-theme="dark"] .drop-overlay{background:rgba(21,32,25,.96)}
     :root[data-theme="dark"] .file-card{background:#1b2720;border-color:#35453b}
     :root[data-theme="dark"] .field,:root[data-theme="dark"] .search,:root[data-theme="dark"] .select,:root[data-theme="dark"] .secondary,:root[data-theme="dark"] .icon-btn{background:#152019;border-color:#3b5042;color:#e7eee9}
     :root[data-theme="dark"] .folder,:root[data-theme="dark"] .file-desc,:root[data-theme="dark"] .file-meta,:root[data-theme="dark"] .welcome p,:root[data-theme="dark"] .date{color:#a8b5ac}
@@ -86,6 +96,7 @@
       <section class="content hidden" id="links-panel"><div class="content-head"><div class="content-title">Enlaces guardados</div><input class="search" id="links-search" placeholder="⌕  Buscar enlaces…"><button id="all-links" class="navitem active" type="button">Todos</button><button id="own-links" class="navitem" type="button">Propios</button><button id="add-link" class="add-btn">＋ Guardar enlace</button></div><div id="links-list" class="file-list"></div></section>
     </div>
   </main>
+  <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true"><div><strong>Soltá los archivos acá</strong><span>Se van a preparar para subir. La transferencia empieza cuando toques “Subir”.</span></div></div>
   <div id="modal-root"></div>
   <script>
     const SUPABASE_URL = 'https://velxgwkujcabdaxbppyj.supabase.co';
@@ -108,7 +119,9 @@
     let currentView = 'files';
     let currentLinkFilter = 'all';
     let links = [];
-    let backgroundColor = '#f3f7f4';
+    let wallpaperPath = null;
+    let backgroundImageSize = 0;
+    const WALLPAPER_MAX_BYTES = 20 * 1024 * 1024;
     let files = [];
     let folders = ['Todos los archivos', 'Sin carpeta'];
     const $ = selector => document.querySelector(selector);
@@ -263,7 +276,7 @@
       $('#app').classList.add('hidden'); $('#login').classList.remove('hidden');
       $('#login-form').reset(); $('#login-error').textContent = '';
       currentFolder = 'Todos los archivos';
-      document.documentElement.style.removeProperty('--user-wash');
+      applyWallpaper(null); backgroundImageSize=0; render();
     };
 
     async function loadLibrary() {
@@ -286,7 +299,7 @@
     }
 
     function render() {
-      const used = files.reduce((sum, file) => sum + file.size, 0);
+      const used = files.reduce((sum, file) => sum + file.size, 0) + backgroundImageSize;
       $('#used-label').textContent = formatBytes(used);
       const capacity = getCapacity();
       $('#remaining-label').textContent = `${formatBytes(Math.max(0, capacity - used))} disponibles`;
@@ -294,11 +307,17 @@
       const folderList = $('#folder-list'); folderList.replaceChildren();
       folders.forEach(folder => {
         const count = folder === 'Todos los archivos' ? files.length : files.filter(file => file.folder === folder).length;
+        const row = document.createElement('div'); row.className='folder-row';
         const button = document.createElement('button');
         button.className = 'folder' + (currentFolder === folder ? ' selected' : '');
-        button.innerHTML = `<span>▰</span>${esc(folder)}<span class="folder-count">${count}</span>`;
+        button.innerHTML = '<span>▰</span>' + esc(folder) + '<span class="folder-count">' + count + '</span>';
         button.onclick = () => { currentFolder = folder; render(); };
-        folderList.append(button);
+        row.append(button);
+        if ((ownerMode || uploaderMode) && folder !== 'Todos los archivos' && folder !== 'Sin carpeta') {
+          const edit=document.createElement('button');edit.type='button';edit.className='folder-edit';edit.title='Cambiar nombre';edit.textContent='✎';
+          edit.onclick=event=>{event.stopPropagation();renameFolder(folder);};row.append(edit);
+        }
+        folderList.append(row);
       });
       $('#section-title').textContent = currentFolder;
       const query = $('#search').value.toLowerCase(), filter = $('#type-filter').value;
@@ -408,31 +427,60 @@
     }
     $('#add-link').onclick=()=>openLinkEditor();
 
-    function applyBackground(color) {
-      backgroundColor = /^#[0-9a-f]{6}$/i.test(color) ? color : '#f3f7f4';
-      document.documentElement.style.setProperty('--user-wash',backgroundColor);
+    function applyWallpaper(path) {
+      wallpaperPath = typeof path === 'string' && path ? path : null;
+      if (wallpaperPath) {
+        document.documentElement.style.setProperty('--user-wallpaper','url("' + objectUrl({path:wallpaperPath},true) + '")');
+        document.documentElement.dataset.hasWallpaper='true';
+      } else {
+        document.documentElement.style.removeProperty('--user-wallpaper');
+        document.documentElement.removeAttribute('data-has-wallpaper');
+      }
     }
     async function loadPreferences() {
-      if (!currentUser?.id) { applyBackground('#f3f7f4'); return; }
-      const {data,error}=await client.from('media_preferences').select('background_color').eq('user_id',currentUser.id).maybeSingle();
-      if (error) { applyBackground('#f3f7f4'); return; }
-      applyBackground(data?.background_color||'#f3f7f4');
+      if (!currentUser?.id) { backgroundImageSize=0; applyWallpaper(null); return; }
+      const {data,error}=await client.from('media_preferences').select('background_image_path,background_image_size_bytes').eq('user_id',currentUser.id).maybeSingle();
+      if (error) { backgroundImageSize=0; applyWallpaper(null); return; }
+      backgroundImageSize=Number(data?.background_image_size_bytes||0);
+      applyWallpaper(data?.background_image_path||null);
+      render();
     }
     $('#customize-button').onclick=()=>{
-      const presets=['#f3f7f4','#e8f1fa','#fff3e8','#f4eafa','#e9f4ed','#202b38'];
-      const swatches=presets.map(color=>`<button class="color-swatch" type="button" data-color="${color}" style="background:${color}" aria-label="Fondo ${color}"></button>`).join('');
-      modal('Personalizar fondo',`<p class="sub">El cambio se guarda en tu cuenta y lo vas a ver cuando vuelvas a iniciar sesión.</p><label class="field-label" for="background-color">Elegí un color</label><input class="color-field" id="background-color" type="color" value="${esc(backgroundColor)}"><div class="custom-colors">${swatches}</div>`, 'Guardar fondo',async root=>{
-        const color=root.querySelector('#background-color').value;
-        const {error}=await client.from('media_preferences').upsert({user_id:currentUser.id,background_color:color,updated_at:new Date().toISOString()},{onConflict:'user_id'});
-        if(error){toast('No se pudo guardar el fondo: '+error.message);return;}
-        applyBackground(color);root.replaceChildren();toast('Fondo guardado para tu cuenta.');
-      });
-      const root=$('#modal-root'),picker=root.querySelector('#background-color');
-      picker.oninput=()=>applyBackground(picker.value);
-      root.querySelectorAll('.color-swatch').forEach(button=>button.onclick=()=>{picker.value=button.dataset.color;applyBackground(button.dataset.color);});
-      const restore=()=>applyBackground(backgroundColor);
-      root.querySelector('.close').addEventListener('click',restore);root.querySelector('.cancel').addEventListener('click',restore);
-      root.querySelector('.modal-backdrop').addEventListener('click',event=>{if(event.target.classList.contains('modal-backdrop'))restore();});
+      modal('Fondo personalizado',
+        '<p class="sub">Elegí una imagen o GIF. Se guarda en tu cuenta y el tema claro u oscuro seguirá controlando los paneles y botones.</p><label class="field-label" for="wallpaper-input">Imagen o GIF (máximo 20 MB)</label><input class="field" id="wallpaper-input" type="file" accept="image/*"><div class="notice" id="wallpaper-status">' + (wallpaperPath ? 'Ya tenés un fondo personalizado.' : 'Sin imagen: el fondo general seguirá el modo claro u oscuro.') + '</div><div class="bar hidden" id="wallpaper-progress" style="margin-top:12px"><div class="bar-fill" id="wallpaper-progress-fill"></div></div>' + (wallpaperPath?'<button class="secondary" type="button" id="remove-wallpaper" style="margin-top:12px">Quitar fondo personalizado</button>':''),
+        'Guardar fondo',async root=>{
+          const file=root.querySelector('#wallpaper-input').files[0];
+          if(!file){toast('Elegí primero una imagen o GIF.');return;}
+          if(!file.type.startsWith('image/')){toast('El fondo debe ser una imagen o un GIF.');return;}
+          if(file.size>WALLPAPER_MAX_BYTES){toast('La imagen o GIF no puede superar 20 MB.');return;}
+          if(!r2Available){toast('Cloudflare R2 no está disponible en este momento.');return;}
+          const saveButton=root.querySelector('.submit'),status=root.querySelector('#wallpaper-status'),progress=root.querySelector('#wallpaper-progress'),fill=root.querySelector('#wallpaper-progress-fill');
+          const previousPath=wallpaperPath, safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_')||'background';
+          const path=currentUser.id+'/background/'+crypto.randomUUID()+'_'+safeName;
+          const {data:{session}}=await client.auth.getSession(),token=session?.access_token||'';
+          saveButton.disabled=true;saveButton.textContent='Subiendo…';progress.classList.remove('hidden');
+          try {
+            await uploadWithProgress(file,path,token,loaded=>{const percent=Math.min(100,Math.floor(loaded/file.size*100));fill.style.width=percent+'%';status.textContent='Subiendo fondo: '+percent+'%';});
+            const {error}=await client.from('media_preferences').upsert({user_id:currentUser.id,background_image_path:path,background_image_size_bytes:file.size,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+            if(error){await fetch(R2_WORKER_URL+'/object/'+path.split('/').map(encodeURIComponent).join('/'),{method:'DELETE',headers:{Authorization:'Bearer '+token}}).catch(()=>{});throw error;}
+            backgroundImageSize=file.size;applyWallpaper(path);render();
+            if(previousPath)await fetch(R2_WORKER_URL+'/object/'+previousPath.split('/').map(encodeURIComponent).join('/'),{method:'DELETE',headers:{Authorization:'Bearer '+token}}).catch(()=>{});
+            root.replaceChildren();toast('Fondo guardado en tu cuenta.');
+          } catch(error) {
+            saveButton.disabled=false;saveButton.textContent='Guardar fondo';toast('No se pudo guardar el fondo: '+(error.message||error));
+          }
+        });
+      const root=$('#modal-root'),input=root.querySelector('#wallpaper-input'),status=root.querySelector('#wallpaper-status');
+      input.onchange=()=>{const file=input.files[0];if(file)status.textContent=file.name+' · '+formatBytes(file.size);};
+      const remove=root.querySelector('#remove-wallpaper');
+      if(remove)remove.onclick=async()=>{
+        const oldPath=wallpaperPath;const {data:{session}}=await client.auth.getSession(),token=session?.access_token||'';
+        const {error}=await client.from('media_preferences').upsert({user_id:currentUser.id,background_image_path:null,background_image_size_bytes:0,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+        if(error){toast('No se pudo quitar el fondo: '+error.message);return;}
+        applyWallpaper(null);backgroundImageSize=0;render();
+        if(oldPath)await fetch(R2_WORKER_URL+'/object/'+oldPath.split('/').map(encodeURIComponent).join('/'),{method:'DELETE',headers:{Authorization:'Bearer '+token}}).catch(()=>{});
+        root.replaceChildren();toast('Fondo personalizado quitado.');
+      };
     };
     function setTheme(theme) {
       const dark = theme === 'dark';
@@ -488,16 +536,16 @@
       root.querySelector('.submit').onclick = () => onSubmit(root);
     }
 
-    $('#add-file').onclick = () => {
+    function openUploadModal(initialFiles = []) {
       if (!ownerMode && !uploaderMode) return;
       let selectedFiles = [];
-      const used = files.reduce((sum, file) => sum + file.size, 0);
+      const used = files.reduce((sum, file) => sum + file.size, 0) + backgroundImageSize;
       modal('Subir un archivo', `<div class="drop" id="drop"><strong>Elegí archivos o una carpeta</strong>Podés seleccionar varios archivos, ZIP/RAR o una carpeta con subcarpetas.<br><span style="font-size:10px">Hasta 10 GB por archivo · Recomendado: 1–200 MB · ${formatBytes(Math.max(0,getCapacity()-used))} disponibles</span><div style="display:flex;justify-content:center;gap:10px;margin-top:14px"><button type="button" class="secondary" id="pick-files">Elegir archivos</button><button type="button" class="secondary" id="pick-folder">Elegir carpeta</button></div><input id="file-input" type="file" multiple style="display:none"><input id="folder-input" type="file" webkitdirectory directory multiple style="display:none"></div><div id="upload-queue" class="file-list"></div><div id="upload-progress" class="hidden" style="margin-top:14px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:7px"><strong id="progress-label">Preparando…</strong><span id="progress-stats">0% · 0 MB/s</span></div><div class="bar"><div class="bar-fill" id="upload-bar" style="width:0%"></div></div></div><label class="field-label">Descripción</label><textarea class="field" id="description" rows="3" maxlength="1000" placeholder="¿Qué contiene este archivo?"></textarea><label class="field-label">Carpeta</label><select class="field" id="folder-select">${folders.filter(folder=>folder!=='Todos los archivos').map(folder=>`<option>${esc(folder)}</option>`).join('')}</select><div id="selected-name" style="font-size:11px;color:#718078;margin-top:9px"></div>`, 'Subir', async root => {
         if (!selectedFiles.length) { toast('Elegí archivos o una carpeta primero.'); return; }
         const totalSize=selectedFiles.reduce((sum,item)=>sum+item.file.size,0);
         if (selectedFiles.some(item=>item.file.size>MAX_FILE_BYTES)) { toast('El máximo es 10 GB por archivo.'); return; }
         if (selectedFiles.some(item=>item.file.size<RECOMMENDED_MIN_BYTES||item.file.size>RECOMMENDED_MAX_BYTES) && !confirm('Hay archivos fuera del rango recomendado de 1–200 MB. ¿Querés continuar?')) return;
-        if (files.reduce((sum,file)=>sum+file.size,0)+totalSize>getCapacity()) { toast('La selección supera el espacio libre.'); return; }
+        if (files.reduce((sum,file)=>sum+file.size,0)+backgroundImageSize+totalSize>getCapacity()) { toast('La selección supera el espacio libre.'); return; }
         const button=root.querySelector('.submit'),progress=root.querySelector('#upload-progress'),bar=root.querySelector('#upload-bar'),label=root.querySelector('#progress-label'),stats=root.querySelector('#progress-stats');
         button.disabled=true;progress.classList.remove('hidden');
         const {data:{session}}=await client.auth.getSession(),token=session?.access_token||'';
@@ -526,11 +574,39 @@
       root.querySelector('#pick-files').onclick=()=>input.click();root.querySelector('#pick-folder').onclick=()=>folderInput.click();
       input.onchange=()=>queue(input.files);folderInput.onchange=()=>queue(folderInput.files);
       drop.ondragover=event=>{event.preventDefault();drop.style.borderColor='#55a971';};drop.ondrop=event=>{event.preventDefault();queue(event.dataTransfer.files);};
-    };
+      if(initialFiles?.length) queue(initialFiles);
+    }
+    $('#add-file').onclick=()=>openUploadModal();
+
+    let pageDragDepth=0;
+    const dropOverlay=$('#drop-overlay');
+    const canDropUpload=()=>Boolean((ownerMode||uploaderMode)&&currentUser&&!$('#app').classList.contains('hidden'));
+    const carriesFiles=event=>Array.from(event.dataTransfer?.types||[]).includes('Files');
+    window.addEventListener('dragenter',event=>{if(!canDropUpload()||!carriesFiles(event))return;event.preventDefault();pageDragDepth++;dropOverlay.classList.remove('hidden');});
+    window.addEventListener('dragover',event=>{if(!canDropUpload()||!carriesFiles(event))return;event.preventDefault();});
+    window.addEventListener('dragleave',event=>{if(!canDropUpload()||!carriesFiles(event))return;pageDragDepth=Math.max(0,pageDragDepth-1);if(pageDragDepth===0)dropOverlay.classList.add('hidden');});
+    window.addEventListener('drop',event=>{
+      if(!carriesFiles(event))return;
+      event.preventDefault();pageDragDepth=0;dropOverlay.classList.add('hidden');
+      if(!canDropUpload()||event.target.closest?.('#drop')||$('#modal-root').querySelector('.modal'))return;
+      switchView('files');openUploadModal(event.dataTransfer.files);
+    });
+
+    async function renameFolder(oldName) {
+      modal('Cambiar nombre de carpeta','<p class="sub">Los archivos de esta carpeta y de sus subcarpetas conservarán su lugar.</p><label class="field-label" for="folder-name">Nuevo nombre</label><input class="field" id="folder-name" maxlength="80" value="'+esc(oldName)+'">','Guardar',async root=>{
+        const name=root.querySelector('#folder-name').value.trim();
+        if(!name||name==='Todos los archivos'||name==='Sin carpeta'||name.includes('/')){toast('Escribí un nombre válido, sin barras.');return;}
+        const {error}=await client.rpc('rename_media_folder',{p_old_name:oldName,p_new_name:name});
+        if(error){toast('No se pudo cambiar el nombre: '+error.message);return;}
+        if(currentFolder===oldName)currentFolder=name;
+        else if(currentFolder.startsWith(oldName+'/'))currentFolder=name+currentFolder.slice(oldName.length);
+        root.replaceChildren();await loadLibrary();toast('Nombre de carpeta actualizado.');
+      });
+    }
 
     $('#new-folder').onclick = () => modal('Crear carpeta', '<label class="field-label">Nombre de la carpeta</label><input class="field" id="folder-name" maxlength="80" placeholder="Por ejemplo, Aplicaciones">', 'Crear', async root => {
       const name = root.querySelector('#folder-name').value.trim();
-      if (!name || name === 'Todos los archivos') { toast('Escribí un nombre válido.'); return; }
+      if (!name || name === 'Todos los archivos' || name === 'Sin carpeta' || name.includes('/')) { toast('Escribí un nombre válido, sin barras.'); return; }
       const {error} = await client.from('media_folders').insert({name, created_by:currentUser.id});
       if (error) { toast(error.code === '23505' ? 'Esa carpeta ya existe.' : 'No se pudo crear: ' + error.message); return; }
       currentFolder = name; root.replaceChildren(); await loadLibrary();
