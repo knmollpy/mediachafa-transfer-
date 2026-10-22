@@ -181,8 +181,120 @@ async function migrate(files, env) {
   return { status: 200, body: { results, copied: results.filter(item => item.ok && item.copied).length, verified: results.filter(item => item.ok).length } };
 }
 
+async function getMediaFile(id, session, env) {
+  const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=id,storage_path,file_name,size_bytes,created_by&id=eq.${encodeURIComponent(id)}&limit=1`;
+  const response = await fetch(query, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } });
+  if (!response.ok) throw new Error("No se pudo consultar el archivo en la biblioteca.");
+  const rows = await response.json();
+  return rows[0] || null;
+}
+
+async function updateMediaFile(session, env, id, storagePath) {
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/media_files?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization, "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ storage_path: storagePath, updated_at: new Date().toISOString() }),
+  });
+  if (!response.ok) throw new Error("La copia terminó, pero la biblioteca no permitió actualizar el archivo.");
+  const rows = await response.json();
+  if (!rows.length) throw new Error("La biblioteca no confirmó el cambio de almacenamiento.");
+}
+
+async function saveTransfer(env, id, state) {
+  state.updatedAt = Date.now();
+  try { await env.GOOGLE_OAUTH_STORE.put(`transfer:${id}`, JSON.stringify(state), { expirationTtl: 24 * 60 * 60 }); }
+  catch (error) { console.error("Transfer progress could not be saved", error instanceof Error ? error.message : "unknown error"); }
+}
+
+function trackTransferStream(stream, env, id, state) {
+  let done = 0, lastSavedBytes = 0, lastSavedAt = Date.now();
+  const persist = async force => {
+    const now = Date.now();
+    if (!force && done - lastSavedBytes < 8 * 1024 * 1024 && now - lastSavedAt < 1000) return;
+    state.done = done; state.updatedAt = now; lastSavedBytes = done; lastSavedAt = now;
+    await saveTransfer(env, id, state);
+  };
+  return stream.pipeThrough(new TransformStream({
+    async transform(chunk, controller) { done += chunk.byteLength; controller.enqueue(chunk); await persist(false); },
+    async flush() { state.done = done; await persist(true); },
+  }));
+}
+
+async function runStorageTransfer(id, record, target, session, env) {
+  const sourcePath = record.storage_path;
+  const sourceIsGoogle = sourcePath.startsWith("gdrive://");
+  const size = Number(record.size_bytes);
+  const state = { userId: session.user.id, fileId: record.id, fileName: record.file_name, size, done: 0, status: "running", phase: "Preparando transferencia", target, source: sourceIsGoogle ? "google" : "r2" };
+  let createdGoogleId = null, createdR2Path = null;
+  await saveTransfer(env, id, state);
+  try {
+    if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) throw new Error("El tamaño del archivo no es válido para transferirlo.");
+    if (target === "google") {
+      if (sourceIsGoogle) throw new Error("El archivo ya está en Google Drive.");
+      const source = await env.MEDIA_BUCKET.get(sourcePath);
+      if (!source || source.size !== size) throw new Error("El archivo de origen no está en Cloudflare R2 o su tamaño cambió.");
+      const accessToken = await googleAccessToken(env);
+      if (!accessToken) throw new Error("Google Drive todavía no está conectado.");
+      const contentType = source.httpMetadata?.contentType || "application/octet-stream";
+      const initiation = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,mimeType", {
+        method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": contentType, "X-Upload-Content-Length": String(size) },
+        body: JSON.stringify({ name: record.file_name, mimeType: contentType }),
+      });
+      const uploadUrl = initiation.headers.get("Location");
+      if (!initiation.ok || !uploadUrl) throw new Error("Google Drive no pudo preparar la transferencia.");
+      state.phase = "Transfiriendo de Cloudflare R2 a Google Drive"; await saveTransfer(env, id, state);
+      const upload = await fetch(uploadUrl, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": contentType, "Content-Length": String(size), "Content-Range": `bytes 0-${Math.max(0, size - 1)}/${size}` }, body: trackTransferStream(source.body, env, id, state) });
+      const uploaded = await upload.json().catch(() => ({}));
+      if ((upload.status !== 200 && upload.status !== 201) || !uploaded.id) throw new Error(uploaded.error?.message || `Google Drive devolvió ${upload.status} durante la transferencia.`);
+      createdGoogleId = uploaded.id;
+      if (uploaded.size != null && Number(uploaded.size) !== size) throw new Error("El tamaño de la copia en Google Drive no coincide con el original.");
+      state.phase = "Actualizando la biblioteca"; await saveTransfer(env, id, state);
+      await updateMediaFile(session, env, record.id, `gdrive://${uploaded.id}`);
+      state.phase = "Quitando el original de Cloudflare R2"; await saveTransfer(env, id, state);
+      let sourceRemoved = true;
+      try { await env.MEDIA_BUCKET.delete(sourcePath); } catch { sourceRemoved = false; }
+      state.status = "complete"; state.done = size; state.sourceRemoved = sourceRemoved;
+      state.message = sourceRemoved ? "Archivo transferido a Google Drive." : "La copia está en Google Drive; el original de R2 quedó conservado.";
+    } else if (target === "r2") {
+      if (!sourceIsGoogle) throw new Error("El archivo ya está en Cloudflare R2.");
+      const googleId = sourcePath.slice("gdrive://".length);
+      if (!/^[A-Za-z0-9_-]{10,200}$/.test(googleId)) throw new Error("El identificador de Google Drive no es válido.");
+      const accessToken = await googleAccessToken(env);
+      if (!accessToken) throw new Error("Google Drive todavía no está conectado.");
+      state.phase = "Descargando desde Google Drive"; await saveTransfer(env, id, state);
+      const source = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(googleId)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!source.ok || !source.body) throw new Error("Google Drive no pudo entregar el archivo para transferirlo.");
+      const contentType = source.headers.get("Content-Type") || "application/octet-stream";
+      const safeName = String(record.file_name || "archivo").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 180);
+      createdR2Path = `${env.OWNER_USER_ID}/${Date.now()}_${crypto.randomUUID()}_${safeName}`;
+      state.phase = "Guardando en Cloudflare R2"; await saveTransfer(env, id, state);
+      const copied = await env.MEDIA_BUCKET.put(createdR2Path, trackTransferStream(source.body, env, id, state), { httpMetadata: { contentType } });
+      if (!copied || copied.size !== size) throw new Error("El tamaño de la copia en Cloudflare R2 no coincide con el original.");
+      state.phase = "Actualizando la biblioteca"; await saveTransfer(env, id, state);
+      await updateMediaFile(session, env, record.id, createdR2Path);
+      createdR2Path = null;
+      state.phase = "Quitando el original de Google Drive"; await saveTransfer(env, id, state);
+      let sourceRemoved = true;
+      try {
+        const deleted = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(googleId)}`, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!deleted.ok && deleted.status !== 404) sourceRemoved = false;
+      } catch { sourceRemoved = false; }
+      state.status = "complete"; state.done = size; state.sourceRemoved = sourceRemoved;
+      state.message = sourceRemoved ? "Archivo transferido a Cloudflare R2." : "La copia está en Cloudflare R2; el original de Google Drive quedó conservado.";
+    } else throw new Error("El destino de almacenamiento no es válido.");
+  } catch (error) {
+    if (createdGoogleId) {
+      const token = await googleAccessToken(env).catch(() => null);
+      if (token) await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(createdGoogleId)}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+    }
+    if (createdR2Path) await env.MEDIA_BUCKET.delete(createdR2Path).catch(() => {});
+    state.status = "error"; state.phase = "Transferencia interrumpida"; state.error = error instanceof Error ? error.message : "No se pudo completar la transferencia.";
+  }
+  await saveTransfer(env, id, state);
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
     const url = new URL(request.url);
     try {
@@ -226,6 +338,35 @@ export default {
         if (!connected) return json({ configured: Boolean(env.GOOGLE_CLIENT_SECRET && env.GOOGLE_OAUTH_STORE), connected: false });
         if (await isOwner(session, env)) return json({ configured: true, connected: true, quota: await googleQuota(env) });
         return json({ configured: true, connected: true });
+      }
+
+      if (url.pathname === "/transfer" && request.method === "POST") {
+        const session = await getUser(request, env);
+        if (!await isOwner(session, env)) return json({ error: "Solo el dueño puede transferir archivos entre almacenamientos." }, 403);
+        if (!await env.GOOGLE_OAUTH_STORE?.get(`refresh:${env.OWNER_USER_ID}`)) return json({ error: "Conectá Google Drive antes de transferir archivos." }, 409);
+        const input = await request.json().catch(() => ({}));
+        const fileId = typeof input.fileId === "string" ? input.fileId : "";
+        const target = input.target;
+        if (!fileId || fileId.length > 100 || !["google", "r2"].includes(target)) return json({ error: "Archivo o destino inválido." }, 400);
+        const record = await getMediaFile(fileId, session, env);
+        if (!record) return json({ error: "El archivo no existe en la biblioteca." }, 404);
+        const source = String(record.storage_path || "").startsWith("gdrive://") ? "google" : "r2";
+        if (source === target) return json({ error: "El archivo ya está guardado en ese servicio." }, 409);
+        const transferId = crypto.randomUUID();
+        const initial = { userId: session.user.id, fileId, fileName: record.file_name, size: Number(record.size_bytes), done: 0, status: "running", phase: "Preparando transferencia", source, target };
+        await saveTransfer(env, transferId, initial);
+        ctx.waitUntil(runStorageTransfer(transferId, record, target, session, env));
+        return json({ transferId, status: "running" }, 202);
+      }
+
+      if (url.pathname === "/transfer/status" && request.method === "GET") {
+        const session = await getUser(request, env);
+        if (!await isOwner(session, env)) return json({ error: "Solo el dueño puede consultar estas transferencias." }, 403);
+        const id = url.searchParams.get("id") || "";
+        if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: "Transferencia inválida." }, 400);
+        const state = await env.GOOGLE_OAUTH_STORE.get(`transfer:${id}`, "json");
+        if (!state || state.userId !== session.user.id) return json({ error: "Transferencia no encontrada." }, 404);
+        return json({ transferId: id, fileName: state.fileName, size: state.size, done: state.done, status: state.status, phase: state.phase, error: state.error || null, message: state.message || null, sourceRemoved: state.sourceRemoved });
       }
 
       if (url.pathname === "/google/upload-session" && request.method === "POST") {
