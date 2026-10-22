@@ -60,6 +60,10 @@ async function isOwner(session, env) {
   return Boolean(session && session.user.id === env.OWNER_USER_ID);
 }
 
+async function canTransfer(session, env) {
+  return Boolean(await isOwner(session, env) || await canUpload(session, env));
+}
+
 async function sign(secret, value) {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value)));
@@ -304,6 +308,7 @@ export default {
 
       if (url.pathname === "/google/connect" && request.method === "POST") {
         const session = await getUser(request, env);
+        if (!session) return json({ error: "La sesión venció. Volvé a iniciar sesión y conectá Drive de nuevo." }, 401);
         if (!await isOwner(session, env)) return json({ error: "Solo el dueño puede conectar Google Drive." }, 403);
         if (!env.GOOGLE_CLIENT_SECRET || !env.GOOGLE_TOKEN_ENCRYPTION_KEY || !env.GOOGLE_OAUTH_STORE) return json({ error: "Falta configurar el almacenamiento seguro de Google Drive." }, 503);
         const stateBytes = crypto.getRandomValues(new Uint8Array(32));
@@ -333,7 +338,8 @@ export default {
 
       if (url.pathname === "/google/status" && request.method === "GET") {
         const session = await getUser(request, env);
-        if (!session || (!await isOwner(session, env) && !await canUpload(session, env))) return json({ error: "Iniciá sesión para consultar el estado de Drive." }, 401);
+        if (!session) return json({ error: "La sesión venció. Volvé a iniciar sesión." }, 401);
+        if (!await isOwner(session, env) && !await canUpload(session, env)) return json({ error: "No tenés permiso para usar el Drive compartido." }, 403);
         const connected = Boolean(await env.GOOGLE_OAUTH_STORE?.get(`refresh:${env.OWNER_USER_ID}`));
         if (!connected) return json({ configured: Boolean(env.GOOGLE_CLIENT_SECRET && env.GOOGLE_OAUTH_STORE), connected: false });
         if (await isOwner(session, env)) return json({ configured: true, connected: true, quota: await googleQuota(env) });
@@ -342,7 +348,8 @@ export default {
 
       if (url.pathname === "/transfer" && request.method === "POST") {
         const session = await getUser(request, env);
-        if (!await isOwner(session, env)) return json({ error: "Solo el dueño puede transferir archivos entre almacenamientos." }, 403);
+        if (!session) return json({ error: "La sesión venció. Volvé a iniciar sesión para transferir." }, 401);
+        if (!await canTransfer(session, env)) return json({ error: "Solo el dueño y los colaboradores habilitados pueden transferir archivos." }, 403);
         if (!await env.GOOGLE_OAUTH_STORE?.get(`refresh:${env.OWNER_USER_ID}`)) return json({ error: "Conectá Google Drive antes de transferir archivos." }, 409);
         const input = await request.json().catch(() => ({}));
         const fileId = typeof input.fileId === "string" ? input.fileId : "";
@@ -361,7 +368,8 @@ export default {
 
       if (url.pathname === "/transfer/status" && request.method === "GET") {
         const session = await getUser(request, env);
-        if (!await isOwner(session, env)) return json({ error: "Solo el dueño puede consultar estas transferencias." }, 403);
+        if (!session) return json({ error: "La sesión venció. Volvé a iniciar sesión para consultar la transferencia." }, 401);
+        if (!await canTransfer(session, env)) return json({ error: "No tenés permiso para consultar estas transferencias." }, 403);
         const id = url.searchParams.get("id") || "";
         if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: "Transferencia inválida." }, 400);
         const state = await env.GOOGLE_OAUTH_STORE.get(`transfer:${id}`, "json");
