@@ -342,8 +342,9 @@ export default {
         if (!await isOwner(session, env) && !await canUpload(session, env)) return json({ error: "No tenés permiso para usar el Drive compartido." }, 403);
         const connected = Boolean(await env.GOOGLE_OAUTH_STORE?.get(`refresh:${env.OWNER_USER_ID}`));
         if (!connected) return json({ configured: Boolean(env.GOOGLE_CLIENT_SECRET && env.GOOGLE_OAUTH_STORE), connected: false });
-        if (await isOwner(session, env)) return json({ configured: true, connected: true, quota: await googleQuota(env) });
-        return json({ configured: true, connected: true });
+        // Collaborators use the owner's connected Drive, so expose its quota to
+        // them as well. The quota describes the shared Google account pool.
+        return json({ configured: true, connected: true, quota: await googleQuota(env) });
       }
 
       if (url.pathname === "/transfer" && request.method === "POST") {
