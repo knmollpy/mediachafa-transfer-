@@ -166,7 +166,7 @@
       const auth={Authorization:`Bearer ${token}`,'Content-Type':'application/json'};
       const created=await fetch(`${R2_WORKER_URL}/multipart/create`,{method:'POST',headers:auth,body:JSON.stringify({path,size:file.size,contentType:file.type||'application/octet-stream'})});
       const upload=await created.json(); if(!created.ok) throw new Error(upload.error||`Error ${created.status}`);
-      const count=Math.ceil(file.size/upload.partSize), parts=new Array(count); let uploaded=0, nextPart=0;
+      const count=Math.ceil(file.size/upload.partSize), parts=new Array(count), inFlight=new Array(count).fill(0); let uploaded=0, nextPart=0;
       try {
         const uploadNextPart=async()=>{
           while(true) {
@@ -178,7 +178,7 @@
               const xhr=new XMLHttpRequest();
               xhr.open('PUT',`${R2_WORKER_URL}/multipart/part?path=${encodeURIComponent(path)}&uploadId=${encodeURIComponent(upload.uploadId)}&partNumber=${number}`);
               xhr.setRequestHeader('Authorization',`Bearer ${token}`);
-              xhr.upload.onprogress=event=>{if(event.lengthComputable)onProgress(Math.min(file.size,uploaded+Math.floor(completed*event.loaded/event.total)));};
+              xhr.upload.onprogress=event=>{if(event.lengthComputable){inFlight[index]=Math.floor(completed*event.loaded/event.total);onProgress(Math.min(file.size,uploaded+inFlight.reduce((sum,value)=>sum+value,0)));}};
               xhr.onerror=()=>reject(new Error('Error de conexión durante la subida.'));
               xhr.onload=()=>{
                 let body={};try{body=JSON.parse(xhr.responseText||'{}');}catch{}
@@ -186,8 +186,8 @@
               };
               xhr.send(file.slice(start,end));
             });
-            parts[index]={partNumber:number,etag:result.etag}; uploaded=Math.min(file.size,uploaded+completed);
-            button.textContent=`Subiendo ${Math.floor(uploaded/file.size*100)}%…`; onProgress(uploaded);
+            parts[index]={partNumber:number,etag:result.etag}; inFlight[index]=0; uploaded=Math.min(file.size,uploaded+completed);
+            button.textContent=`Subiendo ${Math.floor(uploaded/file.size*100)}%…`; onProgress(Math.min(file.size,uploaded+inFlight.reduce((sum,value)=>sum+value,0)));
           }
         };
         const results=await Promise.allSettled(Array.from({length:Math.min(4,count)},()=>uploadNextPart()));
