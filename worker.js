@@ -56,6 +56,14 @@ async function canUpload(session, env) {
   return rows[0]?.can_upload === true;
 }
 
+async function isRegisteredCollaborator(session, env) {
+  if (!session || session.user.id === env.OWNER_USER_ID) return false;
+  const url = `${env.SUPABASE_URL}/rest/v1/media_users?select=id&id=eq.${encodeURIComponent(session.user.id)}&limit=1`;
+  const response = await fetch(url, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } });
+  if (!response.ok) return false;
+  return (await response.json()).length > 0;
+}
+
 async function isOwner(session, env) {
   return Boolean(session && session.user.id === env.OWNER_USER_ID);
 }
@@ -339,7 +347,7 @@ export default {
       if (url.pathname === "/google/status" && request.method === "GET") {
         const session = await getUser(request, env);
         if (!session) return json({ error: "La sesión venció. Volvé a iniciar sesión." }, 401);
-        if (!await isOwner(session, env) && !await canUpload(session, env)) return json({ error: "No tenés permiso para usar el Drive compartido." }, 403);
+        if (!await isOwner(session, env) && !await isRegisteredCollaborator(session, env)) return json({ error: "No tenés permiso para usar el Drive compartido." }, 403);
         const connected = Boolean(await env.GOOGLE_OAUTH_STORE?.get(`refresh:${env.OWNER_USER_ID}`));
         if (!connected) return json({ configured: Boolean(env.GOOGLE_CLIENT_SECRET && env.GOOGLE_OAUTH_STORE), connected: false });
         // Collaborators use the owner's connected Drive, so expose its quota to
