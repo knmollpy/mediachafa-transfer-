@@ -505,28 +505,30 @@ export default {
         const uploadId = crypto.randomUUID();
         const uploadState = JSON.stringify({ url: response.headers.get("Location"), userId: session.user.id, size, contentType });
         await env.GOOGLE_OAUTH_STORE.put(`upload:${uploadId}`, await encryptGoogleToken(uploadState, env), { expirationTtl: 7 * 24 * 60 * 60 });
-        return json({ uploadId, partSize: 32 * 1024 * 1024, expiresIn: 7 * 24 * 60 * 60 });
+        return json({ uploadId, partSize: 8 * 1024 * 1024, expiresIn: 7 * 24 * 60 * 60 });
       }
 
       if (url.pathname === "/google/upload-part" && request.method === "PUT") {
         const session = await getUser(request, env);
         if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
         const uploadId = url.searchParams.get("id") || "";
+        const probe=url.searchParams.get("probe")==="1";
         const start = Number(url.searchParams.get("start")), end = Number(url.searchParams.get("end")), total = Number(url.searchParams.get("total"));
-        if (!/^[0-9a-f-]{36}$/i.test(uploadId) || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || !Number.isSafeInteger(total) || start < 0 || end < start || end >= total || end - start + 1 > 32 * 1024 * 1024) return json({ error: "Parte de subida inválida." }, 400);
+        if (!/^[0-9a-f-]{36}$/i.test(uploadId) || !Number.isSafeInteger(total) || total<=0 || (!probe&&(!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start<0 || end<start || end>=total || end-start+1>8*1024*1024))) return json({ error: "Parte de subida inválida." }, 400);
         const rawState = await env.GOOGLE_OAUTH_STORE.get(`upload:${uploadId}`);
         if (!rawState) return json({ error: "La sesión de subida expiró. Iniciá la subida nuevamente." }, 410);
         const state = JSON.parse(await decryptGoogleToken(rawState, env));
         if (state.userId !== session.user.id || state.size !== total) return json({ error: "La sesión de subida no pertenece a este usuario o archivo." }, 403);
-        const bytes = await request.arrayBuffer();
-        if (bytes.byteLength !== end - start + 1) return json({ error: "El tamaño de la parte no coincide." }, 400);
+        const bytes=probe?new ArrayBuffer(0):await request.arrayBuffer();
+        if(!probe&&bytes.byteLength!==end-start+1)return json({error:"El tamaño de la parte no coincide."},400);
         const accessToken = await googleAccessToken(env);
         if (!accessToken) return json({ error: "Google Drive todavía no está conectado por el dueño." }, 409);
-        const response = await fetch(state.url, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": state.contentType, "Content-Range": `bytes ${start}-${end}/${total}` }, body: bytes });
-        if (response.status === 308) return json({ ok: true, complete: false, next: end + 1 });
+        const response = await fetch(state.url, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": state.contentType, "Content-Range": probe?`bytes */${total}`:`bytes ${start}-${end}/${total}` }, body: bytes });
+        if(response.status===308){const last=response.headers.get("Range")?.match(/bytes=0-(\d+)/)?.[1];return json({ok:true,complete:false,next:last?Number(last)+1:0});}
         if (response.status !== 200 && response.status !== 201) {
           const failure = await response.json().catch(() => ({}));
-          return json({ error: failure.error?.message || `Google Drive devolvió ${response.status}.` }, 502);
+          const retryable=response.status>=500||response.status===429;
+          return json({ error: failure.error?.message || `Google Drive devolvió ${response.status}.`,retryable }, retryable?503:502);
         }
         await env.GOOGLE_OAUTH_STORE.delete(`upload:${uploadId}`);
         const file = await response.json().catch(() => ({}));
