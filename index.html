@@ -41,6 +41,8 @@
     :root[data-theme="dark"] .drop-overlay{background:rgba(21,32,25,.96)}
     :root[data-theme="dark"] .file-card{background:#1b2720;border-color:#35453b}
     :root[data-theme="dark"] .field,:root[data-theme="dark"] .search,:root[data-theme="dark"] .select,:root[data-theme="dark"] .secondary,:root[data-theme="dark"] .icon-btn{background:#152019;border-color:#3b5042;color:#e7eee9}
+    .storage-badge{display:inline-flex;align-items:center;margin-left:6px;padding:2px 7px;border:1px solid #dce9de;border-radius:999px;color:#3b7650;font-size:9px;font-weight:700;vertical-align:middle}
+    :root[data-theme="dark"] .storage-badge{border-color:#385742;color:#9fd2a9}
     :root[data-theme="dark"] .folder,:root[data-theme="dark"] .file-desc,:root[data-theme="dark"] .file-meta,:root[data-theme="dark"] .welcome p,:root[data-theme="dark"] .date{color:#a8b5ac}
     :root[data-theme="dark"] .folder:hover,:root[data-theme="dark"] .folder.selected,:root[data-theme="dark"] .role-chip{background:#263a2c;color:#a8dfb5}
     :root[data-theme="dark"] .notice,:root[data-theme="dark"] .drop{background:#202f25;color:#bcc9c0}
@@ -153,6 +155,7 @@
     function isPreviewable(mime) { return Boolean(mime && (mime.startsWith('image/') || mime.startsWith('video/') || mime === 'application/pdf')); }
     function objectUrl(file, preview=false) { return `${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}${preview?'?preview=1':''}`; }
     function isGoogleFile(file) { return typeof file?.path === 'string' && file.path.startsWith('gdrive://'); }
+    function storageProviderLabel(file) { return isGoogleFile(file) ? 'Google Drive' : (file.path?.startsWith('supabase://') ? 'Supabase Storage' : 'Cloudflare R2'); }
     async function googleSignedUrl(file, preview=false) {
       const response=await fetch(`${R2_WORKER_URL}/google/sign`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:file.path,preview})});
       const result=await response.json().catch(()=>({}));
@@ -391,6 +394,7 @@
         const canEditDescription = ownerMode || (uploaderMode && file.createdBy === currentUser?.id);
         const canPreview = isPreviewable(file.mimeType);
         card.innerHTML = `<div class="file-icon ${typeClass(file.type)}">${esc(file.type.toUpperCase().slice(0,5))}</div><div><div class="file-name" title="${esc(file.name)}">${esc(file.name)}</div><div class="file-meta">${formatBytes(file.size)} · Agregado ${esc(file.date)}</div><div class="file-desc">${esc(file.description || 'Sin descripción.')}</div></div><div class="file-actions">${canPreview?'<button class="preview-btn">Vista previa</button>':''}<button class="download">↓ Descargar</button><button class="share-btn" title="Crear enlace de descarga">🔗 Compartir</button>${canEditDescription?'<button class="icon-btn edit" title="Editar descripción">✎</button>':''}${ownerMode?'<button class="icon-btn delete" title="Eliminar">×</button>':''}</div>`;
+        card.querySelector('.file-meta').insertAdjacentHTML('beforeend', `<span class="storage-badge">${storageProviderLabel(file)}</span>`);
         card.querySelector('.download').onclick = () => downloadFile(file);
         card.querySelector('.share-btn').onclick = () => shareFile(file);
         if (canEditDescription) card.querySelector('.edit').onclick = () => editDescription(file.id);
@@ -398,6 +402,9 @@
         if (ownerMode || uploaderMode) {
           if (ownerMode) card.querySelector('.delete').onclick = () => deleteFile(file.id);
           const move = document.createElement('button'); move.className='icon-btn move'; move.title='Mover a otra carpeta'; move.textContent='↗'; move.onclick=()=>moveFile(file.id); card.querySelector('.file-actions').append(move);
+        }
+        if (ownerMode && googleDriveAvailable) {
+          const transfer = document.createElement('button'); transfer.className='icon-btn transfer'; transfer.title=`Transferir de ${storageProviderLabel(file)} a ${isGoogleFile(file)?'Cloudflare R2':'Google Drive'}`; transfer.setAttribute('aria-label',transfer.title); transfer.textContent='⇄'; transfer.onclick=()=>transferStorage(file.id); card.querySelector('.file-actions').append(transfer);
         }
         output.append(card);
       });
@@ -597,7 +604,7 @@
       const root = $('#modal-root');
       root.innerHTML = `<div class="modal-backdrop"><div class="modal"><div class="modal-top"><h2>${title}</h2><button class="close">×</button></div>${body}<div class="modal-actions"><button class="secondary cancel">Cancelar</button><button class="primary submit">${submitText}</button></div></div></div>`;
       root.querySelector('.close').onclick = root.querySelector('.cancel').onclick = () => root.replaceChildren();
-      root.querySelector('.modal-backdrop').onclick = event => { if (event.target.classList.contains('modal-backdrop')) root.replaceChildren(); };
+      root.querySelector('.modal-backdrop').onclick = event => { if (event.target.classList.contains('modal-backdrop') && event.currentTarget.dataset.locked !== 'true') root.replaceChildren(); };
       root.querySelector('.submit').onclick = () => onSubmit(root);
     }
 
@@ -732,6 +739,36 @@
       modal('Mover archivo', `<p class="sub">${esc(file.name)}</p><label class="field-label">Nueva carpeta</label><select class="field" id="move-folder">${options}</select>`, 'Mover', async root => {
         const {error} = await client.from('media_files').update({folder:root.querySelector('#move-folder').value === 'Sin carpeta' ? null : root.querySelector('#move-folder').value, updated_at:new Date().toISOString()}).eq('id',id);
         if (error) { toast('No se pudo mover: '+error.message); return; } root.replaceChildren(); await loadLibrary(); toast('Archivo movido.');
+      });
+    }
+
+    async function transferStorage(id) {
+      const file=files.find(item=>item.id===id);if(!file||!ownerMode)return;
+      if(!googleDriveAvailable){toast('Conectá Google Drive antes de transferir archivos.');return;}
+      const source=storageProviderLabel(file),target=isGoogleFile(file)?'r2':'google',targetLabel=target==='google'?'Google Drive':'Cloudflare R2';
+      modal('Transferir archivo',`<p class="sub">${esc(file.name)}</p><div class="notice">Origen: <strong>${esc(source)}</strong><br>Destino: <strong>${esc(targetLabel)}</strong><br>Se copiará el archivo, se actualizará la biblioteca y se quitará el original cuando la copia quede confirmada.</div><div id="transfer-progress" class="hidden" style="margin-top:14px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:7px"><strong id="transfer-label">Preparando…</strong><span id="transfer-stats">0% · 0 MB/s</span></div><div class="bar"><div class="bar-fill" id="transfer-bar" style="width:0%"></div></div></div>`, 'Transferir', async root=>{
+        const button=root.querySelector('.submit'),dialog=root.querySelector('.modal'),backdrop=root.querySelector('.modal-backdrop'),progress=root.querySelector('#transfer-progress'),bar=root.querySelector('#transfer-bar'),label=root.querySelector('#transfer-label'),stats=root.querySelector('#transfer-stats');
+        button.disabled=true;backdrop.dataset.locked='true';root.querySelector('.close').disabled=true;root.querySelector('.cancel').disabled=true;progress.classList.remove('hidden');label.textContent=`Iniciando transferencia a ${targetLabel}`;
+        const {data:{session}}=await client.auth.getSession(),headers={Authorization:`Bearer ${session?.access_token||''}`,'Content-Type':'application/json'};
+        try{
+          const started=await fetch(`${R2_WORKER_URL}/transfer`,{method:'POST',headers,body:JSON.stringify({fileId:id,target})});
+          const startResult=await started.json().catch(()=>({}));
+          if(!started.ok||!startResult.transferId)throw new Error(startResult.error||`No se pudo iniciar la transferencia (${started.status}).`);
+          let lastDone=0,lastTime=performance.now();
+          while(true){
+            const response=await fetch(`${R2_WORKER_URL}/transfer/status?id=${encodeURIComponent(startResult.transferId)}`,{headers:{Authorization:headers.Authorization, 'Cache-Control':'no-cache'}});
+            const state=await response.json().catch(()=>({}));
+            if(!response.ok)throw new Error(state.error||`No se pudo consultar el progreso (${response.status}).`);
+            const now=performance.now(),done=Number(state.done||0),size=Number(state.size||file.size),percent=size?Math.min(100,Math.floor(done/size*100)):100,seconds=Math.max(.1,(now-lastTime)/1000),speed=Math.max(0,done-lastDone)/seconds/1024/1024;
+            label.textContent=state.phase||'Transfiriendo archivo';bar.style.width=`${percent}%`;stats.textContent=`${percent}% · ${speed.toFixed(1)} MB/s`;
+            lastDone=done;lastTime=now;
+            if(state.status==='complete'){
+              bar.style.width='100%';stats.textContent=`100% · ${formatBytes(size)} completados`;if(root.querySelector('.modal')===dialog)root.replaceChildren();await loadLibrary();await loadGoogleDriveStatus();toast(state.message||`Archivo transferido a ${targetLabel}.`);return;
+            }
+            if(state.status==='error')throw new Error(state.error||'La transferencia no se pudo completar.');
+            await new Promise(resolve=>setTimeout(resolve,700));
+          }
+        }catch(error){button.disabled=false;backdrop.dataset.locked='false';root.querySelector('.close').disabled=false;root.querySelector('.cancel').disabled=false;label.textContent='Transferencia detenida';toast(error.message||'No se pudo transferir el archivo.');}
       });
     }
 
