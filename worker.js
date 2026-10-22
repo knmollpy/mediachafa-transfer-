@@ -352,7 +352,7 @@ async function runStorageTransfer(id, record, target, session, env) {
       if (!source.ok || !source.body) throw new Error("Google Drive no pudo entregar el archivo para transferirlo.");
       const contentType = source.headers.get("Content-Type") || "application/octet-stream";
       const safeName = String(record.file_name || "archivo").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 180);
-      createdR2Path = `${env.OWNER_USER_ID}/${Date.now()}_${crypto.randomUUID()}_${safeName}`;
+      createdR2Path = `${session.user.id}/${Date.now()}_${crypto.randomUUID()}_${safeName}`;
       state.phase = "Guardando en Cloudflare R2"; await saveTransfer(env, id, state);
       const copied = await env.MEDIA_BUCKET.put(createdR2Path, trackTransferStream(source.body, env, id, state), { httpMetadata: { contentType } });
       if (!copied || copied.size !== size) throw new Error("El tamaño de la copia en Cloudflare R2 no coincide con el original.");
