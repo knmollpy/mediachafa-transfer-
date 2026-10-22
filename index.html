@@ -88,7 +88,7 @@
     </div>
   </section>
   <main id="app" class="app hidden">
-    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
+    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="theme-toggle" id="music-toggle" type="button" aria-label="Activar música" aria-pressed="false" title="Activar música">♫ Música</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#4285f4">◉</span> Google Drive compartido</div><div class="storage-amount"><strong id="drive-used-label">—</strong> de <strong id="drive-capacity-label">200 GB</strong></div></div><div class="bar"><div class="bar-fill" id="drive-bar-fill"></div></div><div class="storage-foot"><span id="drive-remaining-label">Cupo compartido con Gmail y Google Fotos</span></div></section><section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Cloudflare R2</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong>10 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">10 GB disponibles</span></div></section>
@@ -98,6 +98,7 @@
       <section class="content hidden" id="links-panel"><div class="content-head"><div class="content-title">Enlaces guardados</div><input class="search" id="links-search" placeholder="⌕  Buscar enlaces…"><button id="all-links" class="navitem active" type="button">Todos</button><button id="own-links" class="navitem" type="button">Propios</button><button id="add-link" class="add-btn">＋ Guardar enlace</button></div><div id="links-list" class="file-list"></div></section>
     </div>
   </main>
+  <audio id="background-music" preload="none" loop src="/background.mp3"></audio>
   <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true"><div><strong>Soltá los archivos acá</strong><span>Se van a preparar para subir. La transferencia empieza cuando toques “Subir”.</span></div></div>
   <div id="modal-root"></div>
   <script>
@@ -165,7 +166,7 @@
     async function loadGoogleDriveStatus() {
       googleDriveAvailable=false;googleDriveQuota=null;
       const {data:{session}}=await client.auth.getSession();
-      if(!session?.access_token)return;
+      if(!session?.access_token){$('#drive-capacity-label').textContent='200 GB';$('#drive-remaining-label').textContent='Iniciá sesión para consultar el espacio disponible';return;}
       try {
         const response=await fetch(`${R2_WORKER_URL}/google/status`,{headers:{Authorization:`Bearer ${session.access_token}`}});
         const result=await response.json();
@@ -176,15 +177,14 @@
         $('#drive-button').disabled=!ownerMode;
         $('#drive-button').textContent=ownerMode?(googleDriveAvailable?'Drive conectado':'Vincular Drive'):(googleDriveAvailable?'Drive compartido conectado':'Drive no conectado');
         $('#drive-button').title=ownerMode?(googleDriveAvailable?'Google Drive conectado a tu cuenta':'Conectar Google Drive'):(googleDriveAvailable?'Google Drive compartido por la cuenta dueña':'El dueño debe conectar Google Drive');
-        const card=$('#drive-storage');
-        card.classList.toggle('hidden',(!ownerMode&&!uploaderMode)||!googleDriveAvailable||!googleDriveQuota);
+        const card=$('.storage');
         if((ownerMode||uploaderMode)&&googleDriveQuota){
           const used=Number(googleDriveQuota.usageInDrive||0),totalUsed=Number(googleDriveQuota.usage||used),limit=Number(googleDriveQuota.limit||0),free=Math.max(0,limit-totalUsed);
-          $('#drive-used-label').textContent=formatBytes(used);$('#drive-capacity-label').textContent=limit?formatBytes(limit):'Ilimitado';
+          $('#drive-used-label').textContent=formatBytes(used);$('#drive-capacity-label').textContent=limit?formatBytes(limit):'200 GB';
           $('#drive-remaining-label').textContent=limit?`${formatBytes(free)} disponibles · cupo compartido con Gmail y Google Fotos`:'Espacio ilimitado';
           $('#drive-bar-fill').style.width=limit?`${Math.min(100,totalUsed/limit*100)}%`:'0%';
         }
-      } catch { googleDriveAvailable=false; }
+      } catch { googleDriveAvailable=false;$('#drive-capacity-label').textContent='200 GB';$('#drive-remaining-label').textContent='No se pudo consultar el espacio de Drive'; }
     }
     $('#drive-button').onclick=async()=>{
       if(!ownerMode){toast(googleDriveAvailable?'Google Drive está conectado por el dueño.':'El dueño debe conectar Google Drive desde su cuenta.');return;}
@@ -558,6 +558,13 @@
       button.querySelector('.theme-icon').textContent = dark ? '☀' : '☾';
       button.querySelector('.theme-label').textContent = dark ? 'Claro' : 'Oscuro';
     }
+    const backgroundMusic=$('#background-music'),musicToggle=$('#music-toggle');
+    musicToggle.onclick=async()=>{
+      if(backgroundMusic.paused){
+        try{await backgroundMusic.play();musicToggle.textContent='♫ Música activada';musicToggle.setAttribute('aria-label','Desactivar música');musicToggle.setAttribute('aria-pressed','true');musicToggle.title='Desactivar música';}
+        catch{toast('No se pudo iniciar la música. Volvé a tocar el botón para intentar de nuevo.');}
+      }else{backgroundMusic.pause();musicToggle.textContent='♫ Música';musicToggle.setAttribute('aria-label','Activar música');musicToggle.setAttribute('aria-pressed','false');musicToggle.title='Activar música';}
+    };
     setTheme(localStorage.getItem('mediachafa-theme') || 'light');
     $('#theme-toggle').onclick = () => {
       const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
