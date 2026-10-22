@@ -177,12 +177,12 @@
         $('#drive-button').textContent=ownerMode?(googleDriveAvailable?'Drive conectado':'Vincular Drive'):(googleDriveAvailable?'Drive compartido conectado':'Drive no conectado');
         $('#drive-button').title=ownerMode?(googleDriveAvailable?'Google Drive conectado a tu cuenta':'Conectar Google Drive'):(googleDriveAvailable?'Google Drive compartido por la cuenta dueña':'El dueño debe conectar Google Drive');
         const card=$('#drive-storage');
-        card.classList.toggle('hidden',!ownerMode||!googleDriveAvailable||!googleDriveQuota);
-        if(ownerMode&&googleDriveQuota){
-          const used=Number(googleDriveQuota.usage||googleDriveQuota.usageInDrive||0),limit=Number(googleDriveQuota.limit||0),free=Math.max(0,limit-used);
+        card.classList.toggle('hidden',(!ownerMode&&!uploaderMode)||!googleDriveAvailable||!googleDriveQuota);
+        if((ownerMode||uploaderMode)&&googleDriveQuota){
+          const used=Number(googleDriveQuota.usageInDrive||0),totalUsed=Number(googleDriveQuota.usage||used),limit=Number(googleDriveQuota.limit||0),free=Math.max(0,limit-totalUsed);
           $('#drive-used-label').textContent=formatBytes(used);$('#drive-capacity-label').textContent=limit?formatBytes(limit):'Ilimitado';
-          $('#drive-remaining-label').textContent=limit?`${formatBytes(free)} disponibles`:'Espacio ilimitado';
-          $('#drive-bar-fill').style.width=limit?`${Math.min(100,used/limit*100)}%`:'0%';
+          $('#drive-remaining-label').textContent=limit?`${formatBytes(free)} disponibles · cupo compartido con Gmail y Google Fotos`:'Espacio ilimitado';
+          $('#drive-bar-fill').style.width=limit?`${Math.min(100,totalUsed/limit*100)}%`:'0%';
         }
       } catch { googleDriveAvailable=false; }
     }
