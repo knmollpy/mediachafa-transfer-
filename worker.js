@@ -9,6 +9,8 @@ const corsHeaders = {
 // library quota; multipart uploads avoid sending large bodies through Worker.
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
 const SHARE_TTL_SECONDS = 7 * 24 * 60 * 60;
+const GOOGLE_REDIRECT_URI = "https://mediachafa-storage.nxmollpy.workers.dev/google/callback";
+const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
 function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {
@@ -73,6 +75,67 @@ function safeEqual(a, b) {
   return difference === 0;
 }
 
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value) {
+  return Uint8Array.from(atob(value), char => char.charCodeAt(0));
+}
+
+async function googleEncryptionKey(env) {
+  return crypto.subtle.importKey("raw", base64ToBytes(env.GOOGLE_TOKEN_ENCRYPTION_KEY), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function encryptGoogleToken(value, env) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await googleEncryptionKey(env), new TextEncoder().encode(value));
+  return JSON.stringify({ iv: bytesToBase64(iv), data: bytesToBase64(new Uint8Array(encrypted)) });
+}
+
+async function decryptGoogleToken(value, env) {
+  if (!value || !env.GOOGLE_TOKEN_ENCRYPTION_KEY) return null;
+  const stored = JSON.parse(value);
+  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(stored.iv) }, await googleEncryptionKey(env), base64ToBytes(stored.data));
+  return new TextDecoder().decode(decrypted);
+}
+
+async function googleAccessToken(env) {
+  const encrypted = await env.GOOGLE_OAUTH_STORE.get(`refresh:${env.OWNER_USER_ID}`);
+  const refreshToken = await decryptGoogleToken(encrypted, env);
+  if (!refreshToken) return null;
+  const body = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, refresh_token: refreshToken, grant_type: "refresh_token" });
+  const response = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+  if (!response.ok) throw new Error("Google no aceptó la renovación de sesión.");
+  const result = await response.json();
+  return result.access_token || null;
+}
+
+async function googleQuota(env) {
+  const accessToken = await googleAccessToken(env);
+  if (!accessToken) return null;
+  const response = await fetch("https://www.googleapis.com/drive/v3/about?fields=storageQuota(limit,usage,usageInDrive)", { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!response.ok) throw new Error("No se pudo consultar el espacio de Google Drive.");
+  return (await response.json()).storageQuota || null;
+}
+
+function googleFileId(path) {
+  if (typeof path !== "string" || !path.startsWith("gdrive://")) return null;
+  const id = path.slice("gdrive://".length);
+  return /^[A-Za-z0-9_-]{10,200}$/.test(id) ? id : null;
+}
+
+async function findGoogleFileRecord(id, env) {
+  const path = `gdrive://${id}`;
+  const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=file_name,storage_path&storage_path=eq.${encodeURIComponent(path)}&limit=1`;
+  const response = await fetch(query, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY } });
+  if (!response.ok) return null;
+  const rows = await response.json();
+  return rows[0] || null;
+}
+
 async function serveObject(object, filename = "", disposition = "attachment") {
   if (!object) return json({ error: "Archivo no encontrado." }, 404);
   const headers = new Headers();
@@ -124,7 +187,136 @@ export default {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/health" && request.method === "GET") {
-        return json({ ok: true, storage: Boolean(env.MEDIA_BUCKET), configured: Boolean(env.SUPABASE_URL && env.SUPABASE_PUBLISHABLE_KEY && env.OWNER_USER_ID && env.SHARE_SIGNING_SECRET) });
+        return json({ ok: true, storage: Boolean(env.MEDIA_BUCKET), configured: Boolean(env.SUPABASE_URL && env.SUPABASE_PUBLISHABLE_KEY && env.OWNER_USER_ID && env.SHARE_SIGNING_SECRET), googleConfigured: Boolean(env.GOOGLE_CLIENT_SECRET && env.GOOGLE_TOKEN_ENCRYPTION_KEY && env.GOOGLE_OAUTH_STORE) });
+      }
+
+      if (url.pathname === "/google/connect" && request.method === "POST") {
+        const session = await getUser(request, env);
+        if (!await isOwner(session, env)) return json({ error: "Solo el dueño puede conectar Google Drive." }, 403);
+        if (!env.GOOGLE_CLIENT_SECRET || !env.GOOGLE_TOKEN_ENCRYPTION_KEY || !env.GOOGLE_OAUTH_STORE) return json({ error: "Falta configurar el almacenamiento seguro de Google Drive." }, 503);
+        const stateBytes = crypto.getRandomValues(new Uint8Array(32));
+        const state = bytesToBase64(stateBytes).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+        await env.GOOGLE_OAUTH_STORE.put(`state:${state}`, session.user.id, { expirationTtl: 600 });
+        const authorize = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+        authorize.search = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: GOOGLE_REDIRECT_URI, response_type: "code", scope: GOOGLE_SCOPE, access_type: "offline", prompt: "consent", include_granted_scopes: "true", state }).toString();
+        return json({ url: authorize.toString() });
+      }
+
+      if (url.pathname === "/google/callback" && request.method === "GET") {
+        const state = url.searchParams.get("state") || "";
+        const code = url.searchParams.get("code") || "";
+        if (url.searchParams.has("error")) return new Response("La autorización de Google fue cancelada. Podés cerrar esta ventana.", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+        if (!/^[A-Za-z0-9_-]{40,60}$/.test(state) || !code) return new Response("No se pudo validar la autorización. Volvé a intentarlo desde MediaChafa.", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+        const ownerId = await env.GOOGLE_OAUTH_STORE.get(`state:${state}`);
+        await env.GOOGLE_OAUTH_STORE.delete(`state:${state}`);
+        if (!ownerId || ownerId !== env.OWNER_USER_ID) return new Response("El inicio de sesión expiró. Volvé a intentarlo desde MediaChafa.", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+        const tokenResponse = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ code, client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, redirect_uri: GOOGLE_REDIRECT_URI, grant_type: "authorization_code" }) });
+        const tokens = await tokenResponse.json().catch(() => ({}));
+        if (!tokenResponse.ok || !tokens.access_token) return new Response("Google no pudo completar la conexión. Volvé a intentarlo desde MediaChafa.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+        const existing = await env.GOOGLE_OAUTH_STORE.get(`refresh:${ownerId}`);
+        if (tokens.refresh_token) await env.GOOGLE_OAUTH_STORE.put(`refresh:${ownerId}`, await encryptGoogleToken(tokens.refresh_token, env));
+        else if (!existing) return new Response("Google no entregó un permiso persistente. Revocá la conexión de MediaChafa en tu cuenta de Google y volvé a conectar.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+        return Response.redirect("https://mediachafa-transfer.vercel.app/?drive=connected", 302);
+      }
+
+      if (url.pathname === "/google/status" && request.method === "GET") {
+        const session = await getUser(request, env);
+        if (!session || (!await isOwner(session, env) && !await canUpload(session, env))) return json({ error: "Iniciá sesión para consultar el estado de Drive." }, 401);
+        const connected = Boolean(await env.GOOGLE_OAUTH_STORE?.get(`refresh:${env.OWNER_USER_ID}`));
+        if (!connected) return json({ configured: Boolean(env.GOOGLE_CLIENT_SECRET && env.GOOGLE_OAUTH_STORE), connected: false });
+        if (await isOwner(session, env)) return json({ configured: true, connected: true, quota: await googleQuota(env) });
+        return json({ configured: true, connected: true });
+      }
+
+      if (url.pathname === "/google/upload-session" && request.method === "POST") {
+        const session = await getUser(request, env);
+        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
+        const input = await request.json().catch(() => ({}));
+        const name = typeof input.name === "string" ? input.name.trim().slice(0, 240) : "";
+        const size = Number(input.size);
+        const contentType = typeof input.contentType === "string" ? input.contentType.slice(0, 160) : "application/octet-stream";
+        if (!name || !Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) return json({ error: "Nombre o tamaño de archivo inválido." }, 400);
+        const accessToken = await googleAccessToken(env);
+        if (!accessToken) return json({ error: "Google Drive todavía no está conectado por el dueño." }, 409);
+        const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,mimeType", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": contentType, "X-Upload-Content-Length": String(size) }, body: JSON.stringify({ name, mimeType: contentType }) });
+        if (!response.ok || !response.headers.get("Location")) return json({ error: "Google Drive no pudo iniciar la subida." }, 502);
+        const uploadId = crypto.randomUUID();
+        const uploadState = JSON.stringify({ url: response.headers.get("Location"), userId: session.user.id, size, contentType });
+        await env.GOOGLE_OAUTH_STORE.put(`upload:${uploadId}`, await encryptGoogleToken(uploadState, env), { expirationTtl: 7 * 24 * 60 * 60 });
+        return json({ uploadId, partSize: 32 * 1024 * 1024, expiresIn: 7 * 24 * 60 * 60 });
+      }
+
+      if (url.pathname === "/google/upload-part" && request.method === "PUT") {
+        const session = await getUser(request, env);
+        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
+        const uploadId = url.searchParams.get("id") || "";
+        const start = Number(url.searchParams.get("start")), end = Number(url.searchParams.get("end")), total = Number(url.searchParams.get("total"));
+        if (!/^[0-9a-f-]{36}$/i.test(uploadId) || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || !Number.isSafeInteger(total) || start < 0 || end < start || end >= total || end - start + 1 > 32 * 1024 * 1024) return json({ error: "Parte de subida inválida." }, 400);
+        const rawState = await env.GOOGLE_OAUTH_STORE.get(`upload:${uploadId}`);
+        if (!rawState) return json({ error: "La sesión de subida expiró. Iniciá la subida nuevamente." }, 410);
+        const state = JSON.parse(await decryptGoogleToken(rawState, env));
+        if (state.userId !== session.user.id || state.size !== total) return json({ error: "La sesión de subida no pertenece a este usuario o archivo." }, 403);
+        const bytes = await request.arrayBuffer();
+        if (bytes.byteLength !== end - start + 1) return json({ error: "El tamaño de la parte no coincide." }, 400);
+        const accessToken = await googleAccessToken(env);
+        if (!accessToken) return json({ error: "Google Drive todavía no está conectado por el dueño." }, 409);
+        const response = await fetch(state.url, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": state.contentType, "Content-Range": `bytes ${start}-${end}/${total}` }, body: bytes });
+        if (response.status === 308) return json({ ok: true, complete: false, next: end + 1 });
+        if (response.status !== 200 && response.status !== 201) {
+          const failure = await response.json().catch(() => ({}));
+          return json({ error: failure.error?.message || `Google Drive devolvió ${response.status}.` }, 502);
+        }
+        await env.GOOGLE_OAUTH_STORE.delete(`upload:${uploadId}`);
+        const file = await response.json().catch(() => ({}));
+        if (!file.id) return json({ error: "Google Drive finalizó, pero no devolvió el identificador del archivo." }, 502);
+        return json({ ok: true, complete: true, file });
+      }
+
+      if (url.pathname === "/google/sign" && request.method === "POST") {
+        if (!env.SHARE_SIGNING_SECRET) return json({ error: "El servicio de enlaces no está configurado." }, 503);
+        const input = await request.json().catch(() => ({}));
+        const id = googleFileId(input.path);
+        if (!id || !await findGoogleFileRecord(id, env)) return json({ error: "Archivo no encontrado." }, 404);
+        const expires = Math.floor(Date.now() / 1000) + SHARE_TTL_SECONDS;
+        const preview = input.preview === true;
+        const signature = await sign(env.SHARE_SIGNING_SECRET, `gdrive:${id}\n${expires}\n${preview ? "inline" : "attachment"}`);
+        const shareUrl = new URL(`/google/download/${encodeURIComponent(id)}`, url.origin);
+        shareUrl.searchParams.set("expires", String(expires));
+        shareUrl.searchParams.set("signature", signature);
+        if (preview) shareUrl.searchParams.set("preview", "1");
+        return json({ url: shareUrl.toString(), expiresAt: new Date(expires * 1000).toISOString(), expiresIn: SHARE_TTL_SECONDS });
+      }
+
+      if (url.pathname.startsWith("/google/download/") && request.method === "GET") {
+        const id = decodeURIComponent(url.pathname.slice("/google/download/".length));
+        const expires = Number(url.searchParams.get("expires"));
+        const preview = url.searchParams.get("preview") === "1";
+        const mode = preview ? "inline" : "attachment";
+        const suppliedSignature = url.searchParams.get("signature") || "";
+        const now = Math.floor(Date.now() / 1000);
+        if (!googleFileId(`gdrive://${id}`) || !Number.isInteger(expires) || expires <= now || expires > now + SHARE_TTL_SECONDS + 60) return json({ error: "Este enlace venció o no es válido." }, 410);
+        if (!safeEqual(await sign(env.SHARE_SIGNING_SECRET, `gdrive:${id}\n${expires}\n${mode}`), suppliedSignature)) return json({ error: "Este enlace no es válido." }, 403);
+        const record = await findGoogleFileRecord(id, env);
+        if (!record) return json({ error: "Archivo no encontrado." }, 404);
+        const accessToken = await googleAccessToken(env);
+        if (!accessToken) return json({ error: "Google Drive no está conectado." }, 503);
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!response.ok || !response.body) return json({ error: "Google Drive no pudo entregar el archivo." }, 502);
+        const headers = new Headers({ "Content-Type": response.headers.get("Content-Type") || "application/octet-stream", "Cache-Control": "private, no-store", "Content-Disposition": `${mode}; filename*=UTF-8''${encodeURIComponent(record.file_name || "archivo")}` });
+        for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
+        return new Response(response.body, { headers });
+      }
+
+      if (url.pathname.startsWith("/google/delete/") && request.method === "DELETE") {
+        const session = await getUser(request, env);
+        if (!await isOwner(session, env)) return json({ error: "Solo el dueño puede eliminar archivos." }, 403);
+        const id = decodeURIComponent(url.pathname.slice("/google/delete/".length));
+        if (!googleFileId(`gdrive://${id}`)) return json({ error: "Archivo inválido." }, 400);
+        const accessToken = await googleAccessToken(env);
+        if (!accessToken) return json({ error: "Google Drive no está conectado." }, 503);
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}`, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!response.ok && response.status !== 404) return json({ error: "No se pudo eliminar en Google Drive." }, 502);
+        return json({ ok: true });
       }
 
       if (url.pathname === "/sign" && request.method === "POST") {
@@ -262,3 +454,4 @@ export default {
     }
   },
 };
+
