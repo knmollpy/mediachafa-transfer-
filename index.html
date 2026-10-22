@@ -91,7 +91,7 @@
     <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
-      <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Cloudflare R2</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong>10 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">10 GB disponibles</span></div><div id="drive-storage" class="hidden" style="margin-top:16px"><div class="storage-head"><div class="storage-title"><span style="color:#4285f4">◉</span> Google Drive</div><div class="storage-amount"><strong id="drive-used-label">0 B</strong> de <strong id="drive-capacity-label">—</strong></div></div><div class="bar"><div class="bar-fill" id="drive-bar-fill"></div></div><div class="storage-foot"><span id="drive-remaining-label">Espacio de Drive</span></div></div></section>
+      <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#4285f4">◉</span> Google Drive compartido</div><div class="storage-amount"><strong id="drive-used-label">—</strong> de <strong id="drive-capacity-label">200 GB</strong></div></div><div class="bar"><div class="bar-fill" id="drive-bar-fill"></div></div><div class="storage-foot"><span id="drive-remaining-label">Cupo compartido con Gmail y Google Fotos</span></div></section><section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Cloudflare R2</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong>10 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">10 GB disponibles</span></div></section>
       <div class="layout" id="files-layout"><aside class="sidebar"><div class="side-heading">Carpetas <button id="new-folder" title="Crear carpeta">+</button></div><div class="sidebar-list" id="folder-list"></div><div class="sidebar-hint">Archivos almacenados en la nube. Los colaboradores pueden crear carpetas, mover archivos, editar sus descripciones y borrar sus propios archivos. Solo vos podés borrar cualquiera.</div></aside>
         <section class="content"><div class="content-head"><div class="content-title" id="section-title">Todos los archivos</div><input class="search" id="search" placeholder="⌕  Buscar archivos…"><select class="select" id="type-filter"><option value="all">Todos los tipos</option><option value="apk">APK</option><option value="pkg">PKG</option><option value="pdf">PDF</option><option value="zip">ZIP</option><option value="rar">RAR</option><option value="other">Otros</option></select><button id="add-file" class="add-btn">＋ Subir archivo</button></div><div id="file-list" class="file-list"></div><div id="guest-note" class="notice hidden">Estás en modo invitado. Podés descargar los archivos y leer sus descripciones. Los colaboradores también pueden editar la descripción de los archivos que subieron.</div></section>
       </div>
@@ -615,28 +615,39 @@
       const sessionResponse=await fetch(`${R2_WORKER_URL}/google/upload-session`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({name:file.name,size:file.size,contentType:file.type||inferMime(file.name)})});
       const session=await sessionResponse.json().catch(()=>({}));
       if(!sessionResponse.ok||!session.uploadId)throw new Error(session.error||`No se pudo iniciar la subida (${sessionResponse.status})`);
-      const count=Math.ceil(file.size/session.partSize);
-      for(let part=0;part<count;part++){
-        const start=part*session.partSize,end=Math.min(file.size,start+session.partSize)-1,chunk=file.slice(start,end+1);
-        const result=await new Promise((resolve,reject)=>{
-          const xhr=new XMLHttpRequest();xhr.open('PUT',`${R2_WORKER_URL}/google/upload-part?id=${encodeURIComponent(session.uploadId)}&start=${start}&end=${end}&total=${file.size}`);
-          xhr.setRequestHeader('Authorization',`Bearer ${token}`);xhr.setRequestHeader('Content-Type',file.type||inferMime(file.name));
-          xhr.upload.onprogress=event=>{if(event.lengthComputable)onProgress(start+event.loaded);};
-          xhr.onerror=()=>reject(new Error('Se interrumpió la conexión durante la subida a Google Drive.'));
-          xhr.onload=()=>{let body={};try{body=JSON.parse(xhr.responseText||'{}');}catch{}if(xhr.status>=200&&xhr.status<300)resolve(body);else reject(new Error(body.error||`Google Drive devolvió ${xhr.status}.`));};
-          xhr.send(chunk);
-        });
-        onProgress(Math.min(file.size,end+1));
+      const request=(url,body)=>new Promise((resolve,reject)=>{
+        const xhr=new XMLHttpRequest();xhr.open('PUT',url);xhr.setRequestHeader('Authorization',`Bearer ${token}`);xhr.setRequestHeader('Content-Type',file.type||inferMime(file.name));
+        xhr.upload.onprogress=event=>{if(event.lengthComputable)onProgress(Math.min(file.size,Number(url.match(/[?&]start=(\d+)/)?.[1]||0)+event.loaded));};
+        xhr.onerror=()=>reject(new Error('Se interrumpió la conexión durante la subida a Google Drive.'));
+        xhr.onload=()=>{let result={};try{result=JSON.parse(xhr.responseText||'{}');}catch{}if(xhr.status>=200&&xhr.status<300)resolve(result);else{const error=new Error(result.error||`Google Drive devolvió ${xhr.status}.`);error.retryable=Boolean(result.retryable)||xhr.status>=500;reject(error);}};
+        xhr.send(body);
+      });
+      let offset=0;
+      while(offset<file.size){
+        const start=offset,end=Math.min(file.size,start+session.partSize)-1,chunk=file.slice(start,end+1);let result;
+        for(let attempt=0;;attempt++){
+          try{result=await request(`${R2_WORKER_URL}/google/upload-part?id=${encodeURIComponent(session.uploadId)}&start=${start}&end=${end}&total=${file.size}`,chunk);break;}
+          catch(error){if(attempt>=5||(!error.retryable&&error.message!=='Se interrumpió la conexión durante la subida a Google Drive.'))throw error;
+            await new Promise(resolve=>setTimeout(resolve,Math.min(8000,500*2**attempt)));
+            try{result=await request(`${R2_WORKER_URL}/google/upload-part?id=${encodeURIComponent(session.uploadId)}&total=${file.size}&probe=1`,new Blob());}
+            catch(probeError){if(attempt>=5)throw probeError;continue;}
+            if(result.complete)return result.file;
+            if(Number(result.next)>=file.size)throw new Error('Drive recibió todos los datos, pero no confirmó el archivo. Volvé a intentarlo.');
+            if(Number(result.next)>start){onProgress(Number(result.next));break;}
+          }
+        }
         if(result.complete)return result.file;
+        const confirmed=Number(result.next);
+        if(!Number.isSafeInteger(confirmed)||confirmed<0||confirmed>file.size)throw new Error('Google Drive devolvió un avance inválido.');
+        if(confirmed===offset)throw new Error('Google Drive no confirmó el fragmento; no se avanzó para evitar dañar el archivo.');
+        offset=confirmed;onProgress(offset);
       }
       throw new Error('Google Drive no confirmó la finalización de la subida.');
-    }
-
-    function openUploadModal(initialFiles = []) {
+    }    function openUploadModal(initialFiles = []) {
       if (!ownerMode && !uploaderMode) return;
       let selectedFiles = [];
       const used = files.filter(file=>!isGoogleFile(file)).reduce((sum, file) => sum + file.size, 0) + backgroundImageSize;
-      modal('Subir un archivo', `<label class="field-label">Guardar en</label><select class="field" id="storage-provider"><option value="r2">Cloudflare R2</option>${googleDriveAvailable?'<option value="google">Google Drive</option>':''}</select><div class="notice">El archivo se guarda en el servicio elegido. Los elementos que ya están en R2 no se mueven.</div><div class="drop" id="drop"><strong>Elegí archivos o una carpeta</strong>Podés seleccionar varios archivos, ZIP/RAR o una carpeta con subcarpetas.<br><span id="storage-hint" style="font-size:10px">Hasta 10 GB por archivo · Recomendado: 1–200 MB · ${formatBytes(Math.max(0,getCapacity()-used))} disponibles en R2</span><div style="display:flex;justify-content:center;gap:10px;margin-top:14px"><button type="button" class="secondary" id="pick-files">Elegir archivos</button><button type="button" class="secondary" id="pick-folder">Elegir carpeta</button></div><input id="file-input" type="file" multiple style="display:none"><input id="folder-input" type="file" webkitdirectory directory multiple style="display:none"></div><div id="upload-queue" class="file-list"></div><div id="upload-progress" class="hidden" style="margin-top:14px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:7px"><strong id="progress-label">Preparando…</strong><span id="progress-stats">0% · 0 MB/s</span></div><div class="bar"><div class="bar-fill" id="upload-bar" style="width:0%"></div></div></div><label class="field-label">Descripción</label><textarea class="field" id="description" rows="3" maxlength="1000" placeholder="¿Qué contiene este archivo?"></textarea><label class="field-label">Carpeta</label><select class="field" id="folder-select">${folders.filter(folder=>folder!=='Todos los archivos').map(folder=>`<option>${esc(folder)}</option>`).join('')}</select><div id="selected-name" style="font-size:11px;color:#718078;margin-top:9px"></div>`, 'Subir', async root => {
+      modal('Subir un archivo', `<label class="field-label">Guardar en</label><select class="field" id="storage-provider"><option value="google">Google Drive</option><option value="r2">Cloudflare R2</option></select><div class="notice">Google Drive aparece primero como destino recomendado; también podés elegir Cloudflare R2.</div><div class="drop" id="drop"><strong>Elegí archivos o una carpeta</strong>Podés seleccionar varios archivos, ZIP/RAR o una carpeta con subcarpetas.<br><span id="storage-hint" style="font-size:10px">Google Drive · ${formatBytes(Math.max(0,Number(googleDriveQuota?.limit||0)-Number(googleDriveQuota?.usage||0)))} disponibles · Recomendado: 1–200 MB</span><div style="display:flex;justify-content:center;gap:10px;margin-top:14px"><button type="button" class="secondary" id="pick-files">Elegir archivos</button><button type="button" class="secondary" id="pick-folder">Elegir carpeta</button></div><input id="file-input" type="file" multiple style="display:none"><input id="folder-input" type="file" webkitdirectory directory multiple style="display:none"></div><div id="upload-queue" class="file-list"></div><div id="upload-progress" class="hidden" style="margin-top:14px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:7px"><strong id="progress-label">Preparando…</strong><span id="progress-stats">0% · 0 MB/s</span></div><div class="bar"><div class="bar-fill" id="upload-bar" style="width:0%"></div></div></div><label class="field-label">Descripción</label><textarea class="field" id="description" rows="3" maxlength="1000" placeholder="¿Qué contiene este archivo?"></textarea><label class="field-label">Carpeta</label><select class="field" id="folder-select">${folders.filter(folder=>folder!=='Todos los archivos').map(folder=>`<option>${esc(folder)}</option>`).join('')}</select><div id="selected-name" style="font-size:11px;color:#718078;margin-top:9px"></div>`, 'Subir', async root => {
         if (!selectedFiles.length) { toast('Elegí archivos o una carpeta primero.'); return; }
         const provider=root.querySelector('#storage-provider').value;
         const totalSize=selectedFiles.reduce((sum,item)=>sum+item.file.size,0);
@@ -644,7 +655,7 @@
         if (selectedFiles.some(item=>item.file.size<RECOMMENDED_MIN_BYTES||item.file.size>RECOMMENDED_MAX_BYTES) && !confirm('Hay archivos fuera del rango recomendado de 1–200 MB. ¿Querés continuar?')) return;
         if(provider==='r2'&&files.filter(file=>!isGoogleFile(file)).reduce((sum,file)=>sum+file.size,0)+backgroundImageSize+totalSize>getCapacity()) { toast('La selección supera el espacio libre de R2.'); return; }
         if(provider==='google'&&!googleDriveAvailable){toast('El dueño todavía no conectó Google Drive.');return;}
-        if(provider==='google'&&ownerMode&&googleDriveQuota?.limit&&Number(googleDriveQuota.limit)-Number(googleDriveQuota.usage||0)<totalSize){toast('La selección supera el espacio libre de Google Drive.');return;}
+        if(provider==='google'&&googleDriveQuota?.limit&&Number(googleDriveQuota.limit)-Number(googleDriveQuota.usage||0)<totalSize){toast('La selección supera el espacio libre de Google Drive.');return;}
         const button=root.querySelector('.submit'),progress=root.querySelector('#upload-progress'),bar=root.querySelector('#upload-bar'),label=root.querySelector('#progress-label'),stats=root.querySelector('#progress-stats');
         button.disabled=true;progress.classList.remove('hidden');
         const {data:{session}}=await client.auth.getSession(),token=session?.access_token||'';
