@@ -7,9 +7,14 @@
   "r2_buckets": [
     { "binding": "MEDIA_BUCKET", "bucket_name": "mediachafa-files" }
   ],
+  "kv_namespaces": [
+    { "binding": "GOOGLE_OAUTH_STORE", "id": "9dd7824bf9dd45a8845ffc692a7d5549" }
+  ],
   "vars": {
+    "GOOGLE_CLIENT_ID": "1091071084951-9r1hr0rd6jqhb7h9t011iu4h4aun4s7d.apps.googleusercontent.com",
     "SUPABASE_URL": "https://velxgwkujcabdaxbppyj.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-",
     "OWNER_USER_ID": "3da2624d-d1cc-49e9-a536-ed8c0c480779"
   }
 }
+
