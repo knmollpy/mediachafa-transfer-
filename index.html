@@ -683,17 +683,15 @@ async function loadGoogleDriveStatus() {
       const list=$('#uploads-list'),count=$('#uploads-count');if(!list||!count)return;
       const active=uploadJobs.filter(job=>job.status==='uploading');
       count.textContent=String(active.length);count.classList.toggle('hidden',active.length===0);
-      const finished=uploadJobs.filter(job=>job.status!=='uploading');
-      if(!uploadJobs.length){list.innerHTML='<div class="upload-empty">Todavía no hay subidas en esta sesión.</div>';return;}
+      const recentFiles=files.filter(file=>file.createdBy===currentUser?.id).slice(0,30),failedJobs=uploadJobs.filter(job=>job.status==='failed'||job.status==='partial');
+      if(!active.length&&!recentFiles.length&&!failedJobs.length){list.innerHTML='<div class="upload-empty">Todavía no hay subidas para mostrar.</div>';return;}
       const activeHtml=active.length?active.map(job=>{
         const total=job.items.reduce((sum,item)=>sum+item.size,0),done=job.items.reduce((sum,item)=>sum+(item.status==='completed'?item.size:item.status==='uploading'?item.progressBytes:0),0),percent=total?Math.floor(done/total*100):0;
         return `<article class="upload-job"><div class="upload-job-head"><span>${job.items.length} archivo${job.items.length===1?'':'s'} · ${esc(job.provider==='google'?'Google Drive':'Cloudflare R2')}</span><span>${percent}%</span></div><div class="upload-job-detail">${formatBytes(done)} de ${formatBytes(total)} · ${job.speed.toFixed(1)} MB/s</div><div class="bar" style="margin-top:9px"><div class="bar-fill" style="width:${percent}%"></div></div>${job.items.map(item=>`<div class="upload-job-file"><div class="upload-job-file-head"><span>${esc(item.name)}</span><span>${item.status==='completed'?'Completado':item.status==='uploading'?Math.floor(item.progressBytes/item.size*100)+'%':item.status==='error'?'Error':'En espera'}</span></div>${item.status==='uploading'?'<div class="bar"><div class="bar-fill" style="width:'+Math.floor(item.progressBytes/item.size*100)+'%"></div></div>':''}${item.error?'<div class="upload-job-detail">'+esc(item.error)+'</div>':''}</div>`).join('')}</article>`;
       }).join(''):'<div class="upload-empty">No hay archivos subiendo ahora.</div>';
-      const doneHtml=finished.length?finished.map(job=>{
-        const complete=job.items.filter(item=>item.status==='completed').length,errors=job.items.filter(item=>item.status==='error').length,when=job.finishedAt?new Intl.DateTimeFormat('es-AR',{dateStyle:'short',timeStyle:'short'}).format(new Date(job.finishedAt)):'';
-        return `<article class="upload-job"><div class="upload-job-head"><span>${job.status==='completed'?'✓ Subida completada':job.status==='partial'?'Subida con errores':'Subida fallida'}</span><span>${esc(when)}</span></div><div class="upload-job-detail">${complete} completado${complete===1?'':'s'}${errors?' · '+errors+' con error':''} · ${esc(job.provider==='google'?'Google Drive':'Cloudflare R2')}</div>${job.items.map(item=>`<div class="upload-job-file"><div class="upload-job-file-head"><span>${esc(item.name)}</span><span>${item.status==='completed'?'Completado':'Error'}</span></div>${item.error?'<div class="upload-job-detail">'+esc(item.error)+'</div>':''}</div>`).join('')}</article>`;
-      }).join(''):'<div class="upload-empty">Las subidas terminadas aparecerán acá.</div>';
-      list.innerHTML='<h3 class="upload-section-title">En curso</h3>'+activeHtml+'<h3 class="upload-section-title">Completadas recientemente</h3>'+doneHtml;
+      const doneHtml=recentFiles.length?recentFiles.map(file=>`<article class="upload-job"><div class="upload-job-head"><span>✓ ${esc(file.name)}</span><span>Completado</span></div><div class="upload-job-detail">${formatBytes(file.size)} · ${esc(file.date)} · ${esc(storageProviderLabel(file))}</div></article>`).join(''):'<div class="upload-empty">Los archivos que subas desde esta cuenta aparecerán acá.</div>';
+      const errorsHtml=failedJobs.length?'<h3 class="upload-section-title">Subidas con errores</h3>'+failedJobs.map(job=>job.items.filter(item=>item.status==='error').map(item=>`<article class="upload-job"><div class="upload-job-head"><span>${esc(item.name)}</span><span>Error</span></div><div class="upload-job-detail">${esc(item.error)}</div></article>`).join('')).join(''):'';
+      list.innerHTML='<h3 class="upload-section-title">En curso</h3>'+activeHtml+'<h3 class="upload-section-title">Archivos subidos desde esta cuenta</h3>'+doneHtml+errorsHtml;
     }
 
     async function runUploadJob(job) {
