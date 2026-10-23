@@ -139,13 +139,33 @@ function googleFileId(path) {
   return /^[A-Za-z0-9_-]{10,200}$/.test(id) ? id : null;
 }
 
-async function findGoogleFileRecord(id, env) {
+async function findGoogleFileRecord(id, env, session = null) {
   const path = `gdrive://${id}`;
   const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=file_name,storage_path&storage_path=eq.${encodeURIComponent(path)}&limit=1`;
-  const response = await fetch(query, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY } });
+  const headers = { apikey: env.SUPABASE_PUBLISHABLE_KEY };
+  if (session?.authorization) headers.Authorization = session.authorization;
+  const response = await fetch(query, { headers });
   if (!response.ok) return null;
   const rows = await response.json();
   return rows[0] || null;
+}
+
+async function findMediaFileByPath(path, env, session = null) {
+  const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=id,storage_path,file_name,created_by,is_private,allowed_user_ids,folder&storage_path=eq.${encodeURIComponent(path)}&limit=1`;
+  const headers = { apikey: env.SUPABASE_PUBLISHABLE_KEY };
+  if (session?.authorization) headers.Authorization = session.authorization;
+  const response = await fetch(query, { headers });
+  if (!response.ok) return null;
+  const rows = await response.json();
+  return rows[0] || null;
+}
+
+async function canReadWallpaper(path, session, env) {
+  if (!session) return false;
+  const query = `${env.SUPABASE_URL}/rest/v1/media_preferences?select=background_image_path&user_id=eq.${encodeURIComponent(session.user.id)}&background_image_path=eq.${encodeURIComponent(path)}&limit=1`;
+  const response = await fetch(query, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } });
+  if (!response.ok) return false;
+  return (await response.json()).length > 0;
 }
 
 async function serveObject(object, filename = "", disposition = "attachment") {
@@ -500,6 +520,8 @@ export default {
         if (!name || !Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) return json({ error: "Nombre o tamaño de archivo inválido." }, 400);
         const accessToken = await googleAccessToken(env);
         if (!accessToken) return json({ error: "Google Drive todavía no está conectado por el dueño." }, 409);
+        const quota=await googleQuota(env);
+        if(quota?.limit&&Number(quota.limit)-Number(quota.usage||0)<size) return json({error:"El archivo supera el espacio disponible en Google Drive."},413);
         const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,mimeType", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": contentType, "X-Upload-Content-Length": String(size) }, body: JSON.stringify({ name, mimeType: contentType }) });
         if (!response.ok || !response.headers.get("Location")) return json({ error: "Google Drive no pudo iniciar la subida." }, 502);
         const uploadId = crypto.randomUUID();
@@ -514,21 +536,23 @@ export default {
         const uploadId = url.searchParams.get("id") || "";
         const probe=url.searchParams.get("probe")==="1";
         const start = Number(url.searchParams.get("start")), end = Number(url.searchParams.get("end")), total = Number(url.searchParams.get("total"));
-        if (!/^[0-9a-f-]{36}$/i.test(uploadId) || !Number.isSafeInteger(total) || total<=0 || (!probe&&(!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start<0 || end<start || end>=total || end-start+1>8*1024*1024))) return json({ error: "Parte de subida inválida." }, 400);
+        if (!/^[0-9a-f-]{36}$/i.test(uploadId) || !Number.isSafeInteger(total) || total<=0 || (!probe&&(!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= total || end - start + 1 > 8 * 1024 * 1024))) return json({ error: "Parte de subida inválida." }, 400);
         const rawState = await env.GOOGLE_OAUTH_STORE.get(`upload:${uploadId}`);
         if (!rawState) return json({ error: "La sesión de subida expiró. Iniciá la subida nuevamente." }, 410);
         const state = JSON.parse(await decryptGoogleToken(rawState, env));
         if (state.userId !== session.user.id || state.size !== total) return json({ error: "La sesión de subida no pertenece a este usuario o archivo." }, 403);
-        const bytes=probe?new ArrayBuffer(0):await request.arrayBuffer();
-        if(!probe&&bytes.byteLength!==end-start+1)return json({error:"El tamaño de la parte no coincide."},400);
         const accessToken = await googleAccessToken(env);
         if (!accessToken) return json({ error: "Google Drive todavía no está conectado por el dueño." }, 409);
+        const bytes = probe ? new ArrayBuffer(0) : await request.arrayBuffer();
+        if (!probe&&bytes.byteLength !== end - start + 1) return json({ error: "El tamaño de la parte no coincide." }, 400);
         const response = await fetch(state.url, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": state.contentType, "Content-Range": probe?`bytes */${total}`:`bytes ${start}-${end}/${total}` }, body: bytes });
-        if(response.status===308){const last=response.headers.get("Range")?.match(/bytes=0-(\d+)/)?.[1];return json({ok:true,complete:false,next:last?Number(last)+1:0});}
+        if (response.status === 308) {
+          const last=response.headers.get("Range")?.match(/bytes=0-(\d+)/)?.[1];
+          return json({ ok:true, complete:false, next:last?Number(last)+1:0 });
+        }
         if (response.status !== 200 && response.status !== 201) {
           const failure = await response.json().catch(() => ({}));
-          const retryable=response.status>=500||response.status===429;
-          return json({ error: failure.error?.message || `Google Drive devolvió ${response.status}.`,retryable }, retryable?503:502);
+          return json({ error: failure.error?.message || `Google Drive devolvió ${response.status}.`, retryable:response.status>=500||response.status===429 }, response.status>=500||response.status===429?503:502);
         }
         await env.GOOGLE_OAUTH_STORE.delete(`upload:${uploadId}`);
         const file = await response.json().catch(() => ({}));
@@ -596,6 +620,7 @@ export default {
         const input = await request.json().catch(() => ({}));
         const path = typeof input.path === "string" ? input.path : "";
         if (!path || path.length > 1024 || path.split("/").some(part => part === "..")) return json({ error: "Archivo inválido." }, 400);
+        if (!await findMediaFileByPath(path, env)) return json({ error: "Solo se pueden compartir archivos públicos." }, 403);
         if (!await env.MEDIA_BUCKET.head(path)) return json({ error: "Archivo no encontrado en R2." }, 404);
         const expires = Math.floor(Date.now() / 1000) + SHARE_TTL_SECONDS;
         const signature = await sign(env.SHARE_SIGNING_SECRET, `${path}\n${expires}`);
@@ -614,6 +639,7 @@ export default {
         if (!path || !Number.isInteger(expires) || expires <= now || expires > now + SHARE_TTL_SECONDS + 60) return json({ error: "Este enlace venció o no es válido." }, 410);
         const expected = await sign(env.SHARE_SIGNING_SECRET, `${path}\n${expires}`);
         if (!safeEqual(expected, suppliedSignature)) return json({ error: "Este enlace no es válido." }, 403);
+        if (!await findMediaFileByPath(path, env)) return json({ error: "El archivo ya no es público o no existe." }, 404);
         const object = await env.MEDIA_BUCKET.get(path);
         return withCors(await serveObject(object, path.split("/").pop()));
       }
@@ -621,9 +647,35 @@ export default {
       if (url.pathname.startsWith("/object/") && request.method === "GET") {
         const path = objectKey(url.pathname, "/object/");
         if (!path) return json({ error: "Archivo inválido." }, 400);
+        const session = await getUser(request, env);
+        const fileRecord = await findMediaFileByPath(path, env, session);
+        if (!fileRecord && !await canReadWallpaper(path, session, env)) return json({ error: "Archivo no encontrado o no tenés permiso para verlo." }, 404);
         const object = await env.MEDIA_BUCKET.get(path);
         const mode = url.searchParams.get("preview") === "1" ? "inline" : "attachment";
         return withCors(await serveObject(object, path.split("/").pop(), mode));
+      }
+
+      if (url.pathname.startsWith("/google/private/") && request.method === "GET") {
+        const session = await getUser(request, env);
+        if (!session) return json({ error: "Iniciá sesión para ver este archivo privado." }, 401);
+        const id = decodeURIComponent(url.pathname.slice("/google/private/".length));
+        if (!googleFileId(`gdrive://${id}`)) return json({ error: "Archivo inválido." }, 400);
+        const record = await findGoogleFileRecord(id, env, session);
+        if (!record) return json({ error: "Archivo no encontrado o no tenés permiso para verlo." }, 404);
+        const accessToken = await googleAccessToken(env);
+        if (!accessToken) return json({ error: "Google Drive no está conectado." }, 503);
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!response.ok || !response.body) return json({ error: "Google Drive no pudo entregar el archivo." }, 502);
+        const preview = url.searchParams.get("preview") === "1";
+        const headers = new Headers({
+          "Content-Type": response.headers.get("Content-Type") || "application/octet-stream",
+          "Cache-Control": "private, no-store",
+          "Content-Disposition": `${preview ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(record.file_name || "archivo")}`
+        });
+        const length = response.headers.get("Content-Length");
+        if (length) headers.set("Content-Length", length);
+        for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
+        return new Response(response.body, { headers });
       }
 
       if (url.pathname === "/migrate" && request.method === "POST") {
@@ -659,8 +711,16 @@ export default {
         if (!path || path.length > 1024 || path.split("/").some(part => part === "..")) return json({ error: "Ruta inválida." }, 400);
         if (session.user.id !== env.OWNER_USER_ID && !path.startsWith(`${session.user.id}/`)) return json({ error: "Ruta de archivo no autorizada." }, 403);
         if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) return json({ error: "El máximo por archivo es 10 GB." }, 413);
+        const partSize = 8 * 1024 * 1024;
         const upload = await env.MEDIA_BUCKET.createMultipartUpload(path, { httpMetadata: { contentType } });
-        return json({ ok: true, path, uploadId: upload.uploadId, partSize: 32 * 1024 * 1024 });
+        try {
+          if (!env.GOOGLE_OAUTH_STORE) throw new Error("No hay almacenamiento temporal configurado.");
+          await env.GOOGLE_OAUTH_STORE.put(`r2-upload:${upload.uploadId}`, JSON.stringify({ userId: session.user.id, path, size, partSize }), { expirationTtl: 7 * 24 * 60 * 60 });
+        } catch {
+          await upload.abort().catch(() => {});
+          return json({ error: "No se pudo reservar la carga. Volvé a intentarlo." }, 503);
+        }
+        return json({ ok: true, path, uploadId: upload.uploadId, partSize });
       }
 
       if (url.pathname === "/multipart/part" && request.method === "PUT") {
@@ -670,9 +730,15 @@ export default {
         const uploadId = url.searchParams.get("uploadId") || "";
         const partNumber = Number(url.searchParams.get("partNumber"));
         if (!path || !uploadId || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) return json({ error: "Parte inválida." }, 400);
-        if (session.user.id !== env.OWNER_USER_ID && !path.startsWith(`${session.user.id}/`)) return json({ error: "Ruta de archivo no autorizada." }, 403);
+        const metadata = await env.GOOGLE_OAUTH_STORE?.get(`r2-upload:${uploadId}`, "json");
+        if (!metadata || metadata.userId !== session.user.id || metadata.path !== path) return json({ error: "La carga no existe o no te pertenece." }, 403);
+        const expectedParts = Math.ceil(metadata.size / metadata.partSize);
+        const expectedSize = partNumber === expectedParts ? metadata.size - metadata.partSize * (expectedParts - 1) : metadata.partSize;
+        if (partNumber > expectedParts || !request.body) return json({ error: "Parte inválida." }, 400);
         const upload = env.MEDIA_BUCKET.resumeMultipartUpload(path, uploadId);
-        const part = await upload.uploadPart(partNumber, request.body);
+        const bytes = await request.arrayBuffer();
+        if (bytes.byteLength !== expectedSize) return json({ error: `La parte ${partNumber} llegó incompleta; reintentá subirla.` }, 400);
+        const part = await upload.uploadPart(partNumber, bytes);
         return json({ ok: true, partNumber, etag: part.etag });
       }
 
@@ -684,9 +750,17 @@ export default {
         const uploadId = typeof input.uploadId === "string" ? input.uploadId : "";
         const parts = Array.isArray(input.parts) ? input.parts : [];
         if (!path || !uploadId || !parts.length || parts.length > 10000) return json({ error: "Datos de finalización inválidos." }, 400);
-        if (session.user.id !== env.OWNER_USER_ID && !path.startsWith(`${session.user.id}/`)) return json({ error: "Ruta de archivo no autorizada." }, 403);
+        const metadata = await env.GOOGLE_OAUTH_STORE?.get(`r2-upload:${uploadId}`, "json");
+        if (!metadata || metadata.userId !== session.user.id || metadata.path !== path) return json({ error: "La carga no existe o no te pertenece." }, 403);
+        const expectedParts = Math.ceil(metadata.size / metadata.partSize);
+        if (parts.length !== expectedParts || parts.some((part, index) => Number(part.partNumber) !== index + 1 || typeof part.etag !== "string" || !part.etag)) return json({ error: "Faltan partes o están desordenadas. Volvé a subir el archivo." }, 400);
         const upload = env.MEDIA_BUCKET.resumeMultipartUpload(path, uploadId);
         const object = await upload.complete(parts.map(part => ({ partNumber: Number(part.partNumber), etag: String(part.etag) })));
+        await env.GOOGLE_OAUTH_STORE.delete(`r2-upload:${uploadId}`);
+        if (object.size !== metadata.size) {
+          await env.MEDIA_BUCKET.delete(path);
+          return json({ error: "La verificación del tamaño no coincidió. Volvé a subir el archivo." }, 502);
+        }
         return json({ ok: true, path, etag: object.etag, size: object.size });
       }
 
@@ -697,8 +771,10 @@ export default {
         const path = typeof input.path === "string" ? input.path : "";
         const uploadId = typeof input.uploadId === "string" ? input.uploadId : "";
         if (!path || !uploadId) return json({ error: "Datos de cancelación inválidos." }, 400);
-        if (session.user.id !== env.OWNER_USER_ID && !path.startsWith(`${session.user.id}/`)) return json({ error: "Ruta de archivo no autorizada." }, 403);
+        const metadata = await env.GOOGLE_OAUTH_STORE?.get(`r2-upload:${uploadId}`, "json");
+        if (!metadata || metadata.userId !== session.user.id || metadata.path !== path) return json({ error: "La carga no existe o no te pertenece." }, 403);
         await env.MEDIA_BUCKET.resumeMultipartUpload(path, uploadId).abort();
+        await env.GOOGLE_OAUTH_STORE.delete(`r2-upload:${uploadId}`);
         return json({ ok: true });
       }
 
