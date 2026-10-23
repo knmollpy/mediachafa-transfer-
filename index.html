@@ -391,7 +391,8 @@ async function loadGoogleDriveStatus() {
         const bytes=nestedFiles.reduce((sum,file)=>sum+file.size,0);
         const row=document.createElement('div');row.className='folder-row';
         const button=document.createElement('button');button.className='folder'+(currentFolder===folder?' selected':'');
-        button.innerHTML='<span>'+(record?.isPrivate?'🔒':'▰')+'</span>'+esc(folder)+'<span class="folder-count">'+nestedFiles.length+' · '+formatBytes(bytes)+'</span>';
+        const sizeLabel=ownerMode||!record?.isPrivate?' · '+formatBytes(bytes):'';
+        button.innerHTML='<span>'+(record?.isPrivate?'🔒':'▰')+'</span>'+esc(folder)+'<span class="folder-count">'+nestedFiles.length+sizeLabel+'</span>';
         button.onclick=()=>{currentFolder=folder;render();};row.append(button);
         if((ownerMode||uploaderMode)&&folder!=='Todos los archivos'&&folder!=='Sin carpeta'){
           const edit=document.createElement('button');edit.type='button';edit.className='folder-edit';edit.title='Editar carpeta';edit.textContent='✎';
@@ -709,8 +710,8 @@ async function loadGoogleDriveStatus() {
       const folder=folderRecords.find(item=>item.name===oldName);if(!folder)return;
       let accounts=[];try{accounts=await getSharingAccounts();}catch(error){toast(error.message);return;}
       const canEditPrivacy=ownerMode||folder.createdBy===currentUser?.id,controls=canEditPrivacy?privacyControls(accounts,folder.isPrivate,folder.allowedUserIds):'<div class="notice">Solo quien creó esta carpeta o nxmollpy puede cambiar su privacidad.</div>';
-      const bytes=files.filter(file=>file.folder===oldName||file.folder.startsWith(oldName+'/')).reduce((sum,file)=>sum+file.size,0);
-      modal('Editar carpeta',`<p class="sub">Contenido: ${formatBytes(bytes)}, incluyendo subcarpetas.</p><label class="field-label" for="folder-name">Nombre</label><input class="field" id="folder-name" maxlength="80" value="${esc(oldName)}">${controls}`,'Guardar',async root=>{
+      const bytes=files.filter(file=>file.folder===oldName||file.folder.startsWith(oldName+'/')).reduce((sum,file)=>sum+file.size,0),usageLabel=ownerMode?`Contenido: ${formatBytes(bytes)}, incluyendo subcarpetas.`:'';
+      modal('Editar carpeta',`<p class="sub">${usageLabel}</p><label class="field-label" for="folder-name">Nombre</label><input class="field" id="folder-name" maxlength="80" value="${esc(oldName)}">${controls}`,'Guardar',async root=>{
         const name=root.querySelector('#folder-name').value.trim();if(!name||name==='Todos los archivos'||name==='Sin carpeta'||name.includes('/')){toast('Escribí un nombre válido, sin barras.');return;}
         if(canEditPrivacy){const {error}=await client.from('media_folders').update(readPrivacy(root)).eq('name',oldName);if(error){toast('No se pudo guardar la privacidad: '+error.message);return;}}
         if(name!==oldName){const {error}=await client.rpc('rename_media_folder',{p_old_name:oldName,p_new_name:name});if(error){toast('No se pudo cambiar el nombre: '+error.message);return;}if(currentFolder===oldName)currentFolder=name;else if(currentFolder.startsWith(oldName+'/'))currentFolder=name+currentFolder.slice(oldName.length);}
