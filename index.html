@@ -184,9 +184,10 @@
         target.querySelectorAll('[data-remove-user]').forEach(button=>button.onclick=()=>{const input=root.querySelector(`#privacy-users input[data-user-id="${CSS.escape(button.dataset.removeUser)}"]`);if(input)input.checked=false;updateSelected();});
       };
       const filterMembers=()=>{
-        const query=(search?.value||'').trim().toLowerCase();let visible=0;
-        root.querySelectorAll('[data-privacy-member]').forEach(member=>{const matches=member.dataset.memberName.includes(query);member.classList.toggle('hidden',!matches);if(matches)visible++;});
-        root.querySelector('#privacy-no-results')?.classList.toggle('hidden',visible>0||!query);
+        const query=(search?.value||'').trim().toLowerCase(),members=Array.from(root.querySelectorAll('[data-privacy-member]'));let visible=0;
+        members.forEach(member=>{const matches=Boolean(query)&&member.dataset.memberName.includes(query);member.classList.toggle('hidden',!matches);if(matches)visible++;});
+        const empty=root.querySelector('#privacy-no-results');
+        if(empty){empty.textContent=!query?'Escribí un nombre para buscar miembros.':'No se encontraron miembros con esa búsqueda.';empty.classList.toggle('hidden',Boolean(query)?visible>0:members.length===0);}
       };
       if(mode&&wrap)mode.onchange=()=>wrap.classList.toggle('hidden',mode.value!=='private');
       search?.addEventListener('input',filterMembers);
