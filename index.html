@@ -698,13 +698,13 @@ async function loadGoogleDriveStatus() {
     }
 
     async function uploadGoogleWithProgress(file,token,onProgress) {
-      const sessionResponse=await fetch(`${R2_WORKER_URL}/google/upload-session`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({name:file.name,size:file.size,contentType:file.type||inferMime(file.name)})});
+      const sessionController=new AbortController(),sessionTimeout=setTimeout(()=>sessionController.abort(),45000);let sessionResponse;try{sessionResponse=await fetch(`${R2_WORKER_URL}/google/upload-session`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({name:file.name,size:file.size,contentType:file.type||inferMime(file.name)}),signal:sessionController.signal});}catch(error){if(error.name==='AbortError')throw new Error('Google Drive tardó demasiado en preparar la subida. Revisá tu conexión e intentá de nuevo.');throw error;}finally{clearTimeout(sessionTimeout);}
       const session=await sessionResponse.json().catch(()=>({}));
       if(!sessionResponse.ok||!session.uploadId)throw new Error(session.error||`No se pudo iniciar la subida (${sessionResponse.status})`);
       const request=(url,body)=>new Promise((resolve,reject)=>{
-        const xhr=new XMLHttpRequest();xhr.open('PUT',url);xhr.setRequestHeader('Authorization',`Bearer ${token}`);xhr.setRequestHeader('Content-Type',file.type||inferMime(file.name));
+        const xhr=new XMLHttpRequest();xhr.open('PUT',url);xhr.setRequestHeader('Authorization',`Bearer ${token}`);xhr.setRequestHeader('Content-Type',file.type||inferMime(file.name));xhr.timeout=120000;
         xhr.upload.onprogress=event=>{if(event.lengthComputable)onProgress(Math.min(file.size,Number(url.match(/[?&]start=(\d+)/)?.[1]||0)+event.loaded));};
-        xhr.onerror=()=>reject(new Error('Se interrumpió la conexión durante la subida a Google Drive.'));
+        xhr.onerror=()=>reject(Object.assign(new Error('Se interrumpió la conexión durante la subida a Google Drive.'),{retryable:true}));xhr.ontimeout=()=>reject(Object.assign(new Error('Google Drive tardó demasiado en responder. Se reintentará el fragmento.'),{retryable:true}));
         xhr.onload=()=>{let result={};try{result=JSON.parse(xhr.responseText||'{}');}catch{}if(xhr.status>=200&&xhr.status<300)resolve(result);else{const error=new Error(result.error||`Google Drive devolvió ${xhr.status}.`);error.retryable=Boolean(result.retryable)||xhr.status>=500;reject(error);}};
         xhr.send(body);
       });
@@ -713,7 +713,7 @@ async function loadGoogleDriveStatus() {
         const start=offset,end=Math.min(file.size,start+session.partSize)-1,chunk=file.slice(start,end+1);let result;
         for(let attempt=0;;attempt++){
           try{result=await request(`${R2_WORKER_URL}/google/upload-part?id=${encodeURIComponent(session.uploadId)}&start=${start}&end=${end}&total=${file.size}`,chunk);break;}
-          catch(error){if(attempt>=5||(!error.retryable&&error.message!=='Se interrumpió la conexión durante la subida a Google Drive.'))throw error;
+          catch(error){if(attempt>=5||!error.retryable)throw error;
             await new Promise(resolve=>setTimeout(resolve,Math.min(8000,500*2**attempt)));
             try{result=await request(`${R2_WORKER_URL}/google/upload-part?id=${encodeURIComponent(session.uploadId)}&total=${file.size}&probe=1`,new Blob());}
             catch(probeError){if(attempt>=5)throw probeError;continue;}
@@ -737,7 +737,7 @@ async function loadGoogleDriveStatus() {
       if(!active.length&&!recentFiles.length&&!failedJobs.length){list.innerHTML='<div class="upload-empty">Todavía no hay subidas para mostrar.</div>';return;}
       const activeHtml=active.length?active.map(job=>{
         const total=job.items.reduce((sum,item)=>sum+item.size,0),done=job.items.reduce((sum,item)=>sum+(item.status==='completed'?item.size:item.status==='uploading'?item.progressBytes:0),0),percent=total?Math.floor(done/total*100):0;
-        return `<article class="upload-job"><div class="upload-job-head"><span>${job.items.length} archivo${job.items.length===1?'':'s'} · ${esc(job.provider==='google'?'Google Drive':'Cloudflare R2')}</span><span>${percent}%</span></div><div class="upload-job-detail">${formatBytes(done)} de ${formatBytes(total)} · ${job.speed.toFixed(1)} MB/s</div><div class="bar" style="margin-top:9px"><div class="bar-fill" style="width:${percent}%"></div></div>${job.items.map(item=>`<div class="upload-job-file"><div class="upload-job-file-head"><span>${esc(item.name)}</span><span>${item.status==='completed'?'Completado':item.status==='uploading'?Math.floor(item.progressBytes/item.size*100)+'%':item.status==='error'?'Error':'En espera'}</span></div>${item.status==='uploading'?'<div class="bar"><div class="bar-fill" style="width:'+Math.floor(item.progressBytes/item.size*100)+'%"></div></div>':''}${item.error?'<div class="upload-job-detail">'+esc(item.error)+'</div>':''}</div>`).join('')}</article>`;
+        return `<article class="upload-job"><div class="upload-job-head"><span>${job.items.length} archivo${job.items.length===1?'':'s'} · ${esc(job.provider==='google'?'Google Drive':'Cloudflare R2')}</span><span>${percent}%</span></div><div class="upload-job-detail">${formatBytes(done)} de ${formatBytes(total)} · ${job.speed.toFixed(1)} MB/s</div><div class="bar" style="margin-top:9px"><div class="bar-fill" style="width:${percent}%"></div></div>${job.items.map(item=>`<div class="upload-job-file"><div class="upload-job-file-head"><span>${esc(item.name)}</span><span>${item.status==='completed'?'Completado':item.status==='uploading'?(item.phase||Math.floor(item.progressBytes/item.size*100)+'%'):item.status==='error'?'Error':'En espera'}</span></div>${item.status==='uploading'?'<div class="bar"><div class="bar-fill" style="width:'+Math.floor(item.progressBytes/item.size*100)+'%"></div></div>':''}${item.error?'<div class="upload-job-detail">'+esc(item.error)+'</div>':''}</div>`).join('')}</article>`;
       }).join(''):'<div class="upload-empty">No hay archivos subiendo ahora.</div>';
       const doneHtml=recentFiles.length?recentFiles.map(file=>`<article class="upload-job"><div class="upload-job-head"><span>✓ ${esc(file.name)}</span><span>Completado</span></div><div class="upload-job-detail">${formatBytes(file.size)} · ${esc(file.date)} · ${esc(storageProviderLabel(file))}</div></article>`).join(''):'<div class="upload-empty">Los archivos que subas desde esta cuenta aparecerán acá.</div>';
       const errorsHtml=failedJobs.length?'<h3 class="upload-section-title">Subidas con errores</h3>'+failedJobs.map(job=>job.items.filter(item=>item.status==='error').map(item=>`<article class="upload-job"><div class="upload-job-head"><span>${esc(item.name)}</span><span>Error</span></div><div class="upload-job-detail">${esc(item.error)}</div></article>`).join('')).join(''):'';
@@ -749,12 +749,12 @@ async function loadGoogleDriveStatus() {
       const totalSize=job.items.reduce((sum,item)=>sum+item.size,0),started=performance.now();let completedBytes=0;
       for(let i=0;i<job.items.length;i++){
         const item=job.items[i];if(item.status==='error')continue;
-        item.status='uploading';item.progressBytes=0;renderUploadJobs();
+        item.status='uploading';item.phase=job.provider==='google'?'Conectando con Google Drive…':'Preparando subida…';item.progressBytes=0;renderUploadJobs();
         const relative=item.relativePath.split('/').filter(Boolean).map(part=>part.replace(/[\\/]+/g,'_')).join('/');
         let path=`${job.provider==='r2'&&r2Available?`${job.userId}/`:''}${Date.now()}_${crypto.randomUUID()}_${relative}`;
         let stored=false;
         const report=loaded=>{
-          item.progressBytes=loaded;
+          item.progressBytes=loaded;if(loaded>0)item.phase='Subiendo…';
           const elapsed=Math.max(.15,(performance.now()-started)/1000),done=completedBytes+loaded;
           job.speed=done/elapsed/1024/1024;
           const now=performance.now();if(now-job.lastPaint>180||loaded===item.size){job.lastPaint=now;renderUploadJobs();}
@@ -763,9 +763,9 @@ async function loadGoogleDriveStatus() {
           if(job.provider==='google'){const uploaded=await uploadGoogleWithProgress(item.file,job.token,report);path=`gdrive://${uploaded.id}`;}
           else if(r2Available){if(item.size>=90*1024*1024)await uploadMultipart(item.file,path,job.token,{textContent:''},report);else await uploadWithProgress(item.file,path,job.token,report);}
           else await uploadWithProgress(item.file,path,job.token,report,true);
-          stored=true;
+          stored=true;item.phase='Registrando en la biblioteca…';renderUploadJobs();
           const inner=item.relativePath.includes('/')?item.relativePath.split('/').slice(0,-1).join('/'):'Sin carpeta',folder=inner==='Sin carpeta'?job.folder:(job.folder==='Sin carpeta'?inner:`${job.folder}/${inner}`);
-          const row={storage_path:path,file_name:item.name,file_type:ext(item.name),size_bytes:item.size,description:job.description,preview_image:job.previewImage,folder:folder==='Sin carpeta'?null:folder,created_by:job.userId,...job.visibility};
+          const row={storage_path:path,file_name:item.name,file_type:ext(item.name),size_bytes:item.size,description:job.description,preview_image:job.previewImage,folder,created_by:job.userId,...job.visibility};
           const {error}=await client.from('media_files').insert(row);
           if(error)throw new Error(`Se subió el archivo, pero no se pudo registrar en la biblioteca: ${error.message}`);
           item.status='completed';item.progressBytes=item.size;completedBytes+=item.size;item.error='';
