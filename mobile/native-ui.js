@@ -12,7 +12,7 @@ function initializeNativeUI() {
   nativeShell.innerHTML = `
     <header class="native-head">
       <div class="native-brand-row">
-        <div class="native-brand-icon" aria-hidden="true">✦</div>
+        <img class="native-brand-icon" src="/icons/app.svg" alt="">
         <div class="native-brand-copy"><div class="native-kicker">Tu universo digital</div><div class="native-brand-name">MediaChafa</div></div>
         <div class="native-sync" id="native-sync-status">Conectando…</div>
       </div>
@@ -101,20 +101,6 @@ function renderNativeUI() {
     const shown=links.filter(link=>(link.title+' '+link.url).toLowerCase().includes(nativeSearch));
     $('#native-count').textContent=shown.length+' enlace'+(shown.length===1?'':'s')+' guardado'+(shown.length===1?'':'s');
     $('#native-links-list').innerHTML=shown.length?shown.map(link=>'<article class="native-card"><div class="native-file-icon">↗</div><div class="native-card-main"><h2 class="native-card-title">'+esc(link.title)+'</h2><a class="native-link-url" href="'+esc(link.url)+'" target="_blank" rel="noopener noreferrer">'+esc(link.url)+'</a><div class="native-card-meta">'+(link.is_private?'<span class="native-private">🔒 Solo vos</span>':'<span>🌐 Público</span>')+'</div></div><div class="native-card-actions"><button class="native-action primary-action" data-native-action="open-link" data-id="'+esc(link.id)+'" type="button">Abrir enlace</button></div></article>').join(''):nativeEmpty('Todavía no hay enlaces','Guardá uno y lo vas a encontrar aquí.','↗');
-  } else {
-    const active=uploadJobs.filter(job=>job.status==='uploading');
-    const recent=files.filter(file=>file.createdBy===currentUser?.id).slice(0,20);
-    const errors=uploadJobs.flatMap(job=>job.items.filter(item=>item.status==='error').map(item=>({name:item.name,error:item.error})));
-    const activeHtml=active.map(job=>{
-      const total=job.items.reduce((sum,item)=>sum+item.size,0),done=job.items.reduce((sum,item)=>sum+(item.status==='completed'?item.size:item.progressBytes||0),0),percent=total?Math.floor(done/total*100):0;
-      return '<article class="native-job"><div class="native-job-head"><span>Subiendo '+job.items.length+' archivo'+(job.items.length===1?'':'s')+'</span><span>'+percent+'%</span></div><div class="native-job-info">'+esc(formatBytes(done))+' de '+esc(formatBytes(total))+' · '+esc(job.provider==='google'?'Google Drive':'Cloudflare R2')+'</div><div class="native-progress"><span style="width:'+percent+'%"></span></div>'+job.items.map(item=>'<div class="native-job-info">'+esc(item.name)+' · '+(item.status==='completed'?'Listo':item.status==='error'?'Error':'En curso')+'</div>').join('')+'</article>';
-    }).join('');
-    const doneHtml=recent.map(file=>'<article class="native-job"><div class="native-job-head"><span>✓ '+esc(file.name)+'</span><span>Listo</span></div><div class="native-job-info">'+esc(formatBytes(file.size))+' · '+esc(file.date||'')+'</div></article>').join('');
-    const errorsHtml=errors.map(item=>'<article class="native-job"><div class="native-job-head"><span>'+esc(item.name)+'</span><span>Error</span></div><div class="native-job-info">'+esc(item.error)+'</div></article>').join('');
-    $('#native-count').textContent=active.length+' subiendo · '+recent.length+' completado'+(recent.length===1?'':'s');
-    $('#native-uploads-list').innerHTML=(activeHtml||nativeEmpty('Nada subiendo ahora','Cuando empieces una subida, su avance aparece aquí.','↑'))+
-      (recent.length?'<div class="native-section-label">Recién llegados</div>'+doneHtml:'')+
-      (errors.length?'<div class="native-section-label">Con errores</div>'+errorsHtml:'');
   }
 }
 
