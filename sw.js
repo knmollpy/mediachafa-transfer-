@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mediachafa-shell-v1';
+const CACHE_NAME = 'mediachafa-shell-v2';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/app.svg'];
 
 self.addEventListener('install', event => {
