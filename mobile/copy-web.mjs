@@ -1,4 +1,5 @@
 import { cp, mkdir, copyFile, readFile, writeFile, readdir, rm } from 'node:fs/promises';
+import { Script } from 'node:vm';
 
 const root = new URL('../', import.meta.url);
 const output = new URL('./www/', import.meta.url);
@@ -10,10 +11,17 @@ const [source, nativeRuntime] = await Promise.all([
   readFile(new URL('index.html', root), 'utf8'),
   readFile(new URL('mobile/native-ui.js', root), 'utf8')
 ]);
-let mobilePage = source.replace('</head>', '<script>window.MEDIA_NATIVE_APP=true;</script><link rel="stylesheet" href="/native-ui.css"></head>');
+let mobilePage = source.replace('</head>', '<script>window.MEDIA_NATIVE_APP=true;document.documentElement.classList.add("native-app");</script><link rel="stylesheet" href="/native-ui.css"></head>');
+mobilePage = mobilePage
+  .replace(/<a class="install-mobile-option(?: compact)?"[^>]*>[\s\S]*?<\/a>/g, '')
+  .replace(/<p class="install-mobile-help">[\s\S]*?<\/p>/g, '');
 const closingScript = mobilePage.lastIndexOf('</script>');
 if (closingScript < 0) throw new Error('No se encontró el script principal de MediaChafa.');
 mobilePage = mobilePage.slice(0, closingScript) + '\n' + nativeRuntime + '\n' + mobilePage.slice(closingScript);
+const inlineScripts = [...mobilePage.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
+const appScript = inlineScripts.at(-1)?.[1];
+if (!appScript) throw new Error('No se encontró el script final de MediaChafa.');
+new Script(appScript, { filename: 'mobile/www/index.html' });
 await writeFile(new URL('index.html', output), mobilePage);
 
 async function installAndroidLauncherIcon() {
