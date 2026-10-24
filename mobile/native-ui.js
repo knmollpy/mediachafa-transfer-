@@ -43,6 +43,7 @@ function initializeNativeUI() {
     if(event.target.closest('#native-add-button')){if(nativeActiveView==='links')openLinkEditor();else if(nativeActiveView==='folders')$('#new-folder').click();else if(nativeActiveView==='files')openUploadModal();return;}
     const action=event.target.closest('[data-native-action]');
     if(!action)return;
+    if(action.dataset.nativeAction==='edit-folder'){configureFolder(action.dataset.folder);return;}
     if(action.dataset.nativeAction==='select-folder'){
       currentFolder=action.dataset.folder||'Todos los archivos';
       switchNativeView('files');
@@ -115,7 +116,8 @@ function renderNativeUI() {
       const contained=folder==='Todos los archivos'?files:files.filter(file=>folder==='Sin carpeta'?(!file.folder||file.folder==='Sin carpeta'):(file.folder===folder||file.folder.startsWith(folder+'/')));
       const bytes=contained.reduce((sum,file)=>sum+file.size,0);
       const privateLabel=record?.isPrivate?'<span class="native-private">· 🔒 Privada</span>':'';
-      return '<button class="native-folder-card" data-native-action="select-folder" data-folder="'+esc(folder)+'" type="button"><span class="native-folder-icon">'+(record?.isPrivate?'🔒':'▰')+'</span><span class="native-folder-main"><strong>'+esc(folder)+'</strong><small>'+contained.length+' archivo'+(contained.length===1?'':'s')+' · '+formatBytes(bytes)+' '+privateLabel+'</small></span><span class="native-folder-arrow">›</span></button>';
+      const canEditFolder=(ownerMode||uploaderMode)&&folder!=='Todos los archivos'&&folder!=='Sin carpeta';
+      return '<div class="native-folder-row"><button class="native-folder-card" data-native-action="select-folder" data-folder="'+esc(folder)+'" type="button"><span class="native-folder-icon">'+(record?.isPrivate?'🔒':'▰')+'</span><span class="native-folder-main"><strong>'+esc(folder)+'</strong><small>'+contained.length+' archivo'+(contained.length===1?'':'s')+' · '+formatBytes(bytes)+' '+privateLabel+'</small></span><span class="native-folder-arrow">›</span></button>'+(canEditFolder?'<button class="native-folder-edit" data-native-action="edit-folder" data-folder="'+esc(folder)+'" type="button" aria-label="Editar carpeta '+esc(folder)+'">✎</button>':'')+'</div>';
     }).join('')||nativeEmpty('No hay carpetas coincidentes','Probá con otro nombre.','▰');
   } else if(nativeActiveView==='storage') {
     renderNativeStorage();
