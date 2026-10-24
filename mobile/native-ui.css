@@ -75,10 +75,9 @@ body.native-app {
 }
 .native-brand-row { display: flex; align-items: center; gap: 10px; }
 .native-brand-icon {
-  display: grid; place-items: center; width: 39px; height: 39px; flex: 0 0 auto;
-  border: 1px solid rgba(103,234,255,.35); border-radius: 14px;
-  color: var(--cyan); background: linear-gradient(145deg, rgba(103,234,255,.15), rgba(128,87,255,.22));
-  box-shadow: 0 0 22px rgba(103,234,255,.12);
+  display: block; width: 39px; height: 39px; flex: 0 0 auto; object-fit: cover;
+  border: 1px solid rgba(155,185,255,.45); border-radius: 14px;
+  box-shadow: 0 0 22px rgba(103,234,255,.18);
 }
 .native-brand-copy { min-width: 0; }
 .native-kicker { color: #a9b6ec; font-size: 9px; font-weight: 800; letter-spacing: 1.7px; text-transform: uppercase; }
