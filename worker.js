@@ -128,8 +128,8 @@ async function googleAccessToken(env) {
   return result.access_token || null;
 }
 
-async function googleQuota(env) {
-  const accessToken = await googleAccessToken(env);
+async function googleQuota(env, accessToken = null) {
+  accessToken = accessToken || await googleAccessToken(env);
   if (!accessToken) return null;
   const response = await fetch("https://www.googleapis.com/drive/v3/about?fields=storageQuota(limit,usage,usageInDrive)", { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!response.ok) throw new Error("No se pudo consultar el espacio de Google Drive.");
@@ -449,7 +449,11 @@ export default {
         if (!connected) return json({ configured: Boolean(env.GOOGLE_CLIENT_SECRET && env.GOOGLE_OAUTH_STORE), connected: false });
         // Collaborators use the owner's connected Drive, so expose its quota to
         // them as well. The quota describes the shared Google account pool.
-        return json({ configured: true, connected: true, quota: await googleQuota(env) });
+        const accessToken = await googleAccessToken(env);
+        let quota = null;
+        try { quota = await googleQuota(env, accessToken); }
+        catch (error) { console.warn("Google Drive quota lookup failed", error instanceof Error ? error.message : "unknown error"); }
+        return json({ configured: true, connected: true, quota });
       }
 
       if (url.pathname === "/transfer" && request.method === "POST") {
@@ -523,7 +527,9 @@ export default {
         if (!name || !Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) return json({ error: "Nombre o tamaño de archivo inválido." }, 400);
         const accessToken = await googleAccessToken(env);
         if (!accessToken) return json({ error: "Google Drive todavía no está conectado por el dueño." }, 409);
-        const quota=await googleQuota(env);
+        let quota = null;
+        try { quota = await googleQuota(env, accessToken); }
+        catch (error) { console.warn("Google Drive quota preflight failed; allowing Drive to validate the upload", error instanceof Error ? error.message : "unknown error"); }
         if(quota?.limit&&Number(quota.limit)-Number(quota.usage||0)<size) return json({error:"El archivo supera el espacio disponible en Google Drive."},413);
         const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,mimeType", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": contentType, "X-Upload-Content-Length": String(size) }, body: JSON.stringify({ name, mimeType: contentType }) });
         if (!response.ok || !response.headers.get("Location")) {
