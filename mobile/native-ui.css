@@ -138,6 +138,28 @@ body.native-app {
 .native-card-meta { display: flex; flex-wrap: wrap; gap: 4px 7px; margin-top: 5px; color: #9eaad1; font-size: 10px; line-height: 1.35; }
 .native-private { color: #d7c4ff; }
 .native-card-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; width: 100%; }
+.native-folder-card {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 72px; padding: 13px;
+  border: 1px solid var(--glass-line); border-radius: 17px; color: #f7f6ff; text-align: left;
+  background: linear-gradient(125deg, rgba(27,36,85,.86), rgba(13,19,53,.78));
+}
+.native-folder-icon { display: grid; place-items: center; flex: 0 0 42px; height: 42px; border: 1px solid rgba(182,161,255,.24); border-radius: 13px; color: var(--nebula-light); background: rgba(128,87,255,.14); font-size: 17px; }
+.native-folder-main { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; gap: 5px; }
+.native-folder-main strong { overflow-wrap: anywhere; font-size: 13px; }
+.native-folder-main small { color: #9eaad1; font-size: 10px; line-height: 1.4; }
+.native-folder-arrow { color: #8e9ed8; font-size: 25px; }
+.native-storage-list { display: grid; gap: 12px; }
+.native-storage-card { min-width: 0; padding: 16px; border: 1px solid var(--glass-line); border-radius: 18px; background: linear-gradient(125deg, rgba(27,36,85,.9), rgba(13,19,53,.82)); box-shadow: inset 0 1px rgba(255,255,255,.04); }
+.native-storage-heading { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.native-storage-icon { color: var(--cyan); font-size: 17px; }
+.native-storage-card.cloud .native-storage-icon { color: #8af0bc; }
+.native-storage-heading strong { flex: 1 1 auto; font-size: 13px; }
+.native-storage-amount { flex: 0 1 auto; color: #e2e7ff; font-size: 11px; font-weight: 750; text-align: right; }
+.native-storage-amount i { color: #7f8bb9; font-style: normal; font-weight: 500; }
+.native-storage-track { height: 8px; margin-top: 15px; overflow: hidden; border-radius: 999px; background: rgba(143,157,214,.16); }
+.native-storage-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#5fceff,#a789ff); box-shadow: 0 0 12px rgba(109,207,255,.4); }
+.native-storage-card.cloud .native-storage-track span { background: linear-gradient(90deg,#4de0af,#69b9ff); }
+.native-storage-card p { margin: 9px 0 0; color: #9eaad1; font-size: 10px; line-height: 1.45; }
 .native-action {
   min-width: 0; min-height: 43px; padding: 8px 9px; overflow-wrap: anywhere;
   border: 1px solid rgba(126, 150, 226, .22); border-radius: 12px;
@@ -153,7 +175,7 @@ body.native-app {
 .native-empty strong { display: block; margin-bottom: 4px; color: #f0efff; font: 700 14px Manrope, sans-serif; }
 .native-empty span { font-size: 11px; line-height: 1.5; }
 .native-tabs {
-  z-index: 4; flex: 0 0 auto; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px;
+  z-index: 4; flex: 0 0 auto; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 4px;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid rgba(151,171,255,.14);
   background: rgba(8,12,35,.96); backdrop-filter: blur(18px);
@@ -164,6 +186,7 @@ body.native-app {
 }
 .native-tab-icon { font-size: 17px; line-height: 18px; }
 .native-tab.active { border-color: rgba(118,151,255,.17); color: #c6efff; background: linear-gradient(135deg, rgba(77,103,201,.2), rgba(87,61,168,.2)); }
+.native-tab { font-size: 9px; }
 .native-link-url { display: block; margin-top: 4px; overflow-wrap: anywhere; color: #8fdbff; font-size: 10px; line-height: 1.4; text-decoration: none; }
 .native-job { padding: 14px; border: 1px solid var(--glass-line); border-radius: 17px; background: var(--glass); }
 .native-job + .native-job { margin-top: 10px; }
@@ -172,6 +195,7 @@ body.native-app {
 .native-progress { height: 6px; margin-top: 10px; overflow: hidden; border-radius: 999px; background: rgba(143,157,214,.15); }
 .native-progress > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #5fceff, #a789ff); box-shadow: 0 0 12px rgba(109,207,255,.4); }
 .native-section-label { margin: 18px 2px 8px; color: #a4b2dc; font-size: 9px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; }
+.native-app #native-search.hidden { display: none; }
 .native-app .toast { left: 14px; right: 14px; bottom: calc(82px + env(safe-area-inset-bottom)); width: auto; transform: none; border: 1px solid var(--glass-line); color: #f5f3ff; background: #202955; box-shadow: 0 12px 30px rgba(0,0,0,.35); }
 .native-app .modal-backdrop { align-items: end; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); }
 .native-app .modal { width: 100%; max-height: 88dvh; border: 1px solid var(--glass-line); border-radius: 20px 20px 12px 12px; color: #f5f3ff; background: #121a42; }
