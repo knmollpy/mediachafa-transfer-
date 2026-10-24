@@ -138,11 +138,13 @@ body.native-app {
 .native-card-meta { display: flex; flex-wrap: wrap; gap: 4px 7px; margin-top: 5px; color: #9eaad1; font-size: 10px; line-height: 1.35; }
 .native-private { color: #d7c4ff; }
 .native-card-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; width: 100%; }
+.native-folder-row { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
 .native-folder-card {
-  display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 72px; padding: 13px;
+  display: flex; flex: 1 1 auto; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 72px; padding: 13px;
   border: 1px solid var(--glass-line); border-radius: 17px; color: #f7f6ff; text-align: left;
   background: linear-gradient(125deg, rgba(27,36,85,.86), rgba(13,19,53,.78));
 }
+.native-folder-edit { flex: 0 0 45px; border: 1px solid rgba(126,150,226,.22); border-radius: 14px; color: #c9d4ff; background: rgba(13,20,54,.72); font-size: 17px; }
 .native-folder-icon { display: grid; place-items: center; flex: 0 0 42px; height: 42px; border: 1px solid rgba(182,161,255,.24); border-radius: 13px; color: var(--nebula-light); background: rgba(128,87,255,.14); font-size: 17px; }
 .native-folder-main { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; gap: 5px; }
 .native-folder-main strong { overflow-wrap: anywhere; font-size: 13px; }
