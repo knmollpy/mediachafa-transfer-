@@ -49,6 +49,7 @@ body.native-app {
   box-shadow: 0 24px 70px rgba(0, 0, 0, .42), inset 0 1px rgba(255,255,255,.06);
 }
 .native-app .login-card h1 { color: #fff; }
+.native-app #login .install-mobile-option, #login .install-mobile-option { display: none !important; }
 .native-app .login-note, .native-app .field { background: rgba(7, 12, 36, .8); color: #c8d3ff; border-color: var(--glass-line); }
 .native-app .field::placeholder { color: #8996c5; }
 .native-app .field:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(103, 234, 255, .14); }
