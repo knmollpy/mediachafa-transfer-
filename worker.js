@@ -19,6 +19,16 @@ function json(body, status = 200, headers = {}) {
   });
 }
 
+async function fetchWithTimeout(input, init = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try { return await fetch(input, { ...init, signal: controller.signal }); }
+  catch (error) {
+    if (error?.name === "AbortError") throw new Error(`La conexión externa agotó el tiempo de espera (${Math.round(timeoutMs / 1000)} s).`);
+    throw error;
+  } finally { clearTimeout(timer); }
+}
+
 function withCors(response) {
   const headers = new Headers(response.headers);
   for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
@@ -39,9 +49,9 @@ function encodePath(path) {
 async function getUser(request, env) {
   const authorization = request.headers.get("Authorization") || "";
   if (!authorization.startsWith("Bearer ")) return null;
-  const response = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+  const response = await fetchWithTimeout(`${env.SUPABASE_URL}/auth/v1/user`, {
     headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: authorization },
-  });
+  }, 12000);
   if (!response.ok) return null;
   return { user: await response.json(), authorization };
 }
@@ -50,7 +60,7 @@ async function canUpload(session, env) {
   if (!session) return false;
   if (session.user.id === env.OWNER_USER_ID) return true;
   const url = `${env.SUPABASE_URL}/rest/v1/media_users?select=can_upload&id=eq.${encodeURIComponent(session.user.id)}&limit=1`;
-  const response = await fetch(url, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } });
+  const response = await fetchWithTimeout(url, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } }, 12000);
   if (!response.ok) return false;
   const rows = await response.json();
   return rows[0]?.can_upload === true;
@@ -59,7 +69,7 @@ async function canUpload(session, env) {
 async function isRegisteredCollaborator(session, env) {
   if (!session || session.user.id === env.OWNER_USER_ID) return false;
   const url = `${env.SUPABASE_URL}/rest/v1/media_users?select=id&id=eq.${encodeURIComponent(session.user.id)}&limit=1`;
-  const response = await fetch(url, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } });
+  const response = await fetchWithTimeout(url, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } }, 12000);
   if (!response.ok) return false;
   return (await response.json()).length > 0;
 }
@@ -119,7 +129,7 @@ async function googleAccessToken(env) {
   const refreshToken = await decryptGoogleToken(encrypted, env);
   if (!refreshToken) return null;
   const body = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, refresh_token: refreshToken, grant_type: "refresh_token" });
-  const response = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+  const response = await fetchWithTimeout("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body }, 12000);
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
     const reason = result.error_description || result.error || `HTTP ${response.status}`;
@@ -131,7 +141,7 @@ async function googleAccessToken(env) {
 async function googleQuota(env, accessToken = null) {
   accessToken = accessToken || await googleAccessToken(env);
   if (!accessToken) return null;
-  const response = await fetch("https://www.googleapis.com/drive/v3/about?fields=storageQuota(limit,usage,usageInDrive)", { headers: { Authorization: `Bearer ${accessToken}` } });
+  const response = await fetchWithTimeout("https://www.googleapis.com/drive/v3/about?fields=storageQuota(limit,usage,usageInDrive)", { headers: { Authorization: `Bearer ${accessToken}` } }, 12000);
   if (!response.ok) throw new Error("No se pudo consultar el espacio de Google Drive.");
   return (await response.json()).storageQuota || null;
 }
@@ -527,11 +537,7 @@ export default {
         if (!name || !Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) return json({ error: "Nombre o tamaño de archivo inválido." }, 400);
         const accessToken = await googleAccessToken(env);
         if (!accessToken) return json({ error: "Google Drive todavía no está conectado por el dueño." }, 409);
-        let quota = null;
-        try { quota = await googleQuota(env, accessToken); }
-        catch (error) { console.warn("Google Drive quota preflight failed; allowing Drive to validate the upload", error instanceof Error ? error.message : "unknown error"); }
-        if(quota?.limit&&Number(quota.limit)-Number(quota.usage||0)<size) return json({error:"El archivo supera el espacio disponible en Google Drive."},413);
-        const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,mimeType", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": contentType, "X-Upload-Content-Length": String(size) }, body: JSON.stringify({ name, mimeType: contentType }) });
+        const response = await fetchWithTimeout("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,mimeType", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": contentType, "X-Upload-Content-Length": String(size) }, body: JSON.stringify({ name, mimeType: contentType }) }, 20000);
         if (!response.ok || !response.headers.get("Location")) {
           const failure = await response.json().catch(() => ({}));
           const reason = failure.error?.message || failure.error_description || `HTTP ${response.status}`;
@@ -559,7 +565,7 @@ export default {
         if (!accessToken) return json({ error: "Google Drive todavía no está conectado por el dueño." }, 409);
         const bytes = probe ? new ArrayBuffer(0) : await request.arrayBuffer();
         if (!probe&&bytes.byteLength !== end - start + 1) return json({ error: "El tamaño de la parte no coincide." }, 400);
-        const response = await fetch(state.url, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": state.contentType, "Content-Length": String(bytes.byteLength), "Content-Range": probe?`bytes */${total}`:`bytes ${start}-${end}/${total}` }, body: bytes });
+        const response = await fetchWithTimeout(state.url, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": state.contentType, "Content-Length": String(bytes.byteLength), "Content-Range": probe?`bytes */${total}`:`bytes ${start}-${end}/${total}` }, body: bytes }, 120000);
         if (response.status === 308) {
           const last=response.headers.get("Range")?.match(/bytes=0-(\d+)/i)?.[1];
           return json({ ok:true, complete:false, next:last?Number(last)+1:0 });
