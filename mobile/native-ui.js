@@ -1,6 +1,3 @@
-Failed to create stream fd: Operation not permitted
-Failed to create stream fd: Operation not permitted
-Failed to create stream fd: Operation not permitted
 const isNativeApp = window.MEDIA_NATIVE_APP === true || window.Capacitor?.isNativePlatform?.() === true;
 let nativeShell = null;
 let nativeActiveView = 'files';

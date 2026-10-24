@@ -1,6 +1,3 @@
-Failed to create stream fd: Operation not permitted
-Failed to create stream fd: Operation not permitted
-Failed to create stream fd: Operation not permitted
 import { cp, mkdir, copyFile, readFile, writeFile } from 'node:fs/promises';
 
 const root = new URL('../', import.meta.url);
