@@ -1,4 +1,3 @@
-const isNativeApp = window.MEDIA_NATIVE_APP === true || window.Capacitor?.isNativePlatform?.() === true;
 let nativeShell = null;
 let nativeActiveView = 'files';
 let nativeSearch = '';
@@ -27,12 +26,10 @@ function initializeNativeUI() {
     <main class="native-content" id="native-content">
       <section id="native-files-view"><div class="native-list" id="native-files-list"></div></section>
       <section id="native-links-view" hidden><div class="native-list" id="native-links-list"></div></section>
-      <section id="native-uploads-view" hidden><div id="native-uploads-list"></div></section>
     </main>
     <nav class="native-tabs" aria-label="Secciones">
       <button class="native-tab active" data-native-view="files" type="button"><span class="native-tab-icon">▤</span><span>Archivos</span></button>
       <button class="native-tab" data-native-view="links" type="button"><span class="native-tab-icon">↗</span><span>Enlaces</span></button>
-      <button class="native-tab" data-native-view="uploads" id="native-uploads-tab" type="button"><span class="native-tab-icon">↑</span><span>Subidas</span></button>
     </nav>`;
   $('#app').append(nativeShell);
   nativeShell.querySelector('#native-search').addEventListener('input',event=>{nativeSearch=event.target.value.trim().toLowerCase();renderNativeUI();});
@@ -56,7 +53,6 @@ function initializeNativeUI() {
 function initializeNativeState() {
   if(!isNativeApp||!nativeShell)return;
   nativeShell.hidden=false;
-  $('#native-uploads-tab').classList.toggle('hidden',!ownerMode&&!uploaderMode);
   $('#native-add-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
   switchNativeView('files');
   renderNativeUI();
@@ -64,16 +60,16 @@ function initializeNativeState() {
 
 function switchNativeView(view) {
   if(!isNativeApp||!nativeShell)return;
-  if(view==='uploads'&&!ownerMode&&!uploaderMode)view='files';
+  if(view==='uploads')view='files';
   nativeActiveView=view;
-  for(const name of ['files','links','uploads']) {
+  for(const name of ['files','links']) {
     const section=nativeShell.querySelector('#native-'+name+'-view');
     if(section)section.hidden=name!==view;
     nativeShell.querySelector('[data-native-view="'+name+'"]').classList.toggle('active',name===view);
   }
-  const titles={files:['Tus archivos','Tu universo de archivos está a un toque.','Buscar archivos…'],links:['Enlaces guardados','Tus accesos favoritos, listos para abrir.','Buscar enlaces…'],uploads:['Actividad','Seguí las subidas y encontrá lo que ya llegó.','Buscar en tu biblioteca…']};
+  const titles={files:['Tus archivos','Tu universo de archivos está a un toque.','Buscar archivos…'],links:['Enlaces guardados','Tus accesos favoritos, listos para abrir.','Buscar enlaces…']};
   const copy=titles[view];$('#native-title').textContent=copy[0];$('#native-subtitle').textContent=copy[1];$('#native-search').placeholder=copy[2];
-  $('#native-add-button').classList.toggle('hidden',view==='uploads'||(!ownerMode&&!uploaderMode));
+  $('#native-add-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
   $('#native-add-button').setAttribute('aria-label',view==='links'?'Guardar enlace':'Subir archivo');
   $('#native-add-button').textContent=view==='links'?'＋':'↑';
   renderNativeUI();
@@ -89,7 +85,6 @@ function nativeEmpty(title,description,icon='✦') {
 
 function renderNativeUI() {
   if(!isNativeApp||!nativeShell)return;
-  $('#native-uploads-tab').classList.toggle('hidden',!ownerMode&&!uploaderMode);
   if(nativeActiveView==='files') {
     const shown=files.filter(file=>(file.name+' '+file.description+' '+file.folder).toLowerCase().includes(nativeSearch));
     $('#native-count').textContent=shown.length+' archivo'+(shown.length===1?'':'s')+' en tu biblioteca';
