@@ -1,0 +1,13 @@
+import type { CapacitorConfig } from '@capacitor/cli';
+
+const config: CapacitorConfig = {
+  appId: 'com.mediachafa.app',
+  appName: 'MediaChafa',
+  webDir: 'mobile/www',
+  backgroundColor: '#f3f7f4',
+  android: {
+    backgroundColor: '#f3f7f4'
+  }
+};
+
+export default config;

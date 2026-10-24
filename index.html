@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f2f7f3" />
+  <meta name="description" content="Tu biblioteca de archivos y enlaces, disponible también desde el celular." />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icons/app.svg" type="image/svg+xml" />
   <title>MediaChafa — biblioteca de archivos</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -42,7 +45,9 @@
     :root[data-theme="dark"] .file-card{background:#1b2720;border-color:#35453b}
     :root[data-theme="dark"] .field,:root[data-theme="dark"] .search,:root[data-theme="dark"] .select,:root[data-theme="dark"] .secondary,:root[data-theme="dark"] .icon-btn{background:#152019;border-color:#3b5042;color:#e7eee9}
     .storage-badge{display:inline-flex;align-items:center;margin-left:6px;padding:2px 7px;border:1px solid #dce9de;border-radius:999px;color:#3b7650;font-size:9px;font-weight:700;vertical-align:middle}
+    .privacy-badge{display:inline-flex;align-items:center;margin-left:5px;padding:2px 7px;border:1px solid #dce9de;border-radius:999px;color:#3b7650;font-size:9px;font-weight:700;vertical-align:middle;white-space:nowrap}.privacy-badge.private{border-color:#ead9b3;background:#fff9eb;color:#8a651f}
     :root[data-theme="dark"] .storage-badge{border-color:#385742;color:#9fd2a9}
+    :root[data-theme="dark"] .privacy-badge{border-color:#385742;color:#9fd2a9}:root[data-theme="dark"] .privacy-badge.private{border-color:#67532e;background:#302918;color:#f0cf82}
     :root[data-theme="dark"] .folder,:root[data-theme="dark"] .file-desc,:root[data-theme="dark"] .file-meta,:root[data-theme="dark"] .welcome p,:root[data-theme="dark"] .date{color:#a8b5ac}
     :root[data-theme="dark"] .folder:hover,:root[data-theme="dark"] .folder.selected,:root[data-theme="dark"] .role-chip{background:#263a2c;color:#a8dfb5}
     :root[data-theme="dark"] .notice,:root[data-theme="dark"] .drop{background:#202f25;color:#bcc9c0}
@@ -98,7 +103,7 @@
       <section class="content hidden" id="links-panel"><div class="content-head"><div class="content-title">Enlaces guardados</div><input class="search" id="links-search" placeholder="⌕  Buscar enlaces…"><button id="all-links" class="navitem active" type="button">Todos</button><button id="own-links" class="navitem" type="button">Propios</button><button id="add-link" class="add-btn">＋ Guardar enlace</button></div><div id="links-list" class="file-list"></div></section><section class="content hidden" id="uploads-panel"><div class="content-head"><div class="content-title">Subidas</div></div><div id="uploads-list"></div></section>
     </div>
   </main>
-  <audio id="background-music" preload="none" loop src="/background.mp3"></audio>
+  <audio id="background-music" preload="none" loop src="https://mediachafa-transfer.vercel.app/background.mp3"></audio>
   <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true"><div><strong>Soltá los archivos acá</strong><span>Se van a preparar para subir. La transferencia empieza cuando toques “Subir”.</span></div></div>
   <div id="modal-root"></div>
   <script>
@@ -479,7 +484,7 @@ async function loadGoogleDriveStatus() {
     async function loadLinks() {
       const pageSize=500,all=[];
       for(let start=0;;start+=pageSize){
-        const {data,error}=await client.from('media_links').select('id,title,url,created_by,created_at').order('created_at',{ascending:false}).range(start,start+pageSize-1);
+        const {data,error}=await client.from('media_links').select('id,title,url,created_by,created_at,is_private').order('created_at',{ascending:false}).range(start,start+pageSize-1);
         if(error){$('#links-list').innerHTML=`<div class="empty"><div class="empty-icon">!</div><h3>No se pudieron cargar los enlaces</h3><p>${esc(error.message)}</p></div>`;return;}
         all.push(...(data||[]));if(!data||data.length<pageSize)break;
       }
@@ -501,7 +506,8 @@ async function loadGoogleDriveStatus() {
         const card = document.createElement('article'); card.className='link-card';
         let host=''; try { host=new URL(link.url).hostname; } catch {}
         const canManage = ownerMode || (uploaderMode && link.created_by === currentUser?.id);
-        card.innerHTML = `<div class="link-card-main"><div class="link-card-title">${esc(link.title)}</div><a class="link-card-url" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">${esc(host ? `${host} · ${link.url}` : link.url)}</a><div class="link-card-meta">${new Intl.DateTimeFormat('es-AR',{dateStyle:'medium'}).format(new Date(link.created_at))}</div></div><div class="link-actions"><a class="preview-btn" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">Abrir</a>${canManage?'<button class="icon-btn edit-link" title="Editar enlace">✎</button><button class="icon-btn delete-link" title="Eliminar enlace">×</button>':''}</div>`;
+         const visibility=link.is_private?'<span class="privacy-badge private">🔒 Solo vos</span>':'<span class="privacy-badge">🌐 Público</span>';
+         card.innerHTML = `<div class="link-card-main"><div class="link-card-title">${esc(link.title)}</div><a class="link-card-url" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">${esc(host ? `${host} · ${link.url}` : link.url)}</a><div class="link-card-meta">${new Intl.DateTimeFormat('es-AR',{dateStyle:'medium'}).format(new Date(link.created_at))} · ${visibility}</div></div><div class="link-actions"><a class="preview-btn" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">Abrir</a>${canManage?'<button class="icon-btn edit-link" title="Editar enlace">✎</button><button class="icon-btn delete-link" title="Eliminar enlace">×</button>':''}</div>`;
         if (canManage) {
           card.querySelector('.edit-link').onclick=()=>openLinkEditor(link);
           card.querySelector('.delete-link').onclick=async()=>{if(!confirm(`¿Eliminar el enlace “${link.title}”?`))return;const {error}=await client.from('media_links').delete().eq('id',link.id);if(error){toast('No se pudo eliminar el enlace: '+error.message);return;}await loadLinks();toast('Enlace eliminado.');};
@@ -514,14 +520,14 @@ async function loadGoogleDriveStatus() {
     $('#links-search').oninput=renderLinks;
     function openLinkEditor(link=null) {
       const editing=Boolean(link);
-      modal(editing?'Editar enlace':'Guardar enlace','<label class="field-label" for="link-title">Nombre</label><input class="field" id="link-title" maxlength="120" placeholder="Por ejemplo, GitHub" value="'+esc(link?.title||'')+'"><label class="field-label" for="link-url">Enlace</label><input class="field" id="link-url" type="url" maxlength="2048" placeholder="https://github.com/" value="'+esc(link?.url||'')+'">',editing?'Guardar':'Agregar',async root=>{
+      modal(editing?'Editar enlace':'Guardar enlace','<label class="field-label" for="link-title">Nombre</label><input class="field" id="link-title" maxlength="120" placeholder="Por ejemplo, GitHub" value="'+esc(link?.title||'')+'"><label class="field-label" for="link-url">Enlace</label><input class="field" id="link-url" type="url" maxlength="2048" placeholder="https://github.com/" value="'+esc(link?.url||'')+'"><label class="field-label" for="link-visibility">Quién puede verlo</label><select class="field" id="link-visibility"><option value="public" '+(link?.is_private?'':'selected')+'>Público · lo ven todos</option><option value="private" '+(link?.is_private?'selected':'')+'>Privado · solo vos</option></select>',editing?'Guardar':'Agregar',async root=>{
         const title=root.querySelector('#link-title').value.trim(),rawUrl=root.querySelector('#link-url').value.trim();
         let url;try{url=new URL(rawUrl);if(!['http:','https:'].includes(url.protocol))throw new Error();}catch{toast('Ingresá un enlace válido que empiece con http:// o https://.');return;}
         if(!title){toast('Escribí un nombre para el enlace.');return;}
-        const payload={title,url:url.href};
+        const payload={title,url:url.href,is_private:root.querySelector('#link-visibility').value==='private'};
         const result=editing?await client.from('media_links').update(payload).eq('id',link.id):await client.from('media_links').insert({...payload,created_by:currentUser.id});
         if(result.error){toast('No se pudo guardar el enlace: '+result.error.message);return;}
-        root.replaceChildren();await loadLinks();toast(editing?'Enlace actualizado.':'Enlace guardado para todos.');
+        root.replaceChildren();await loadLinks();toast(editing?'Enlace actualizado.':payload.is_private?'Enlace guardado en privado.':'Enlace guardado para todos.');
       });
     }
     $('#add-link').onclick=()=>openLinkEditor();
@@ -914,9 +920,11 @@ async function loadGoogleDriveStatus() {
       if ((user.email || '').toLowerCase() === OWNER_EMAIL && !user.is_anonymous) await enterLibrary(true, user);
       else { const {data:account} = await client.from('media_users').select('username').eq('id',user.id).maybeSingle(); if (account) await enterLibrary(false,user,true); else await client.auth.signOut(); }
     });
+    if ('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
   </script>
 </body>
 </html>
+
 
 
 

@@ -1,0 +1,18 @@
+{
+  "name": "mediachafa-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "mobile:copy": "node mobile/copy-web.mjs",
+    "mobile:sync": "npm run mobile:copy && cap sync android",
+    "mobile:android": "npm run mobile:copy && cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.0.0",
+    "@capacitor/core": "8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.0.0"
+  }
+}
