@@ -692,7 +692,7 @@ async function loadGoogleDriveStatus() {
     function modal(title, body, submitText, onSubmit) {
       const root = $('#modal-root');
       root.innerHTML = `<div class="modal-backdrop"><div class="modal"><div class="modal-top"><h2>${title}</h2><button class="close">×</button></div>${body}<div class="modal-actions"><button class="secondary cancel">Cancelar</button><button class="primary submit">${submitText}</button></div></div></div>`;
-      root.querySelector('.close').onclick = root.querySelector('.cancel').onclick = () => root.replaceChildren();
+      root.querySelector('.close').onclick = root.querySelector('.cancel').onclick = () => { if(root.querySelector('.modal-backdrop')?.dataset.locked!=='true')root.replaceChildren(); };
       root.querySelector('.modal-backdrop').onclick = event => { if (event.target.classList.contains('modal-backdrop') && event.currentTarget.dataset.locked !== 'true') root.replaceChildren(); };
       root.querySelector('.submit').onclick = () => onSubmit(root);
     }
@@ -745,16 +745,24 @@ async function loadGoogleDriveStatus() {
       if(isNativeApp)renderNativeUI();
     }
 
-    async function runUploadJob(job) {
+    function updateUploadModal(item,root) {
+      if(!root)return;
+      const status=root.querySelector('#upload-live-status'),bar=root.querySelector('#upload-live-bar');if(!status||!bar)return;
+      const percent=item.size?Math.floor(item.progressBytes/item.size*100):0;
+      status.textContent=`${item.phase||'Preparando subida…'} · ${formatBytes(item.progressBytes)} de ${formatBytes(item.size)}`;
+      bar.classList.remove('hidden');bar.querySelector('.bar-fill').style.width=`${percent}%`;
+    }
+
+    async function runUploadJob(job,modalRoot=null) {
       const totalSize=job.items.reduce((sum,item)=>sum+item.size,0),started=performance.now();let completedBytes=0;
       for(let i=0;i<job.items.length;i++){
         const item=job.items[i];if(item.status==='error')continue;
-        item.status='uploading';item.phase=job.provider==='google'?'Conectando con Google Drive…':'Preparando subida…';item.progressBytes=0;renderUploadJobs();
+        item.status='uploading';item.phase=job.provider==='google'?'Conectando con Google Drive…':'Preparando subida…';item.progressBytes=0;renderUploadJobs();updateUploadModal(item,modalRoot);
         const relative=item.relativePath.split('/').filter(Boolean).map(part=>part.replace(/[\\/]+/g,'_')).join('/');
         let path=`${job.provider==='r2'&&r2Available?`${job.userId}/`:''}${Date.now()}_${crypto.randomUUID()}_${relative}`;
         let stored=false;
         const report=loaded=>{
-          item.progressBytes=loaded;if(loaded>0)item.phase='Subiendo…';
+          item.progressBytes=loaded;if(loaded>0)item.phase='Subiendo…';updateUploadModal(item,modalRoot);
           const elapsed=Math.max(.15,(performance.now()-started)/1000),done=completedBytes+loaded;
           job.speed=done/elapsed/1024/1024;
           const now=performance.now();if(now-job.lastPaint>180||loaded===item.size){job.lastPaint=now;renderUploadJobs();}
@@ -763,7 +771,7 @@ async function loadGoogleDriveStatus() {
           if(job.provider==='google'){const uploaded=await uploadGoogleWithProgress(item.file,job.token,report);path=`gdrive://${uploaded.id}`;}
           else if(r2Available){if(item.size>=90*1024*1024)await uploadMultipart(item.file,path,job.token,{textContent:''},report);else await uploadWithProgress(item.file,path,job.token,report);}
           else await uploadWithProgress(item.file,path,job.token,report,true);
-          stored=true;item.phase='Registrando en la biblioteca…';renderUploadJobs();
+          stored=true;item.phase='Registrando en la biblioteca…';renderUploadJobs();updateUploadModal(item,modalRoot);
           const inner=item.relativePath.includes('/')?item.relativePath.split('/').slice(0,-1).join('/'):'Sin carpeta',folder=inner==='Sin carpeta'?job.folder:(job.folder==='Sin carpeta'?inner:`${job.folder}/${inner}`);
           const row={storage_path:path,file_name:item.name,file_type:ext(item.name),size_bytes:item.size,description:job.description,preview_image:job.previewImage,folder,created_by:job.userId,...job.visibility};
           const {error}=await client.from('media_files').insert(row);
@@ -777,6 +785,7 @@ async function loadGoogleDriveStatus() {
       job.status=failed?(completed?'partial':'failed'):'completed';
       await loadLibrary();if(job.provider==='google')await loadGoogleDriveStatus();
       renderUploadJobs();
+      if(modalRoot){const backdrop=modalRoot.querySelector('.modal-backdrop'),status=modalRoot.querySelector('#upload-live-status'),button=modalRoot.querySelector('.submit');if(job.status==='completed')modalRoot.replaceChildren();else if(backdrop&&status&&button){backdrop.dataset.locked='false';status.textContent=job.items.find(item=>item.status==='error')?.error||'No se pudo completar la subida.';status.classList.remove('hidden');status.style.color='#ad3e32';modalRoot.querySelector('.close').disabled=false;modalRoot.querySelector('.cancel').disabled=false;button.disabled=false;button.textContent='Cerrar';button.onclick=()=>modalRoot.replaceChildren();}}
       toast(job.status==='completed'?`${completed} archivo${completed===1?'':'s'} subido${completed===1?'':'s'}.`:`Subida finalizada: ${completed} completado${completed===1?'':'s'} y ${failed} con error.`);
       if(failed){const detail=job.items.find(item=>item.status==='error')?.error;if(detail)setTimeout(()=>toast('Detalle: '+detail),250);}
       if(uploadJobs.length>30)uploadJobs=uploadJobs.slice(0,30);
@@ -786,7 +795,7 @@ async function loadGoogleDriveStatus() {
       if(!ownerMode&&!uploaderMode)return;
       let selectedFiles=[],accounts=[];
       try{accounts=await getSharingAccounts();}catch(error){toast(error.message);return;}
-      modal('Subir un archivo',`<label class="field-label">Guardar en</label><select class="field" id="storage-provider"><option value="google">Google Drive</option><option value="r2">Cloudflare R2</option></select><div class="notice">Google Drive es la opción principal. Recomendado: 1–200 MB.</div><div class="drop" id="drop"><strong>Elegí archivos o una carpeta</strong>Podés seleccionar varios archivos, ZIP/RAR o una carpeta con subcarpetas.<br><span id="storage-hint" style="font-size:10px">Hasta 10 GB por archivo · Recomendado: 1–200 MB · ${formatBytes(Math.max(0,Number(googleDriveQuota?.limit||0)-Number(googleDriveQuota?.usage||0)))} disponibles en Drive</span><div style="display:flex;justify-content:center;gap:10px;margin-top:14px"><button type="button" class="secondary" id="pick-files">Elegir archivos</button><button type="button" class="secondary" id="pick-folder">Elegir carpeta</button></div><input id="file-input" type="file" multiple style="display:none"><input id="folder-input" type="file" webkitdirectory directory multiple style="display:none"></div><label class="field-label" for="upload-preview">Imagen para identificar los archivos <span class="file-meta">Recomendado: 640 × 360 px (16:9); se adapta automáticamente (imagen original hasta 20 MB). Se aplica a esta selección y luego podés editar cada archivo.</span></label><input class="field" id="upload-preview" type="file" accept="image/*"><div id="upload-preview-current" class="preview-current"></div><div id="upload-queue" class="file-list"></div>${privacyControls(accounts)}<label class="field-label">Descripción</label><textarea class="field" id="description" rows="3" maxlength="1000" placeholder="¿Qué contiene este archivo?"></textarea><label class="field-label">Carpeta</label><select class="field" id="folder-select">${folders.filter(folder=>folder!=='Todos los archivos').map(folder=>`<option>${esc(folder)}</option>`).join('')}</select><div class="notice">Al empezar, la subida sigue en segundo plano dentro de la página. Podés cerrar esta ventana y seguir navegando; revisá el avance y el historial en <b>Subidas</b>. No cierres sesión ni recargues la página hasta que termine.</div>`,'Subir',async root=>{
+      modal('Subir un archivo',`<label class="field-label">Guardar en</label><select class="field" id="storage-provider"><option value="google">Google Drive</option><option value="r2">Cloudflare R2</option></select><div class="notice">Google Drive es la opción principal. Recomendado: 1–200 MB.</div><div class="drop" id="drop"><strong>Elegí archivos o una carpeta</strong>Podés seleccionar varios archivos, ZIP/RAR o una carpeta con subcarpetas.<br><span id="storage-hint" style="font-size:10px">Hasta 10 GB por archivo · Recomendado: 1–200 MB · ${formatBytes(Math.max(0,Number(googleDriveQuota?.limit||0)-Number(googleDriveQuota?.usage||0)))} disponibles en Drive</span><div style="display:flex;justify-content:center;gap:10px;margin-top:14px"><button type="button" class="secondary" id="pick-files">Elegir archivos</button><button type="button" class="secondary" id="pick-folder">Elegir carpeta</button></div><input id="file-input" type="file" multiple style="display:none"><input id="folder-input" type="file" webkitdirectory directory multiple style="display:none"></div><label class="field-label" for="upload-preview">Imagen para identificar los archivos <span class="file-meta">Recomendado: 640 × 360 px (16:9); se adapta automáticamente (imagen original hasta 20 MB). Se aplica a esta selección y luego podés editar cada archivo.</span></label><input class="field" id="upload-preview" type="file" accept="image/*"><div id="upload-preview-current" class="preview-current"></div><div id="upload-queue" class="file-list"></div>${privacyControls(accounts)}<label class="field-label">Descripción</label><textarea class="field" id="description" rows="3" maxlength="1000" placeholder="¿Qué contiene este archivo?"></textarea><label class="field-label">Carpeta</label><select class="field" id="folder-select">${folders.filter(folder=>folder!=='Todos los archivos').map(folder=>`<option>${esc(folder)}</option>`).join('')}</select><div id="upload-live-status" class="notice hidden" role="status">Preparando subida…</div><div id="upload-live-bar" class="bar hidden"><div class="bar-fill"></div></div><div class="notice">La subida se mantiene en esta ventana. No la cierres ni cambies de sección hasta que termine.</div>`,'Subir',async root=>{
         if(!selectedFiles.length){toast('Elegí archivos o una carpeta primero.');return;}
         const provider=root.querySelector('#storage-provider').value,visibility=readPrivacy(root),totalSize=selectedFiles.reduce((sum,item)=>sum+item.file.size,0);let previewImage=null;
         try{previewImage=await makePreviewImage(root.querySelector('#upload-preview').files[0]);}catch(error){toast(error.message);return;}
@@ -799,7 +808,7 @@ async function loadGoogleDriveStatus() {
         const {data:{session}}=await client.auth.getSession(),token=session?.access_token||'';
         if(!token){toast('Tu sesión ya no está activa; iniciá sesión de nuevo.');return;}
         const job={id:crypto.randomUUID(),userId:currentUser.id,provider,token,items:selectedFiles.map(item=>({file:item.file,relativePath:item.relativePath,name:item.file.name,size:item.file.size,status:'queued',progressBytes:0,error:''})),previewImage,description:root.querySelector('#description').value.trim(),folder:root.querySelector('#folder-select').value||'Sin carpeta',visibility,startedAt:new Date().toISOString(),status:'uploading',speed:0,lastPaint:0};
-        uploadJobs.unshift(job);renderUploadJobs();root.replaceChildren();void runUploadJob(job);
+        uploadJobs.unshift(job);renderUploadJobs();root.querySelector('.modal-backdrop').dataset.locked='true';root.querySelector('.close').disabled=true;root.querySelector('.cancel').disabled=true;root.querySelector('.submit').disabled=true;root.querySelector('.submit').textContent='Subiendo…';root.querySelector('#upload-live-status').classList.remove('hidden');root.querySelector('#upload-live-status').textContent='Conectando con el destino…';void runUploadJob(job,root);
       });
       const root=$('#modal-root'),input=root.querySelector('#file-input'),folderInput=root.querySelector('#folder-input'),drop=root.querySelector('#drop');bindPrivacyControls(root);
       const providerSelect=root.querySelector('#storage-provider'),hint=root.querySelector('#storage-hint');
