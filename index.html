@@ -28,6 +28,7 @@
     .drop-overlay{position:fixed;inset:14px;z-index:4;border:3px dashed var(--green2);border-radius:24px;background:rgba(255,255,255,.94);display:grid;place-items:center;text-align:center;color:var(--ink);pointer-events:none;box-shadow:0 0 0 9999px #14271c55}.drop-overlay strong{font:800 23px Manrope,sans-serif;color:var(--green);display:block;margin-bottom:8px}.drop-overlay span{font-size:14px;color:var(--muted)}
     .preview-btn{border:1px solid #dcebe0;background:#f4faf5;color:#398857;border-radius:8px;padding:8px 10px;font-size:11px;font-weight:700;white-space:nowrap}.preview-thumb{width:64px;height:52px;object-fit:cover;border-radius:8px;background:#edf2ee;cursor:zoom-in}.preview-video{width:150px;max-height:96px;border-radius:8px;background:#111}\n    .preview-btn{border:1px solid #dcebe0;background:#f4faf5;color:#398857;border-radius:8px;padding:8px 10px;font-size:11px;font-weight:700;white-space:nowrap}.preview-thumb{width:64px;height:52px;object-fit:cover;border-radius:8px;background:#edf2ee;cursor:zoom-in}.preview-video{width:150px;max-height:96px;border-radius:8px;background:#111}
     .theme-toggle{border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:9px;padding:8px 10px;font-size:12px;font-weight:600;white-space:nowrap}
+    .install-mobile-option{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:11px 15px;border:1px solid #cde4d3;border-radius:11px;background:linear-gradient(110deg,#effaf2,#f6f2ff);color:#28764b;font-size:13px;font-weight:750;text-decoration:none;box-shadow:0 7px 20px #193a250d;transition:transform .16s,border-color .16s}.install-mobile-option:hover{transform:translateY(-1px);border-color:#9dceaa}.install-mobile-option span{font-size:17px;line-height:1}.install-mobile-help{margin:9px 0 0;color:var(--muted);font-size:11px;line-height:1.55}.welcome-actions{display:flex;flex-direction:column;align-items:flex-end;gap:9px}.install-mobile-option.compact{min-height:38px;padding:8px 12px;font-size:12px}.native-app .install-mobile-option{display:none!important}
     .share-btn{border:1px solid #dcebe0;background:#f0f7f2;color:#278957;border-radius:9px;padding:8px 10px;font-size:11px;font-weight:700;white-space:nowrap}
     .link-card{border:1px solid #e9efea;border-radius:12px;padding:15px 16px;display:flex;align-items:center;gap:14px}.link-card-main{min-width:0;flex:1}.link-card-title{font-size:14px;font-weight:700;color:var(--ink);overflow-wrap:anywhere}.link-card-url{display:block;margin-top:5px;color:#398857;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.link-card-meta{margin-top:5px;color:#849087;font-size:10px}.link-actions{display:flex;gap:7px;align-items:center}.custom-colors{display:flex;gap:8px;margin:14px 0}.color-swatch{width:34px;height:34px;border:2px solid #fff;outline:1px solid var(--line);border-radius:50%;padding:0}.color-field{width:58px;height:38px;padding:3px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
     :root[data-theme="dark"]{color-scheme:dark;--ink:#e7eee9;--muted:#a8b5ac;--line:#35453b;--paper:#1b2720;--wash:#111914;--mint:#24362a}
@@ -90,12 +91,14 @@
         <div class="error" id="login-error"></div>
       </form>
       <div class="login-note">Dueño: <b>nxmollpy</b>. Colaborador: usuario y contraseña que te asignó el dueño. Invitado: <b>invitado</b> sin contraseña.</div>
+      <a class="install-mobile-option" href="https://github.com/knmollpy/mediachafa-transfer-/actions/runs/40066007672" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↓</span> Instalar versión móvil</a>
+      <p class="install-mobile-help">Para Android: descargá el artefacto de GitHub, extraelo y abrí <b>app-debug.apk</b>. Necesitás iniciar sesión en GitHub.</p>
     </div>
   </section>
   <main id="app" class="app hidden">
     <header class="topbar"><div class="brand"><img class="brand-mark" src="/icons/app.svg" alt=""> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="theme-toggle" id="music-toggle" type="button" aria-label="Activar música" aria-pressed="false" title="Activar música">♫ Música</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
-      <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
+      <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="welcome-actions"><a class="install-mobile-option compact" href="https://github.com/knmollpy/mediachafa-transfer-/actions/runs/40066007672" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">↓</span> Instalar versión móvil</a><div class="date" id="today"></div></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#4285f4">◉</span> Google Drive compartido</div><div class="storage-amount"><strong id="drive-used-label">—</strong> de <strong id="drive-capacity-label">200 GB</strong></div></div><div class="bar"><div class="bar-fill" id="drive-bar-fill"></div></div><div class="storage-foot"><span id="drive-remaining-label">Cupo compartido con Gmail y Google Fotos</span></div></section><section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Cloudflare R2</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong id="r2-capacity-label">10 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">10 GB disponibles</span></div></section>
       <div class="layout" id="files-layout"><aside class="sidebar"><div class="side-heading">Carpetas <button id="new-folder" title="Crear carpeta">+</button></div><div class="sidebar-list" id="folder-list"></div><div class="sidebar-hint">Archivos almacenados en la nube. Los colaboradores pueden crear carpetas, mover archivos, editar sus descripciones y borrar sus propios archivos. Solo vos podés borrar cualquiera.</div></aside>
         <section class="content"><div class="content-head"><div class="content-title" id="section-title">Todos los archivos</div><input class="search" id="search" placeholder="⌕  Buscar archivos…"><select class="select" id="type-filter"><option value="all">Todos los tipos</option><option value="apk">APK</option><option value="pkg">PKG</option><option value="pdf">PDF</option><option value="zip">ZIP</option><option value="rar">RAR</option><option value="other">Otros</option></select><button id="add-file" class="add-btn">＋ Subir archivo</button></div><div id="file-list" class="file-list"></div><div id="guest-note" class="notice hidden">Estás en modo invitado. Podés descargar los archivos y leer sus descripciones. Los colaboradores también pueden editar la descripción de los archivos que subieron.</div></section>
@@ -695,13 +698,19 @@ async function loadGoogleDriveStatus() {
     }
 
     async function uploadGoogleWithProgress(file,token,onProgress) {
-      const sessionController=new AbortController(),sessionTimeout=setTimeout(()=>sessionController.abort(),45000);let sessionResponse;try{sessionResponse=await fetch(`${R2_WORKER_URL}/google/upload-session`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({name:file.name,size:file.size,contentType:file.type||inferMime(file.name)}),signal:sessionController.signal});}catch(error){if(error.name==='AbortError')throw new Error('Google Drive tardó demasiado en preparar la subida. Revisá tu conexión e intentá de nuevo.');throw error;}finally{clearTimeout(sessionTimeout);}
+      const sessionController=new AbortController(),sessionTimeout=setTimeout(()=>sessionController.abort(),45000);
+      let sessionResponse;
+      try{sessionResponse=await fetch(`${R2_WORKER_URL}/google/upload-session`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({name:file.name,size:file.size,contentType:file.type||inferMime(file.name)}),signal:sessionController.signal});}
+      catch(error){if(error.name==='AbortError')throw new Error('Google Drive tardó demasiado en preparar la subida. Revisá tu conexión e intentá de nuevo.');throw error;}
+      finally{clearTimeout(sessionTimeout);}
       const session=await sessionResponse.json().catch(()=>({}));
       if(!sessionResponse.ok||!session.uploadId)throw new Error(session.error||`No se pudo iniciar la subida (${sessionResponse.status})`);
       const request=(url,body)=>new Promise((resolve,reject)=>{
-        const xhr=new XMLHttpRequest();xhr.open('PUT',url);xhr.setRequestHeader('Authorization',`Bearer ${token}`);xhr.setRequestHeader('Content-Type',file.type||inferMime(file.name));xhr.timeout=120000;
+        const xhr=new XMLHttpRequest();xhr.open('PUT',url);xhr.setRequestHeader('Authorization',`Bearer ${token}`);xhr.setRequestHeader('Content-Type',file.type||inferMime(file.name));
+        xhr.timeout=120000;
         xhr.upload.onprogress=event=>{if(event.lengthComputable)onProgress(Math.min(file.size,Number(url.match(/[?&]start=(\d+)/)?.[1]||0)+event.loaded));};
-        xhr.onerror=()=>reject(Object.assign(new Error('Se interrumpió la conexión durante la subida a Google Drive.'),{retryable:true}));xhr.ontimeout=()=>reject(Object.assign(new Error('Google Drive tardó demasiado en responder. Se reintentará el fragmento.'),{retryable:true}));
+        xhr.onerror=()=>reject(Object.assign(new Error('Se interrumpió la conexión durante la subida a Google Drive.'),{retryable:true}));
+        xhr.ontimeout=()=>reject(Object.assign(new Error('Google Drive tardó demasiado en responder. Se reintentará el fragmento.'),{retryable:true}));
         xhr.onload=()=>{let result={};try{result=JSON.parse(xhr.responseText||'{}');}catch{}if(xhr.status>=200&&xhr.status<300)resolve(result);else{const error=new Error(result.error||`Google Drive devolvió ${xhr.status}.`);error.retryable=Boolean(result.retryable)||xhr.status>=500;reject(error);}};
         xhr.send(body);
       });
@@ -726,7 +735,8 @@ async function loadGoogleDriveStatus() {
         offset=confirmed;onProgress(offset);
       }
       throw new Error('Google Drive no confirmó la finalización de la subida.');
-    }    function updateUploadModal(item,root) {
+    }
+    function updateUploadModal(item,root) {
       if(!root)return;
       const status=root.querySelector('#upload-live-status'),bar=root.querySelector('#upload-live-bar');if(!status||!bar)return;
       const percent=item.size?Math.floor(item.progressBytes/item.size*100):0;
@@ -738,21 +748,23 @@ async function loadGoogleDriveStatus() {
       const totalSize=job.items.reduce((sum,item)=>sum+item.size,0),started=performance.now();let completedBytes=0;
       for(let i=0;i<job.items.length;i++){
         const item=job.items[i];if(item.status==='error')continue;
-        item.status='uploading';item.phase=job.provider==='google'?'Conectando con Google Drive…':'Preparando subida…';item.progressBytes=0;renderUploadJobs();updateUploadModal(item,modalRoot);
+        item.status='uploading';item.phase=job.provider==='google'?'Conectando con Google Drive…':'Preparando subida…';item.progressBytes=0;updateUploadModal(item,modalRoot);
         const relative=item.relativePath.split('/').filter(Boolean).map(part=>part.replace(/[\\/]+/g,'_')).join('/');
         let path=`${job.provider==='r2'&&r2Available?`${job.userId}/`:''}${Date.now()}_${crypto.randomUUID()}_${relative}`;
         let stored=false;
         const report=loaded=>{
-          item.progressBytes=loaded;if(loaded>0)item.phase='Subiendo…';updateUploadModal(item,modalRoot);
+          item.progressBytes=loaded;
+          item.phase=loaded>0?'Subiendo…':item.phase;
+          updateUploadModal(item,modalRoot);
           const elapsed=Math.max(.15,(performance.now()-started)/1000),done=completedBytes+loaded;
           job.speed=done/elapsed/1024/1024;
-          const now=performance.now();if(now-job.lastPaint>180||loaded===item.size){job.lastPaint=now;renderUploadJobs();}
+          const now=performance.now();if(now-job.lastPaint>180||loaded===item.size){job.lastPaint=now;}
         };
         try{
           if(job.provider==='google'){const uploaded=await uploadGoogleWithProgress(item.file,job.token,report);path=`gdrive://${uploaded.id}`;}
           else if(r2Available){if(item.size>=90*1024*1024)await uploadMultipart(item.file,path,job.token,{textContent:''},report);else await uploadWithProgress(item.file,path,job.token,report);}
           else await uploadWithProgress(item.file,path,job.token,report,true);
-          stored=true;item.phase='Registrando en la biblioteca…';renderUploadJobs();updateUploadModal(item,modalRoot);
+          stored=true;item.phase='Registrando en la biblioteca…';updateUploadModal(item,modalRoot);
           const inner=item.relativePath.includes('/')?item.relativePath.split('/').slice(0,-1).join('/'):'Sin carpeta',folder=inner==='Sin carpeta'?job.folder:(job.folder==='Sin carpeta'?inner:`${job.folder}/${inner}`);
           const row={storage_path:path,file_name:item.name,file_type:ext(item.name),size_bytes:item.size,description:job.description,preview_image:job.previewImage,folder,created_by:job.userId,...job.visibility};
           const {error}=await client.from('media_files').insert(row);
@@ -762,14 +774,19 @@ async function loadGoogleDriveStatus() {
           }
           item.status='completed';item.progressBytes=item.size;completedBytes+=item.size;item.error='';
         }catch(error){item.status='error';item.error=error.message||'No se pudo completar la subida.';if(stored)item.error='Archivo guardado en el almacenamiento, pero no en la biblioteca. '+item.error;}
-        item.file=null;renderUploadJobs();
+        item.file=null;
       }
       job.finishedAt=new Date().toISOString();
       const failed=job.items.filter(item=>item.status==='error').length,completed=job.items.filter(item=>item.status==='completed').length;
       job.status=failed?(completed?'partial':'failed'):'completed';
-      await loadLibrary();if(job.provider==='google')await loadGoogleDriveStatus();
-      renderUploadJobs();
-      if(modalRoot){const backdrop=modalRoot.querySelector('.modal-backdrop'),status=modalRoot.querySelector('#upload-live-status'),button=modalRoot.querySelector('.submit');if(job.status==='completed')modalRoot.replaceChildren();else if(backdrop&&status&&button){backdrop.dataset.locked='false';status.textContent=job.items.find(item=>item.status==='error')?.error||'No se pudo completar la subida.';status.classList.remove('hidden');status.style.color='#ad3e32';modalRoot.querySelector('.close').disabled=false;modalRoot.querySelector('.cancel').disabled=false;button.disabled=false;button.textContent='Cerrar';button.onclick=()=>modalRoot.replaceChildren();}}
+      try{await loadLibrary();if(job.provider==='google')await loadGoogleDriveStatus();}
+      catch(error){toast('La subida terminó, pero no se pudo actualizar la biblioteca ahora. Se sincronizará al recuperar la conexión.');}
+
+      if(modalRoot){
+        const backdrop=modalRoot.querySelector('.modal-backdrop'),status=modalRoot.querySelector('#upload-live-status'),button=modalRoot.querySelector('.submit');
+        if(job.status==='completed')modalRoot.replaceChildren();
+        else if(backdrop&&status&&button){backdrop.dataset.locked='false';status.textContent=job.items.find(item=>item.status==='error')?.error||'No se pudo completar la subida.';status.classList.remove('hidden');status.style.color='#ad3e32';modalRoot.querySelector('.close').disabled=false;modalRoot.querySelector('.cancel').disabled=false;button.disabled=false;button.textContent='Cerrar';button.onclick=()=>modalRoot.replaceChildren();}
+      }
       toast(job.status==='completed'?`${completed} archivo${completed===1?'':'s'} subido${completed===1?'':'s'}.`:`Subida finalizada: ${completed} completado${completed===1?'':'s'} y ${failed} con error.`);
       if(failed){const detail=job.items.find(item=>item.status==='error')?.error;if(detail)setTimeout(()=>toast('Detalle: '+detail),250);}
       if(uploadJobs.length>30)uploadJobs=uploadJobs.slice(0,30);
