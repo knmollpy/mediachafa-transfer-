@@ -93,14 +93,14 @@
     </div>
   </section>
   <main id="app" class="app hidden">
-    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button><button class="navitem" id="uploads-tab" type="button">Subidas <span id="uploads-count" class="upload-count hidden">0</span></button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="theme-toggle" id="music-toggle" type="button" aria-label="Activar música" aria-pressed="false" title="Activar música">♫ Música</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
+    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="theme-toggle" id="music-toggle" type="button" aria-label="Activar música" aria-pressed="false" title="Activar música">♫ Música</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#4285f4">◉</span> Google Drive compartido</div><div class="storage-amount"><strong id="drive-used-label">—</strong> de <strong id="drive-capacity-label">200 GB</strong></div></div><div class="bar"><div class="bar-fill" id="drive-bar-fill"></div></div><div class="storage-foot"><span id="drive-remaining-label">Cupo compartido con Gmail y Google Fotos</span></div></section><section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Cloudflare R2</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong id="r2-capacity-label">10 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">10 GB disponibles</span></div></section>
       <div class="layout" id="files-layout"><aside class="sidebar"><div class="side-heading">Carpetas <button id="new-folder" title="Crear carpeta">+</button></div><div class="sidebar-list" id="folder-list"></div><div class="sidebar-hint">Archivos almacenados en la nube. Los colaboradores pueden crear carpetas, mover archivos, editar sus descripciones y borrar sus propios archivos. Solo vos podés borrar cualquiera.</div></aside>
         <section class="content"><div class="content-head"><div class="content-title" id="section-title">Todos los archivos</div><input class="search" id="search" placeholder="⌕  Buscar archivos…"><select class="select" id="type-filter"><option value="all">Todos los tipos</option><option value="apk">APK</option><option value="pkg">PKG</option><option value="pdf">PDF</option><option value="zip">ZIP</option><option value="rar">RAR</option><option value="other">Otros</option></select><button id="add-file" class="add-btn">＋ Subir archivo</button></div><div id="file-list" class="file-list"></div><div id="guest-note" class="notice hidden">Estás en modo invitado. Podés descargar los archivos y leer sus descripciones. Los colaboradores también pueden editar la descripción de los archivos que subieron.</div></section>
       </div>
-      <section class="content hidden" id="links-panel"><div class="content-head"><div class="content-title">Enlaces guardados</div><input class="search" id="links-search" placeholder="⌕  Buscar enlaces…"><button id="all-links" class="navitem active" type="button">Todos</button><button id="own-links" class="navitem" type="button">Propios</button><button id="add-link" class="add-btn">＋ Guardar enlace</button></div><div id="links-list" class="file-list"></div></section><section class="content hidden" id="uploads-panel"><div class="content-head"><div class="content-title">Subidas</div></div><div id="uploads-list"></div></section>
+      <section class="content hidden" id="links-panel"><div class="content-head"><div class="content-title">Enlaces guardados</div><input class="search" id="links-search" placeholder="⌕  Buscar enlaces…"><button id="all-links" class="navitem active" type="button">Todos</button><button id="own-links" class="navitem" type="button">Propios</button><button id="add-link" class="add-btn">＋ Guardar enlace</button></div><div id="links-list" class="file-list"></div></section>
     </div>
   </main>
   <audio id="background-music" preload="none" loop src="https://mediachafa-transfer.vercel.app/background.mp3"></audio>
@@ -118,6 +118,7 @@
     const RECOMMENDED_MIN_BYTES = 1 * 1024 * 1024;
     const RECOMMENDED_MAX_BYTES = 200 * 1024 * 1024;
     const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const isNativeApp = window.MEDIA_NATIVE_APP === true || window.Capacitor?.isNativePlatform?.() === true;
 
     let ownerMode = false;
     let uploaderMode = false;
@@ -349,7 +350,6 @@ async function loadGoogleDriveStatus() {
       $('#users-button').classList.toggle('hidden', !ownerMode);
       $('#new-folder').classList.toggle('hidden', !ownerMode && !uploaderMode);
       $('#add-link').classList.toggle('hidden', !ownerMode && !uploaderMode);
-      $('#uploads-tab').classList.toggle('hidden',!ownerMode&&!uploaderMode);
       uploadJobs=[];renderUploadJobs();
       $('#customize-button').classList.toggle('hidden', !ownerMode && !uploaderMode);
       $('#own-links').classList.toggle('hidden', !currentUser);
@@ -509,20 +509,17 @@ async function loadGoogleDriveStatus() {
 
     $('#users-button').onclick = showUsers;
     function switchView(view) {
+      if(view==='uploads')view='files';
       currentView = view;
-      const filesActive=view==='files',linksActive=view==='links',uploadsActive=view==='uploads';
+      const filesActive=view==='files',linksActive=view==='links';
       $('#files-layout').classList.toggle('hidden',!filesActive);
       $('.storage').classList.toggle('hidden',!filesActive);
       $('#links-panel').classList.toggle('hidden',!linksActive);
-      $('#uploads-panel').classList.toggle('hidden',!uploadsActive);
       $('#files-tab').classList.toggle('active',filesActive);
       $('#links-tab').classList.toggle('active',linksActive);
-      $('#uploads-tab').classList.toggle('active',uploadsActive);
-      if(uploadsActive)renderUploadJobs();
     }
     $('#files-tab').onclick=()=>switchView('files');
     $('#links-tab').onclick=()=>switchView('links');
-    $('#uploads-tab').onclick=()=>switchView('uploads');
 
     async function loadLinks() {
       const pageSize=500,all=[];
