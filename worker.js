@@ -1,3 +1,6 @@
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, PUT, POST, DELETE, OPTIONS",
@@ -120,8 +123,11 @@ async function googleAccessToken(env) {
   if (!refreshToken) return null;
   const body = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, refresh_token: refreshToken, grant_type: "refresh_token" });
   const response = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
-  if (!response.ok) throw new Error("Google no aceptó la renovación de sesión.");
-  const result = await response.json();
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const reason = result.error_description || result.error || `HTTP ${response.status}`;
+    throw new Error(`Google rechazó la sesión de Drive (${reason}). Volvé a conectar Google Drive desde la app.`);
+  }
   return result.access_token || null;
 }
 
@@ -523,7 +529,12 @@ export default {
         const quota=await googleQuota(env);
         if(quota?.limit&&Number(quota.limit)-Number(quota.usage||0)<size) return json({error:"El archivo supera el espacio disponible en Google Drive."},413);
         const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,mimeType", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": contentType, "X-Upload-Content-Length": String(size) }, body: JSON.stringify({ name, mimeType: contentType }) });
-        if (!response.ok || !response.headers.get("Location")) return json({ error: "Google Drive no pudo iniciar la subida." }, 502);
+        if (!response.ok || !response.headers.get("Location")) {
+          const failure = await response.json().catch(() => ({}));
+          const reason = failure.error?.message || failure.error_description || `HTTP ${response.status}`;
+          console.error("Google Drive resumable session rejected", response.status, reason);
+          return json({ error: `Google Drive no pudo iniciar la subida: ${reason}` }, 502);
+        }
         const uploadId = crypto.randomUUID();
         const uploadState = JSON.stringify({ url: response.headers.get("Location"), userId: session.user.id, size, contentType });
         await env.GOOGLE_OAUTH_STORE.put(`upload:${uploadId}`, await encryptGoogleToken(uploadState, env), { expirationTtl: 7 * 24 * 60 * 60 });
@@ -545,9 +556,9 @@ export default {
         if (!accessToken) return json({ error: "Google Drive todavía no está conectado por el dueño." }, 409);
         const bytes = probe ? new ArrayBuffer(0) : await request.arrayBuffer();
         if (!probe&&bytes.byteLength !== end - start + 1) return json({ error: "El tamaño de la parte no coincide." }, 400);
-        const response = await fetch(state.url, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": state.contentType, "Content-Range": probe?`bytes */${total}`:`bytes ${start}-${end}/${total}` }, body: bytes });
+        const response = await fetch(state.url, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": state.contentType, "Content-Length": String(bytes.byteLength), "Content-Range": probe?`bytes */${total}`:`bytes ${start}-${end}/${total}` }, body: bytes });
         if (response.status === 308) {
-          const last=response.headers.get("Range")?.match(/bytes=0-(\d+)/)?.[1];
+          const last=response.headers.get("Range")?.match(/bytes=0-(\d+)/i)?.[1];
           return json({ ok:true, complete:false, next:last?Number(last)+1:0 });
         }
         if (response.status !== 200 && response.status !== 201) {
@@ -798,9 +809,12 @@ export default {
 
       return json({ error: "Ruta no encontrada." }, 404);
     } catch (error) {
-      console.error("MediaChafa R2 request failed", error instanceof Error ? error.message : "unknown error");
+      const message = error instanceof Error ? error.message : "unknown error";
+      console.error("MediaChafa storage request failed", url.pathname, message);
+      if (url.pathname.startsWith("/google/")) return json({ error: message }, 502);
       return json({ error: "No se pudo completar la operación de almacenamiento." }, 500);
     }
   },
 };
+
 

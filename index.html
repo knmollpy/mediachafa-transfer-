@@ -1,3 +1,6 @@
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
+Failed to create stream fd: Operation not permitted
 <!doctype html>
 <html lang="es">
 <head>
@@ -137,6 +140,9 @@
     let folders = ['Todos los archivos', 'Sin carpeta'];
     let folderRecords = [];
     let wallpaperObjectUrl = null;
+    let libraryRealtimeChannel = null;
+    let libraryRefreshTimer = null;
+    let libraryPollTimer = null;
     const $ = selector => document.querySelector(selector);
     const getCapacity = () => r2Available ? MAX_BYTES : 1024 * 1024 * 1024;
     function updateDeviceMode() {
@@ -347,6 +353,8 @@ async function loadGoogleDriveStatus() {
       await loadLibrary();
       await Promise.all([loadLinks(), loadPreferences()]);
       switchView('files');
+      startLibraryRealtime();
+      if(isNativeApp)initializeNativeState();
     }
 
     $('#login-form').addEventListener('submit', async event => {
@@ -384,6 +392,7 @@ async function loadGoogleDriveStatus() {
     $('#logout').onclick = async () => {
       if(uploadJobs.some(job=>job.status==='uploading')){toast('Esperá a que terminen las subidas antes de cerrar sesión.');return;}
       uploadJobs=[];renderUploadJobs();
+      stopLibraryRealtime();
       if (ownerMode) await client.auth.signOut();
       ownerMode = false; uploaderMode = false; currentUser = null; files = []; links = [];
       $('#app').classList.add('hidden'); $('#login').classList.remove('hidden');
@@ -403,7 +412,27 @@ async function loadGoogleDriveStatus() {
       folders=['Todos los archivos',...new Set(['Sin carpeta',...folderRecords.map(row=>row.name)])];
       if(!folders.includes(currentFolder))currentFolder='Todos los archivos';
       render();
+      if(isNativeApp)renderNativeUI();
     }
+
+    function stopLibraryRealtime() {
+      if(libraryRefreshTimer)clearTimeout(libraryRefreshTimer);
+      if(libraryPollTimer)clearInterval(libraryPollTimer);
+      libraryRefreshTimer=null;libraryPollTimer=null;
+      if(libraryRealtimeChannel){void client.removeChannel(libraryRealtimeChannel);libraryRealtimeChannel=null;}
+    }
+    function startLibraryRealtime() {
+      stopLibraryRealtime();
+      const refreshFiles=()=>{if(libraryRefreshTimer)clearTimeout(libraryRefreshTimer);libraryRefreshTimer=setTimeout(()=>{if(currentUser)void loadLibrary();},220);};
+      const refreshLinks=()=>{if(libraryRefreshTimer)clearTimeout(libraryRefreshTimer);libraryRefreshTimer=setTimeout(()=>{if(currentUser){void loadLibrary();void loadLinks();}},220);};
+      libraryRealtimeChannel=client.channel('mediachafa-live-library')
+        .on('postgres_changes',{event:'*',schema:'public',table:'media_files'},refreshFiles)
+        .on('postgres_changes',{event:'*',schema:'public',table:'media_folders'},refreshFiles)
+        .on('postgres_changes',{event:'*',schema:'public',table:'media_links'},refreshLinks)
+        .subscribe(status=>{if(isNativeApp)setNativeSyncStatus(status==='SUBSCRIBED'?'Conectada en vivo':'Sincronizando…');});
+      libraryPollTimer=setInterval(()=>{if(currentUser&&!document.hidden){void loadLibrary();void loadLinks();}},45000);
+    }
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUser){void loadLibrary();void loadLinks();}});
 
     function render() {
       const used=files.filter(file=>!isGoogleFile(file)).reduce((sum,file)=>sum+file.size,0)+backgroundImageSize;
@@ -490,6 +519,7 @@ async function loadGoogleDriveStatus() {
       }
       links = all;
       renderLinks();
+      if(isNativeApp)renderNativeUI();
     }
     function renderLinks() {
       const output = $('#links-list'); if (!output) return;
@@ -698,6 +728,7 @@ async function loadGoogleDriveStatus() {
       const doneHtml=recentFiles.length?recentFiles.map(file=>`<article class="upload-job"><div class="upload-job-head"><span>✓ ${esc(file.name)}</span><span>Completado</span></div><div class="upload-job-detail">${formatBytes(file.size)} · ${esc(file.date)} · ${esc(storageProviderLabel(file))}</div></article>`).join(''):'<div class="upload-empty">Los archivos que subas desde esta cuenta aparecerán acá.</div>';
       const errorsHtml=failedJobs.length?'<h3 class="upload-section-title">Subidas con errores</h3>'+failedJobs.map(job=>job.items.filter(item=>item.status==='error').map(item=>`<article class="upload-job"><div class="upload-job-head"><span>${esc(item.name)}</span><span>Error</span></div><div class="upload-job-detail">${esc(item.error)}</div></article>`).join('')).join(''):'';
       list.innerHTML='<h3 class="upload-section-title">En curso</h3>'+activeHtml+'<h3 class="upload-section-title">Archivos subidos desde esta cuenta</h3>'+doneHtml+errorsHtml;
+      if(isNativeApp)renderNativeUI();
     }
 
     async function runUploadJob(job) {
@@ -716,7 +747,7 @@ async function loadGoogleDriveStatus() {
         };
         try{
           if(job.provider==='google'){const uploaded=await uploadGoogleWithProgress(item.file,job.token,report);path=`gdrive://${uploaded.id}`;}
-          else if(r2Available){if(item.size>=16*1024*1024)await uploadMultipart(item.file,path,job.token,{textContent:''},report);else await uploadWithProgress(item.file,path,job.token,report);}
+          else if(r2Available){if(item.size>=90*1024*1024)await uploadMultipart(item.file,path,job.token,{textContent:''},report);else await uploadWithProgress(item.file,path,job.token,report);}
           else await uploadWithProgress(item.file,path,job.token,report,true);
           stored=true;
           const inner=item.relativePath.includes('/')?item.relativePath.split('/').slice(0,-1).join('/'):'Sin carpeta',folder=inner==='Sin carpeta'?job.folder:(job.folder==='Sin carpeta'?inner:`${job.folder}/${inner}`);
@@ -733,6 +764,7 @@ async function loadGoogleDriveStatus() {
       await loadLibrary();if(job.provider==='google')await loadGoogleDriveStatus();
       renderUploadJobs();
       toast(job.status==='completed'?`${completed} archivo${completed===1?'':'s'} subido${completed===1?'':'s'}.`:`Subida finalizada: ${completed} completado${completed===1?'':'s'} y ${failed} con error.`);
+      if(failed){const detail=job.items.find(item=>item.status==='error')?.error;if(detail)setTimeout(()=>toast('Detalle: '+detail),250);}
       if(uploadJobs.length>30)uploadJobs=uploadJobs.slice(0,30);
     }
 
