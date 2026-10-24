@@ -227,7 +227,16 @@ async function loadGoogleDriveStatus() {
       try {
         const response=await fetch(`${R2_WORKER_URL}/google/status`,{headers:{Authorization:`Bearer ${session.access_token}`}});
         const result=await response.json();
-        if(!response.ok){if(response.status===401)toast('La sesión venció. Cerrá sesión y volvé a entrar para usar Google Drive.');return;}
+        if(!response.ok){
+          if(response.status===401)toast('La sesión venció. Cerrá sesión y volvé a entrar para usar Google Drive.');
+          googleDriveAvailable=false;googleDriveQuota=null;
+          $('#drive-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
+          $('#drive-button').disabled=!ownerMode;
+          $('#drive-button').textContent=ownerMode?'Vincular Drive':'Drive no conectado';
+          $('#drive-button').title=result.error||'Volvé a conectar Google Drive para subir archivos.';
+          $('#drive-remaining-label').textContent=result.error||'Volvé a conectar Google Drive para subir archivos.';
+          return;
+        }
         googleDriveAvailable=Boolean(result.connected);
         googleDriveQuota=result.quota||null;
         $('#drive-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
@@ -241,7 +250,15 @@ async function loadGoogleDriveStatus() {
           $('#drive-remaining-label').textContent=limit?`${formatBytes(free)} disponibles · cupo compartido con Gmail y Google Fotos`:'Espacio ilimitado';
           $('#drive-bar-fill').style.width=limit?`${Math.min(100,totalUsed/limit*100)}%`:'0%';
         }
-      } catch { googleDriveAvailable=false;$('#drive-capacity-label').textContent='200 GB';$('#drive-remaining-label').textContent='No se pudo consultar el espacio de Drive'; }
+      } catch(error) {
+        googleDriveAvailable=false;googleDriveQuota=null;
+        $('#drive-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
+        $('#drive-button').disabled=!ownerMode;
+        $('#drive-button').textContent=ownerMode?'Vincular Drive':'Drive no conectado';
+        $('#drive-button').title=error.message||'Volvé a conectar Google Drive.';
+        $('#drive-capacity-label').textContent='200 GB';
+        $('#drive-remaining-label').textContent=error.message||'No se pudo consultar el espacio de Drive';
+      }
     }
     $('#drive-button').onclick=async()=>{
       if(!ownerMode){toast(googleDriveAvailable?'Google Drive está conectado por el dueño.':'El dueño debe conectar Google Drive desde su cuenta.');return;}
