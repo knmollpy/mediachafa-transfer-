@@ -16,7 +16,7 @@
     :root{--ink:#17251f;--muted:#718078;--green:#278957;--green2:#48aa70;--line:#e5ece7;--paper:#fff;--wash:#f3f7f4;--mint:#e9f5ed;--shadow:0 12px 35px #193a2510}
     *{box-sizing:border-box}body{margin:0;background-color:var(--wash);background-image:var(--user-wallpaper,none);background-size:cover;background-position:center;background-attachment:fixed;color:var(--ink);font-family:'DM Sans',sans-serif}button,input,textarea{font:inherit}button{cursor:pointer}.hidden{display:none!important}
     .login-screen{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 20% 15%,#e1f3e7 0,transparent 35%),radial-gradient(ellipse at 85% 80%,#e5f1e8 0,transparent 34%),#f7faf7}
-    .login-card{width:min(430px,100%);padding:42px;background:var(--paper);border:1px solid #e8eee9;border-radius:22px;box-shadow:0 22px 80px #1e42251a}.brand{display:flex;align-items:center;gap:12px;font:800 20px Manrope,sans-serif;letter-spacing:-.5px}.brand-mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:#e6f4ea;color:var(--green)}.login-card h1{font:800 29px Manrope,sans-serif;letter-spacing:-1px;margin:33px 0 8px}.sub{color:var(--muted);font-size:14px;line-height:1.6;margin:0 0 26px}.field-label{display:block;font-size:12px;font-weight:700;margin:17px 0 8px}.field{width:100%;padding:13px 14px;border:1px solid #dfe7e1;border-radius:10px;outline:0;background:#fbfdfb}.field:focus{border-color:#62ad7c;box-shadow:0 0 0 3px #48aa701c}.primary{width:100%;border:0;border-radius:10px;background:var(--green);color:#fff;font-weight:700;padding:13px 16px;margin-top:22px;transition:.18s}.primary:hover{background:#20784a;transform:translateY(-1px)}.login-note{margin-top:19px;padding:12px 13px;border-radius:10px;background:#f2f7f3;color:#69776f;font-size:12px;line-height:1.5}.error{color:#ad3e32;font-size:13px;margin-top:10px;min-height:16px}
+    .login-card{width:min(430px,100%);padding:42px;background:var(--paper);border:1px solid #e8eee9;border-radius:22px;box-shadow:0 22px 80px #1e42251a}.brand{display:flex;align-items:center;gap:12px;font:800 20px Manrope,sans-serif;letter-spacing:-.5px}.brand-mark{width:38px;height:38px;flex:0 0 auto;display:block;border-radius:12px;object-fit:cover;background:#0c1532;box-shadow:0 2px 12px #26356355}.login-card h1{font:800 29px Manrope,sans-serif;letter-spacing:-1px;margin:33px 0 8px}.sub{color:var(--muted);font-size:14px;line-height:1.6;margin:0 0 26px}.field-label{display:block;font-size:12px;font-weight:700;margin:17px 0 8px}.field{width:100%;padding:13px 14px;border:1px solid #dfe7e1;border-radius:10px;outline:0;background:#fbfdfb}.field:focus{border-color:#62ad7c;box-shadow:0 0 0 3px #48aa701c}.primary{width:100%;border:0;border-radius:10px;background:var(--green);color:#fff;font-weight:700;padding:13px 16px;margin-top:22px;transition:.18s}.primary:hover{background:#20784a;transform:translateY(-1px)}.login-note{margin-top:19px;padding:12px 13px;border-radius:10px;background:#f2f7f3;color:#69776f;font-size:12px;line-height:1.5}.error{color:#ad3e32;font-size:13px;margin-top:10px;min-height:16px}
     .app{min-height:100vh}.topbar{height:70px;background:var(--paper);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 max(26px,calc((100vw - 1320px)/2));gap:28px}.topbar .brand{font-size:18px}.topnav{display:flex;gap:6px;margin-left:25px}.navitem{border:0;background:none;color:#718078;font-weight:600;padding:9px 12px;border-radius:8px}.navitem.active{background:#eef6f0;color:var(--green)}.topright{margin-left:auto;display:flex;align-items:center;gap:12px}.topright .navitem{font-size:13px}.role-chip{font-size:12px;font-weight:700;color:var(--green);background:#eaf5ed;padding:7px 11px;border-radius:20px}.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#dcefe2;color:#278957;font-weight:700}.logout{border:0;background:none;color:#758179;font-size:13px}
     .wrap{max-width:1320px;margin:0 auto;padding:32px 26px 60px}.welcome{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:23px}.eyebrow{text-transform:uppercase;letter-spacing:1.5px;color:#75847b;font-size:10px;font-weight:700}.welcome h1{font:800 30px Manrope,sans-serif;letter-spacing:-1px;margin:7px 0}.welcome p{margin:0;color:var(--muted);font-size:14px}.date{color:#7d8982;font-size:12px}
     .storage{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:19px 22px;margin-bottom:25px;box-shadow:var(--shadow)}.storage-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}.storage-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}.storage-amount{font-size:12px;color:#6e7d74}.storage-amount strong{color:#2c3a32}.bar{height:8px;border-radius:8px;background:#edf2ee;overflow:hidden}.bar-fill{height:100%;width:0;background:linear-gradient(90deg,#43a66c,#82c895);border-radius:8px;transition:width .3s}.storage-foot{display:flex;justify-content:space-between;color:#88948c;font-size:11px;margin-top:9px}
@@ -80,7 +80,7 @@
 <body>
   <section id="login" class="login-screen">
     <div class="login-card">
-      <div class="brand"><span class="brand-mark">▤</span> MediaChafa</div>
+      <div class="brand"><img class="brand-mark" src="/icons/app.svg" alt=""> MediaChafa</div>
       <h1>Tu biblioteca,<br>en un solo lugar.</h1>
       <p class="sub">Iniciá sesión para explorar los archivos compartidos.</p>
       <form id="login-form">
@@ -93,7 +93,7 @@
     </div>
   </section>
   <main id="app" class="app hidden">
-    <header class="topbar"><div class="brand"><span class="brand-mark">▤</span> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="theme-toggle" id="music-toggle" type="button" aria-label="Activar música" aria-pressed="false" title="Activar música">♫ Música</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
+    <header class="topbar"><div class="brand"><img class="brand-mark" src="/icons/app.svg" alt=""> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="theme-toggle" id="music-toggle" type="button" aria-label="Activar música" aria-pressed="false" title="Activar música">♫ Música</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="date" id="today"></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#4285f4">◉</span> Google Drive compartido</div><div class="storage-amount"><strong id="drive-used-label">—</strong> de <strong id="drive-capacity-label">200 GB</strong></div></div><div class="bar"><div class="bar-fill" id="drive-bar-fill"></div></div><div class="storage-foot"><span id="drive-remaining-label">Cupo compartido con Gmail y Google Fotos</span></div></section><section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Cloudflare R2</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong id="r2-capacity-label">10 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">10 GB disponibles</span></div></section>
@@ -350,7 +350,7 @@ async function loadGoogleDriveStatus() {
       $('#users-button').classList.toggle('hidden', !ownerMode);
       $('#new-folder').classList.toggle('hidden', !ownerMode && !uploaderMode);
       $('#add-link').classList.toggle('hidden', !ownerMode && !uploaderMode);
-      uploadJobs=[];renderUploadJobs();
+      uploadJobs=[];
       $('#customize-button').classList.toggle('hidden', !ownerMode && !uploaderMode);
       $('#own-links').classList.toggle('hidden', !currentUser);
       try { const health = await fetch(`${R2_WORKER_URL}/health`); const status = await health.json(); r2Available = health.ok && status.storage && status.configured; } catch { r2Available = false; }
@@ -405,7 +405,7 @@ async function loadGoogleDriveStatus() {
 
     $('#logout').onclick = async () => {
       if(uploadJobs.some(job=>job.status==='uploading')){toast('Esperá a que terminen las subidas antes de cerrar sesión.');return;}
-      uploadJobs=[];renderUploadJobs();
+      uploadJobs=[];
       stopLibraryRealtime();
       if (ownerMode) await client.auth.signOut();
       ownerMode = false; uploaderMode = false; currentUser = null; files = []; links = [];
@@ -726,23 +726,7 @@ async function loadGoogleDriveStatus() {
         offset=confirmed;onProgress(offset);
       }
       throw new Error('Google Drive no confirmó la finalización de la subida.');
-    }    function renderUploadJobs() {
-      const list=$('#uploads-list'),count=$('#uploads-count');if(!list||!count)return;
-      const active=uploadJobs.filter(job=>job.status==='uploading');
-      count.textContent=String(active.length);count.classList.toggle('hidden',active.length===0);
-      const recentFiles=files.filter(file=>file.createdBy===currentUser?.id).slice(0,30),failedJobs=uploadJobs.filter(job=>job.status==='failed'||job.status==='partial');
-      if(!active.length&&!recentFiles.length&&!failedJobs.length){list.innerHTML='<div class="upload-empty">Todavía no hay subidas para mostrar.</div>';return;}
-      const activeHtml=active.length?active.map(job=>{
-        const total=job.items.reduce((sum,item)=>sum+item.size,0),done=job.items.reduce((sum,item)=>sum+(item.status==='completed'?item.size:item.status==='uploading'?item.progressBytes:0),0),percent=total?Math.floor(done/total*100):0;
-        return `<article class="upload-job"><div class="upload-job-head"><span>${job.items.length} archivo${job.items.length===1?'':'s'} · ${esc(job.provider==='google'?'Google Drive':'Cloudflare R2')}</span><span>${percent}%</span></div><div class="upload-job-detail">${formatBytes(done)} de ${formatBytes(total)} · ${job.speed.toFixed(1)} MB/s</div><div class="bar" style="margin-top:9px"><div class="bar-fill" style="width:${percent}%"></div></div>${job.items.map(item=>`<div class="upload-job-file"><div class="upload-job-file-head"><span>${esc(item.name)}</span><span>${item.status==='completed'?'Completado':item.status==='uploading'?(item.phase||Math.floor(item.progressBytes/item.size*100)+'%'):item.status==='error'?'Error':'En espera'}</span></div>${item.status==='uploading'?'<div class="bar"><div class="bar-fill" style="width:'+Math.floor(item.progressBytes/item.size*100)+'%"></div></div>':''}${item.error?'<div class="upload-job-detail">'+esc(item.error)+'</div>':''}</div>`).join('')}</article>`;
-      }).join(''):'<div class="upload-empty">No hay archivos subiendo ahora.</div>';
-      const doneHtml=recentFiles.length?recentFiles.map(file=>`<article class="upload-job"><div class="upload-job-head"><span>✓ ${esc(file.name)}</span><span>Completado</span></div><div class="upload-job-detail">${formatBytes(file.size)} · ${esc(file.date)} · ${esc(storageProviderLabel(file))}</div></article>`).join(''):'<div class="upload-empty">Los archivos que subas desde esta cuenta aparecerán acá.</div>';
-      const errorsHtml=failedJobs.length?'<h3 class="upload-section-title">Subidas con errores</h3>'+failedJobs.map(job=>job.items.filter(item=>item.status==='error').map(item=>`<article class="upload-job"><div class="upload-job-head"><span>${esc(item.name)}</span><span>Error</span></div><div class="upload-job-detail">${esc(item.error)}</div></article>`).join('')).join(''):'';
-      list.innerHTML='<h3 class="upload-section-title">En curso</h3>'+activeHtml+'<h3 class="upload-section-title">Archivos subidos desde esta cuenta</h3>'+doneHtml+errorsHtml;
-      if(isNativeApp)renderNativeUI();
-    }
-
-    function updateUploadModal(item,root) {
+    }    function updateUploadModal(item,root) {
       if(!root)return;
       const status=root.querySelector('#upload-live-status'),bar=root.querySelector('#upload-live-bar');if(!status||!bar)return;
       const percent=item.size?Math.floor(item.progressBytes/item.size*100):0;
@@ -772,7 +756,10 @@ async function loadGoogleDriveStatus() {
           const inner=item.relativePath.includes('/')?item.relativePath.split('/').slice(0,-1).join('/'):'Sin carpeta',folder=inner==='Sin carpeta'?job.folder:(job.folder==='Sin carpeta'?inner:`${job.folder}/${inner}`);
           const row={storage_path:path,file_name:item.name,file_type:ext(item.name),size_bytes:item.size,description:job.description,preview_image:job.previewImage,folder,created_by:job.userId,...job.visibility};
           const {error}=await client.from('media_files').insert(row);
-          if(error)throw new Error(`Se subió el archivo, pero no se pudo registrar en la biblioteca: ${error.message}`);
+          if(error){
+            const verified=await client.from('media_files').select('id').eq('storage_path',path).maybeSingle();
+            if(verified.error||!verified.data)throw new Error(`Se subió el archivo, pero no se pudo confirmar en la biblioteca: ${error.message}`);
+          }
           item.status='completed';item.progressBytes=item.size;completedBytes+=item.size;item.error='';
         }catch(error){item.status='error';item.error=error.message||'No se pudo completar la subida.';if(stored)item.error='Archivo guardado en el almacenamiento, pero no en la biblioteca. '+item.error;}
         item.file=null;renderUploadJobs();
@@ -805,7 +792,7 @@ async function loadGoogleDriveStatus() {
         const {data:{session}}=await client.auth.getSession(),token=session?.access_token||'';
         if(!token){toast('Tu sesión ya no está activa; iniciá sesión de nuevo.');return;}
         const job={id:crypto.randomUUID(),userId:currentUser.id,provider,token,items:selectedFiles.map(item=>({file:item.file,relativePath:item.relativePath,name:item.file.name,size:item.file.size,status:'queued',progressBytes:0,error:''})),previewImage,description:root.querySelector('#description').value.trim(),folder:root.querySelector('#folder-select').value||'Sin carpeta',visibility,startedAt:new Date().toISOString(),status:'uploading',speed:0,lastPaint:0};
-        uploadJobs.unshift(job);renderUploadJobs();root.querySelector('.modal-backdrop').dataset.locked='true';root.querySelector('.close').disabled=true;root.querySelector('.cancel').disabled=true;root.querySelector('.submit').disabled=true;root.querySelector('.submit').textContent='Subiendo…';root.querySelector('#upload-live-status').classList.remove('hidden');root.querySelector('#upload-live-status').textContent='Conectando con el destino…';void runUploadJob(job,root);
+        uploadJobs.unshift(job);root.querySelector('.modal-backdrop').dataset.locked='true';root.querySelector('.close').disabled=true;root.querySelector('.cancel').disabled=true;root.querySelector('.submit').disabled=true;root.querySelector('.submit').textContent='Subiendo…';root.querySelector('#upload-live-status').classList.remove('hidden');root.querySelector('#upload-live-status').textContent='Conectando con el destino…';void runUploadJob(job,root);
       });
       const root=$('#modal-root'),input=root.querySelector('#file-input'),folderInput=root.querySelector('#folder-input'),drop=root.querySelector('#drop');bindPrivacyControls(root);
       const providerSelect=root.querySelector('#storage-provider'),hint=root.querySelector('#storage-hint');
