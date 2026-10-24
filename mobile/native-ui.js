@@ -25,10 +25,14 @@ function initializeNativeUI() {
     </header>
     <main class="native-content" id="native-content">
       <section id="native-files-view"><div class="native-list" id="native-files-list"></div></section>
+      <section id="native-folders-view" hidden><div class="native-list" id="native-folders-list"></div></section>
+      <section id="native-storage-view" hidden><div class="native-storage-list" id="native-storage-list"></div></section>
       <section id="native-links-view" hidden><div class="native-list" id="native-links-list"></div></section>
     </main>
     <nav class="native-tabs" aria-label="Secciones">
       <button class="native-tab active" data-native-view="files" type="button"><span class="native-tab-icon">▤</span><span>Archivos</span></button>
+      <button class="native-tab" data-native-view="folders" type="button"><span class="native-tab-icon">▰</span><span>Carpetas</span></button>
+      <button class="native-tab" data-native-view="storage" type="button"><span class="native-tab-icon">◉</span><span>Espacio</span></button>
       <button class="native-tab" data-native-view="links" type="button"><span class="native-tab-icon">↗</span><span>Enlaces</span></button>
     </nav>`;
   $('#app').append(nativeShell);
@@ -36,9 +40,14 @@ function initializeNativeUI() {
   nativeShell.addEventListener('click',event=>{
     const tab=event.target.closest('[data-native-view]');
     if(tab){switchNativeView(tab.dataset.nativeView);return;}
-    if(event.target.closest('#native-add-button')){if(nativeActiveView==='links')openLinkEditor();else if(nativeActiveView==='files')openUploadModal();return;}
+    if(event.target.closest('#native-add-button')){if(nativeActiveView==='links')openLinkEditor();else if(nativeActiveView==='folders')$('#new-folder').click();else if(nativeActiveView==='files')openUploadModal();return;}
     const action=event.target.closest('[data-native-action]');
     if(!action)return;
+    if(action.dataset.nativeAction==='select-folder'){
+      currentFolder=action.dataset.folder||'Todos los archivos';
+      switchNativeView('files');
+      return;
+    }
     const itemId=action.dataset.id;
     if(action.dataset.nativeAction==='open-link'){const link=links.find(item=>item.id===itemId);if(link)window.open(link.url,'_blank','noopener,noreferrer');return;}
     const file=files.find(item=>item.id===itemId);if(!file)return;
@@ -62,16 +71,17 @@ function switchNativeView(view) {
   if(!isNativeApp||!nativeShell)return;
   if(view==='uploads')view='files';
   nativeActiveView=view;
-  for(const name of ['files','links']) {
+  for(const name of ['files','folders','storage','links']) {
     const section=nativeShell.querySelector('#native-'+name+'-view');
     if(section)section.hidden=name!==view;
     nativeShell.querySelector('[data-native-view="'+name+'"]').classList.toggle('active',name===view);
   }
-  const titles={files:['Tus archivos','Tu universo de archivos está a un toque.','Buscar archivos…'],links:['Enlaces guardados','Tus accesos favoritos, listos para abrir.','Buscar enlaces…']};
+  const titles={files:[currentFolder==='Todos los archivos'?'Tus archivos':currentFolder,'Tu universo de archivos está a un toque.','Buscar archivos…'],folders:['Tus carpetas','Organizá y encontrá tus archivos.','Buscar carpetas…'],storage:['Espacio disponible','Revisá el uso de cada servicio.',''],links:['Enlaces guardados','Tus accesos favoritos, listos para abrir.','Buscar enlaces…']};
   const copy=titles[view];$('#native-title').textContent=copy[0];$('#native-subtitle').textContent=copy[1];$('#native-search').placeholder=copy[2];
-  $('#native-add-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
-  $('#native-add-button').setAttribute('aria-label',view==='links'?'Guardar enlace':'Subir archivo');
-  $('#native-add-button').textContent=view==='links'?'＋':'↑';
+  $('#native-search').parentElement.classList.toggle('hidden',!copy[2]);
+  $('#native-add-button').classList.toggle('hidden',(!ownerMode&&!uploaderMode)||view==='storage');
+  $('#native-add-button').setAttribute('aria-label',view==='links'?'Guardar enlace':view==='folders'?'Crear carpeta':'Subir archivo');
+  $('#native-add-button').textContent=view==='links'||view==='folders'?'＋':'↑';
   renderNativeUI();
 }
 
@@ -86,7 +96,7 @@ function nativeEmpty(title,description,icon='✦') {
 function renderNativeUI() {
   if(!isNativeApp||!nativeShell)return;
   if(nativeActiveView==='files') {
-    const shown=files.filter(file=>(file.name+' '+file.description+' '+file.folder).toLowerCase().includes(nativeSearch));
+    const shown=files.filter(file=>(currentFolder==='Todos los archivos'||(currentFolder==='Sin carpeta'?(!file.folder||file.folder==='Sin carpeta'):(file.folder===currentFolder||file.folder.startsWith(currentFolder+'/')))&&(file.name+' '+file.description+' '+file.folder).toLowerCase().includes(nativeSearch));
     $('#native-count').textContent=shown.length+' archivo'+(shown.length===1?'':'s')+' en tu biblioteca';
     const list=$('#native-files-list');
     list.innerHTML=shown.length?shown.map(file=>{
@@ -97,11 +107,32 @@ function renderNativeUI() {
         (canManage?'<button class="native-action" data-native-action="edit" data-id="'+esc(file.id)+'" type="button">✎ Editar detalles</button><button class="native-action danger-action" data-native-action="delete" data-id="'+esc(file.id)+'" type="button">× Eliminar</button>':'');
       return '<article class="native-card"><div class="native-file-icon '+iconClass+'">'+esc(type.slice(0,5))+'</div><div class="native-card-main"><h2 class="native-card-title">'+esc(file.name)+'</h2><div class="native-card-meta"><span>'+esc(formatBytes(file.size))+'</span><span>·</span><span>'+esc(file.folder||'Sin carpeta')+'</span><span>·</span><span>'+esc(file.date||'')+'</span>'+(file.isPrivate?'<span class="native-private">· 🔒 Privado</span>':'')+'</div></div><div class="native-card-actions">'+actions+'</div></article>';
     }).join(''):nativeEmpty(files.length?'No hay coincidencias':'Todavía no hay archivos',files.length?'Probá con otro nombre o carpeta.':'Los archivos nuevos aparecerán aquí automáticamente.');
+  } else if(nativeActiveView==='folders') {
+    const visible=folders.filter(folder=>folder.toLowerCase().includes(nativeSearch));
+    $('#native-count').textContent=folders.length+' carpetas disponibles';
+    $('#native-folders-list').innerHTML=visible.map(folder=>{
+      const record=folderRecords.find(item=>item.name===folder);
+      const contained=folder==='Todos los archivos'?files:files.filter(file=>folder==='Sin carpeta'?(!file.folder||file.folder==='Sin carpeta'):(file.folder===folder||file.folder.startsWith(folder+'/')));
+      const bytes=contained.reduce((sum,file)=>sum+file.size,0);
+      const privateLabel=record?.isPrivate?'<span class="native-private">· 🔒 Privada</span>':'';
+      return '<button class="native-folder-card" data-native-action="select-folder" data-folder="'+esc(folder)+'" type="button"><span class="native-folder-icon">'+(record?.isPrivate?'🔒':'▰')+'</span><span class="native-folder-main"><strong>'+esc(folder)+'</strong><small>'+contained.length+' archivo'+(contained.length===1?'':'s')+' · '+formatBytes(bytes)+' '+privateLabel+'</small></span><span class="native-folder-arrow">›</span></button>';
+    }).join('')||nativeEmpty('No hay carpetas coincidentes','Probá con otro nombre.','▰');
+  } else if(nativeActiveView==='storage') {
+    renderNativeStorage();
   } else if(nativeActiveView==='links') {
     const shown=links.filter(link=>(link.title+' '+link.url).toLowerCase().includes(nativeSearch));
     $('#native-count').textContent=shown.length+' enlace'+(shown.length===1?'':'s')+' guardado'+(shown.length===1?'':'s');
     $('#native-links-list').innerHTML=shown.length?shown.map(link=>'<article class="native-card"><div class="native-file-icon">↗</div><div class="native-card-main"><h2 class="native-card-title">'+esc(link.title)+'</h2><a class="native-link-url" href="'+esc(link.url)+'" target="_blank" rel="noopener noreferrer">'+esc(link.url)+'</a><div class="native-card-meta">'+(link.is_private?'<span class="native-private">🔒 Solo vos</span>':'<span>🌐 Público</span>')+'</div></div><div class="native-card-actions"><button class="native-action primary-action" data-native-action="open-link" data-id="'+esc(link.id)+'" type="button">Abrir enlace</button></div></article>').join(''):nativeEmpty('Todavía no hay enlaces','Guardá uno y lo vas a encontrar aquí.','↗');
   }
+}
+
+function renderNativeStorage() {
+  if(!isNativeApp||!nativeShell)return;
+  const items=[
+    {name:'Google Drive',icon:'◉',used:'#drive-used-label',capacity:'#drive-capacity-label',remaining:'#drive-remaining-label',bar:'#drive-bar-fill',tone:'drive'},
+    {name:'Cloudflare R2',icon:'◉',used:'#used-label',capacity:'#r2-capacity-label',remaining:'#remaining-label',bar:'#bar-fill',tone:'cloud'}
+  ];
+  $('#native-storage-list').innerHTML=items.map(item=>'<article class="native-storage-card '+item.tone+'"><div class="native-storage-heading"><span class="native-storage-icon">'+item.icon+'</span><strong>'+item.name+'</strong><span class="native-storage-amount">'+esc($(item.used)?.textContent||'—')+' <i>/</i> '+esc($(item.capacity)?.textContent||'—')+'</span></div><div class="native-storage-track"><span style="width:'+($(item.bar)?.style.width||'0%')+'"></span></div><p>'+esc($(item.remaining)?.textContent||'Espacio disponible')+'</p></article>').join('');
 }
 
 initializeNativeUI();
