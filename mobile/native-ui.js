@@ -97,7 +97,10 @@ function nativeEmpty(title,description,icon='✦') {
 function renderNativeUI() {
   if(!isNativeApp||!nativeShell)return;
   if(nativeActiveView==='files') {
-    const shown=files.filter(file=>(currentFolder==='Todos los archivos'||(currentFolder==='Sin carpeta'?(!file.folder||file.folder==='Sin carpeta'):(file.folder===currentFolder||file.folder.startsWith(currentFolder+'/')))&&(file.name+' '+file.description+' '+file.folder).toLowerCase().includes(nativeSearch));
+    const shown=files.filter(file=>{
+      const inFolder=currentFolder==='Todos los archivos'||(currentFolder==='Sin carpeta'?(!file.folder||file.folder==='Sin carpeta'):file.folder===currentFolder||file.folder.startsWith(currentFolder+'/'));
+      return inFolder&&(file.name+' '+file.description+' '+file.folder).toLowerCase().includes(nativeSearch);
+    });
     $('#native-count').textContent=shown.length+' archivo'+(shown.length===1?'':'s')+' en tu biblioteca';
     const list=$('#native-files-list');
     list.innerHTML=shown.length?shown.map(file=>{
