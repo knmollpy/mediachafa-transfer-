@@ -11,7 +11,7 @@ on:
       - "icons/**"
       - "package.json"
       - "package-lock.json"
-      - "capacitor.config.ts"
+      - "capacitor.config.json"
       - "mobile/**"
       - ".github/workflows/android-apk.yml"
 
