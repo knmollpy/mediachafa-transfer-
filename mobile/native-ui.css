@@ -185,7 +185,7 @@ body.native-app {
 .native-empty strong { display: block; margin-bottom: 4px; color: #f0efff; font: 700 14px Manrope, sans-serif; }
 .native-empty span { font-size: 11px; line-height: 1.5; }
 .native-tabs {
-  z-index: 4; flex: 0 0 auto; display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 3px;
+  z-index: 4; flex: 0 0 auto; display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 3px;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid rgba(151,171,255,.14);
   background: rgba(8,12,35,.96); backdrop-filter: blur(18px);
