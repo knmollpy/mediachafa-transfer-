@@ -40,6 +40,7 @@ jobs:
           sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 252/' android/app/build.gradle
           sed -i -E 's/versionName[[:space:]]+"[^"]+"/versionName "2.5.2"/' android/app/build.gradle
           sed -i '/dependencies[[:space:]]*{/a\    implementation "org.apache.ftpserver:ftpserver-core:1.2.1"\n    implementation "commons-net:commons-net:3.13.0"' android/app/build.gradle
+          echo "android.packaging.resources.excludes += ['META-INF/DEPENDENCIES']" >> android/app/build.gradle
       - name: Register Android save-location picker
         run: |
           mkdir -p android/app/src/main/java/com/mediachafa/app
