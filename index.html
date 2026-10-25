@@ -257,7 +257,9 @@
     }
 
     async function googleSignedUrl(file, preview=false) {
-      const response=await fetch(`${R2_WORKER_URL}/google/sign`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:file.path,preview})});
+      const {data:{session}}=await client.auth.getSession();
+      if(!session?.access_token)throw new Error('Iniciá sesión para compartir este archivo de Google Drive.');
+      const response=await fetch(`${R2_WORKER_URL}/google/sign`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.access_token}`},body:JSON.stringify({path:file.path,preview})});
       const result=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(result.error||`Error ${response.status}`);
       return result;

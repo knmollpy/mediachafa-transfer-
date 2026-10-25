@@ -154,11 +154,11 @@ function googleFileId(path) {
 
 async function findGoogleFileRecord(id, env, session = null) {
   const path = `gdrive://${id}`;
-  const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=file_name,storage_path&storage_path=eq.${encodeURIComponent(path)}&limit=1`;
+  const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=file_name,storage_path,is_private&storage_path=eq.${encodeURIComponent(path)}&limit=1`;
   const headers = { apikey: env.SUPABASE_PUBLISHABLE_KEY };
   if (session?.authorization) headers.Authorization = session.authorization;
   const response = await fetch(query, { headers });
-  if (!response.ok) return null;
+  if (!response.ok) throw new Error(`No se pudo verificar el archivo en la biblioteca (Supabase ${response.status}).`);
   const rows = await response.json();
   return rows[0] || null;
 }
@@ -582,15 +582,22 @@ export default {
 
       if (url.pathname === "/google/sign" && request.method === "POST") {
         if (!env.SHARE_SIGNING_SECRET) return json({ error: "El servicio de enlaces no está configurado." }, 503);
+        const session = await getUser(request, env);
+        if (!session) return json({ error: "Iniciá sesión para compartir este archivo." }, 401);
         const input = await request.json().catch(() => ({}));
         const id = googleFileId(input.path);
-        if (!id || !await findGoogleFileRecord(id, env)) return json({ error: "Archivo no encontrado." }, 404);
+        if (!id) return json({ error: "El identificador del archivo de Google Drive no es válido." }, 400);
+        const record = await findGoogleFileRecord(id, env, session);
+        if (!record) return json({ error: "No encontramos el archivo en la biblioteca. Actualizá la lista y volvé a intentar." }, 404);
+        if (record.is_private) return json({ error: "Los archivos privados no generan enlaces públicos." }, 403);
         const expires = Math.floor(Date.now() / 1000) + SHARE_TTL_SECONDS;
         const preview = input.preview === true;
-        const signature = await sign(env.SHARE_SIGNING_SECRET, `gdrive:${id}\n${expires}\n${preview ? "inline" : "attachment"}`);
+        const fileName = String(record.file_name || "archivo").slice(0, 255);
+        const signature = await sign(env.SHARE_SIGNING_SECRET, `gdrive:${id}\n${expires}\n${preview ? "inline" : "attachment"}\n${fileName}`);
         const shareUrl = new URL(`/google/download/${encodeURIComponent(id)}`, url.origin);
         shareUrl.searchParams.set("expires", String(expires));
         shareUrl.searchParams.set("signature", signature);
+        shareUrl.searchParams.set("name", fileName);
         if (preview) shareUrl.searchParams.set("preview", "1");
         return json({ url: shareUrl.toString(), expiresAt: new Date(expires * 1000).toISOString(), expiresIn: SHARE_TTL_SECONDS });
       }
@@ -599,18 +606,17 @@ export default {
         const id = decodeURIComponent(url.pathname.slice("/google/download/".length));
         const expires = Number(url.searchParams.get("expires"));
         const preview = url.searchParams.get("preview") === "1";
+        const fileName = url.searchParams.get("name") || "archivo";
         const mode = preview ? "inline" : "attachment";
         const suppliedSignature = url.searchParams.get("signature") || "";
         const now = Math.floor(Date.now() / 1000);
         if (!googleFileId(`gdrive://${id}`) || !Number.isInteger(expires) || expires <= now || expires > now + SHARE_TTL_SECONDS + 60) return json({ error: "Este enlace venció o no es válido." }, 410);
-        if (!safeEqual(await sign(env.SHARE_SIGNING_SECRET, `gdrive:${id}\n${expires}\n${mode}`), suppliedSignature)) return json({ error: "Este enlace no es válido." }, 403);
-        const record = await findGoogleFileRecord(id, env);
-        if (!record) return json({ error: "Archivo no encontrado." }, 404);
+        if (!safeEqual(await sign(env.SHARE_SIGNING_SECRET, `gdrive:${id}\n${expires}\n${mode}\n${fileName}`), suppliedSignature)) return json({ error: "Este enlace no es válido." }, 403);
         const accessToken = await googleAccessToken(env);
         if (!accessToken) return json({ error: "Google Drive no está conectado." }, 503);
         const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
         if (!response.ok || !response.body) return json({ error: "Google Drive no pudo entregar el archivo." }, 502);
-        const headers = new Headers({ "Content-Type": response.headers.get("Content-Type") || "application/octet-stream", "Cache-Control": "private, no-store", "Content-Disposition": `${mode}; filename*=UTF-8''${encodeURIComponent(record.file_name || "archivo")}` });
+        const headers = new Headers({ "Content-Type": response.headers.get("Content-Type") || "application/octet-stream", "Cache-Control": "private, no-store", "Content-Disposition": `${mode}; filename*=UTF-8''${encodeURIComponent(fileName)}` });
         for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
         return new Response(response.body, { headers });
       }
