@@ -35,16 +35,30 @@ jobs:
         run: npm run mobile:copy
       - name: Generate Android project
         run: npx cap add android
-      - name: Set Android version 2.5.1
+      - name: Set Android version 2.5.2
         run: |
-          sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 251/' android/app/build.gradle
-          sed -i -E 's/versionName[[:space:]]+"[^"]+"/versionName "2.5.1"/' android/app/build.gradle
+          sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 252/' android/app/build.gradle
+          sed -i -E 's/versionName[[:space:]]+"[^"]+"/versionName "2.5.2"/' android/app/build.gradle
+          sed -i '/dependencies[[:space:]]*{/a\    implementation "org.apache.ftpserver:ftpserver-core:1.2.1"\n    implementation "commons-net:commons-net:3.13.0"' android/app/build.gradle
       - name: Register Android save-location picker
         run: |
           mkdir -p android/app/src/main/java/com/mediachafa/app
           cp mobile/android/DownloadLocationPlugin.java android/app/src/main/java/com/mediachafa/app/DownloadLocationPlugin.java
           cp mobile/android/ExternalLinkPlugin.java android/app/src/main/java/com/mediachafa/app/ExternalLinkPlugin.java
+          cp mobile/android/MediaFtpPlugin.java android/app/src/main/java/com/mediachafa/app/MediaFtpPlugin.java
+          cp mobile/android/FtpServerService.java android/app/src/main/java/com/mediachafa/app/FtpServerService.java
           cp mobile/android/MainActivity.java android/app/src/main/java/com/mediachafa/app/MainActivity.java
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          s=p.read_text()
+          for permission in ['android.permission.INTERNET','android.permission.ACCESS_NETWORK_STATE','android.permission.CHANGE_NETWORK_STATE','android.permission.FOREGROUND_SERVICE','android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE']:
+              if permission not in s:
+                  s=s.replace('<application', f'<uses-permission android:name="{permission}" />\n    <application', 1)
+          service='    <service android:name=".FtpServerService" android:enabled="true" android:exported="false" android:foregroundServiceType="connectedDevice" />'
+          s=s.replace('</application>', service+'\n  </application>',1)
+          p.write_text(s)
+          PY
       - name: Copy the web app and sync Capacitor
         run: npm run mobile:sync
       - name: Build debug APK
