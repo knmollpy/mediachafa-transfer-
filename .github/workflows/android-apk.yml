@@ -43,6 +43,7 @@ jobs:
         run: |
           mkdir -p android/app/src/main/java/com/mediachafa/app
           cp mobile/android/DownloadLocationPlugin.java android/app/src/main/java/com/mediachafa/app/DownloadLocationPlugin.java
+          cp mobile/android/ExternalLinkPlugin.java android/app/src/main/java/com/mediachafa/app/ExternalLinkPlugin.java
           cp mobile/android/MainActivity.java android/app/src/main/java/com/mediachafa/app/MainActivity.java
       - name: Copy the web app and sync Capacitor
         run: npm run mobile:sync
