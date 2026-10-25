@@ -30,7 +30,7 @@ function initializeNativeUI() {
       <section id="native-folders-view" hidden><div class="native-list" id="native-folders-list"></div></section>
       <section id="native-storage-view" hidden><div class="native-storage-list" id="native-storage-list"></div></section>
       <section id="native-links-view" hidden><div class="native-list" id="native-links-list"></div></section>
-      <section id="native-ps4-view" hidden><div class="native-game-folders" id="native-ps4-folders"></div><div class="native-game-grid" id="native-ps4-list"></div></section>
+      <section id="native-ps4-view" hidden><button class="native-report-button" data-native-action="report-game" type="button">⚠ Reportar enlace de juego caído</button><div class="native-game-folders" id="native-ps4-folders"></div><div class="native-game-grid" id="native-ps4-list"></div></section><section id="native-dm-view" hidden><div class="native-list" id="native-dm-list"></div></section>
     </main>
     <nav class="native-tabs" aria-label="Secciones">
       <button class="native-tab active" data-native-view="files" type="button"><span class="native-tab-icon">▤</span><span>Archivos</span></button>
@@ -38,18 +38,20 @@ function initializeNativeUI() {
       <button class="native-tab" data-native-view="storage" type="button"><span class="native-tab-icon">◉</span><span>Espacio</span></button>
       <button class="native-tab" data-native-view="links" type="button"><span class="native-tab-icon">↗</span><span>Enlaces</span></button>
       <button class="native-tab" data-native-view="ps4" type="button"><span class="native-tab-icon">🎮</span><span>Juegos PS4</span></button>
+      <button class="native-tab" data-native-view="dm" type="button"><span class="native-tab-icon">✉</span><span>DM</span></button>
     </nav>`;
   $('#app').append(nativeShell);
   nativeShell.querySelector('#native-search').addEventListener('input',event=>{nativeSearch=event.target.value.trim().toLowerCase();renderNativeUI();});
   nativeShell.addEventListener('click',event=>{
     const tab=event.target.closest('[data-native-view]');
-    if(tab){switchNativeView(tab.dataset.nativeView);return;}
+    if(tab){switchNativeView(tab.dataset.nativeView);if(tab.dataset.nativeView==='dm')void loadGameReports();return;}
     if(event.target.closest('#native-add-button')){if(nativeActiveView==='links')openLinkEditor();else if(nativeActiveView==='folders')$('#new-folder').click();else if(nativeActiveView==='ps4')void openPs4GameEditor();else if(nativeActiveView==='files')openUploadModal();return;}
     const action=event.target.closest('[data-native-action]');
     if(!action)return;
     if(action.dataset.nativeAction==='edit-folder'){configureFolder(action.dataset.folder);return;}
     if(action.dataset.nativeAction==='delete-link'){const link=links.find(item=>item.id===action.dataset.id);if(link&&confirm(`¿Eliminar el enlace “${link.title}”?`))void client.from('media_links').delete().eq('id',link.id).then(({error})=>error?toast('No se pudo eliminar: '+error.message):loadLinks());return;}
     if(action.dataset.nativeAction==='share-file'){const file=files.find(item=>item.id===action.dataset.id);if(file)void shareFile(file);return;}
+    if(action.dataset.nativeAction==='report-game'){void reportBrokenGame();return;}
     if(action.dataset.nativeAction==='ps4-details'){showPs4GameDetails(action.dataset.id);return;}
     if(action.dataset.nativeAction==='ps4-download'){void downloadPs4Game(action.dataset.id);return;}
     if(action.dataset.nativeAction==='ps4-share'){const game=ps4Games.find(item=>item.id===action.dataset.id);if(game)void sharePs4Game(game);return;}
@@ -75,24 +77,37 @@ function initializeNativeUI() {
 function initializeNativeState() {
   if(!isNativeApp||!nativeShell)return;
   nativeShell.hidden=false;
-  $('#native-add-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
-  switchNativeView('files');
+  $('#native-add-button').classList.toggle('hidden',!ownerMode&&!uploaderMode&&!canUploadMode);
+  nativeShell.querySelector('[data-native-view=dm]').classList.toggle('hidden',!ownerMode);
+  nativeShell.querySelector('[data-native-view=ps4]').classList.toggle('hidden',!guestPs4Mode&&memberMode&&!accountPermissions.can_view_ps4_games);
+  if(guestPs4Mode){for(const name of ['files','folders','storage','links'])nativeShell.querySelector('[data-native-view='+name+']').classList.add('hidden');}
+  const firstView=guestPs4Mode?'ps4':(!memberMode||accountPermissions.can_view_public_files||accountPermissions.can_create_folders||canUploadMode?'files':accountPermissions.can_view_links?'links':accountPermissions.can_view_ps4_games?'ps4':'files');switchNativeView(firstView);
   renderNativeUI();
 }
 
 function switchNativeView(view) {
   if(!isNativeApp||!nativeShell)return;
   if(view==='uploads')view='files';
-  nativeActiveView=view;
-  for(const name of ['files','folders','storage','links','ps4']) {
+  if(guestPs4Mode)view='ps4';
+  if(view==='dm'&&!ownerMode)view='ps4';
+  if(view==='ps4'&&!guestPs4Mode&&memberMode&&!accountPermissions.can_view_ps4_games)view=accountPermissions.can_view_public_files||accountPermissions.can_create_folders||canUploadMode?'files':accountPermissions.can_view_links?'links':'files';
+  if(memberMode&&!accountPermissions.can_view_public_files&&!accountPermissions.can_create_folders&&!canUploadMode&&['files','folders','storage'].includes(view))view='ps4';
+  if(memberMode&&view==='links'&&!accountPermissions.can_view_links)view='ps4';
+  nativeActiveView=view; currentView=view;
+  for(const name of ['files','folders','storage','links','ps4','dm']) {
     const section=nativeShell.querySelector('#native-'+name+'-view');
     if(section)section.hidden=name!==view;
     nativeShell.querySelector('[data-native-view="'+name+'"]').classList.toggle('active',name===view);
   }
-  const titles={files:[currentFolder==='Todos los archivos'?'Tus archivos':currentFolder,'Tu universo de archivos está a un toque.','Buscar archivos…'],folders:['Tus carpetas','Organizá y encontrá tus archivos.','Buscar carpetas…'],storage:['Espacio disponible','Revisá el uso de cada servicio.',''],links:['Enlaces guardados','Tus accesos favoritos, listos para abrir.','Buscar enlaces…'],ps4:['Juegos PS4','Portadas, detalles y descargas.','Buscar juegos…']};
+  const titles={dm:['DM · Reportes','Reportes privados de enlaces caídos.',''],files:[currentFolder==='Todos los archivos'?'Tus archivos':currentFolder,'Tu universo de archivos está a un toque.','Buscar archivos…'],folders:['Tus carpetas','Organizá y encontrá tus archivos.','Buscar carpetas…'],storage:['Espacio disponible','Revisá el uso de cada servicio.',''],links:['Enlaces guardados','Tus accesos favoritos, listos para abrir.','Buscar enlaces…'],ps4:['Juegos PS4','Portadas, detalles y descargas.','Buscar juegos…']};
+  for(const name of ['files','folders','storage','links'])nativeShell.querySelector('[data-native-view='+name+']').classList.toggle('hidden',guestPs4Mode || (memberMode&&['files','folders','storage'].includes(name)&&!accountPermissions.can_view_public_files&&!accountPermissions.can_create_folders&&!canUploadMode) || (memberMode&&name==='links'&&!accountPermissions.can_view_links));
   const copy=titles[view];$('#native-title').textContent=copy[0];$('#native-subtitle').textContent=copy[1];$('#native-search').placeholder=copy[2];
   $('#native-search').parentElement.classList.toggle('hidden',!copy[2]);
-  $('#native-add-button').classList.toggle('hidden',(!ownerMode&&!uploaderMode)||view==='storage');
+  const canAdd=ownerMode||uploaderMode||canUploadMode||(memberMode&&accountPermissions.can_create_folders&&view==='folders');
+  $('#native-add-button').classList.toggle('hidden',!canAdd||view==='storage'||view==='dm'||guestPs4Mode);
+  nativeShell.querySelector('[data-native-view=dm]').classList.toggle('hidden',!ownerMode);
+  nativeShell.querySelector('[data-native-view=ps4]').classList.toggle('hidden',!guestPs4Mode&&memberMode&&!accountPermissions.can_view_ps4_games);
+  nativeShell.querySelector('[data-native-action=report-game]').classList.toggle('hidden',view!=='ps4');
   $('#native-add-button').setAttribute('aria-label',view==='links'?'Guardar enlace':view==='folders'?'Crear carpeta':view==='ps4'?'Agregar juego':'Subir archivo');
   $('#native-add-button').textContent=view==='links'||view==='folders'||view==='ps4'?'＋':'↑';
   renderNativeUI();
@@ -116,7 +131,8 @@ function nativeEmpty(title,description,icon='✦') {
 
 function renderNativeUI() {
   if(!isNativeApp||!nativeShell)return;
-  if(nativeActiveView==='files') {
+  if(nativeActiveView==='dm') { $('#native-count').textContent=''; }
+  else if(nativeActiveView==='files') {
     const shown=files.filter(file=>{
       const inFolder=currentFolder==='Todos los archivos'||(currentFolder==='Sin carpeta'?(!file.folder||file.folder==='Sin carpeta'):file.folder===currentFolder||file.folder.startsWith(currentFolder+'/'));
       return inFolder&&(file.name+' '+file.description+' '+file.folder).toLowerCase().includes(nativeSearch);
@@ -124,12 +140,12 @@ function renderNativeUI() {
     $('#native-count').textContent=shown.length+' archivo'+(shown.length===1?'':'s')+' en tu biblioteca';
     const list=$('#native-files-list');
     list.innerHTML=shown.length?shown.map(file=>{
-      const canManage=ownerMode||(uploaderMode&&file.createdBy===currentUser?.id),type=(file.type||'file').toLowerCase();
+      const canManage=ownerMode||(uploaderMode&&file.createdBy===currentUser?.id),canEditOwn=canManage||(memberMode&&canUploadMode&&file.createdBy===currentUser?.id),type=(file.type||'file').toLowerCase();
       const iconClass=['zip','rar','apk','pdf'].includes(type)?type:(file.mimeType||'').startsWith('image/')?'image':'';
       const actions='<button class="native-action primary-action" data-native-action="download" data-id="'+esc(file.id)+'" type="button">↓ Descargar</button>'+
         (!isPrivateFile(file)?'<button class="native-action" data-native-action="share-file" data-id="'+esc(file.id)+'" type="button">↗ Compartir enlace</button>':'')+
         (isPreviewable(file.mimeType)?'<button class="native-action" data-native-action="preview" data-id="'+esc(file.id)+'" type="button">◉ Vista previa</button>':'')+
-        (canManage?'<button class="native-action" data-native-action="edit" data-id="'+esc(file.id)+'" type="button">✎ Editar detalles</button><button class="native-action danger-action" data-native-action="delete" data-id="'+esc(file.id)+'" type="button">× Eliminar</button>':'');
+        (canEditOwn?'<button class="native-action" data-native-action="edit" data-id="'+esc(file.id)+'" type="button">✎ Editar detalles</button>':'')+(canManage?'<button class="native-action danger-action" data-native-action="delete" data-id="'+esc(file.id)+'" type="button">× Eliminar</button>':'');
       return '<article class="native-card"><div class="native-file-icon '+iconClass+'">'+esc(type.slice(0,5))+'</div><div class="native-card-main"><h2 class="native-card-title">'+esc(file.name)+'</h2><div class="native-card-meta"><span>'+esc(formatBytes(file.size))+'</span><span>·</span><span>'+esc(file.folder||'Sin carpeta')+'</span><span>·</span><span>'+esc(file.date||'')+'</span>'+(file.isPrivate?'<span class="native-private">· 🔒 Privado</span>':'')+'</div></div><div class="native-card-actions">'+actions+'</div></article>';
     }).join(''):nativeEmpty(files.length?'No hay coincidencias':'Todavía no hay archivos',files.length?'Probá con otro nombre o carpeta.':'Los archivos nuevos aparecerán aquí automáticamente.');
   } else if(nativeActiveView==='folders') {

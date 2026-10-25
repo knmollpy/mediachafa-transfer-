@@ -640,7 +640,10 @@ export default {
         const input = await request.json().catch(() => ({}));
         const path = typeof input.path === "string" ? input.path : "";
         if (!path || path.length > 1024 || path.split("/").some(part => part === "..")) return json({ error: "Archivo inválido." }, 400);
-        if (!await findMediaFileByPath(path, env)) return json({ error: "Solo se pueden compartir archivos públicos." }, 403);
+        const session = await getUser(request, env);
+        if (!session) return json({ error: "Iniciá sesión para crear un enlace compartido." }, 401);
+        const fileRecord = await findMediaFileByPath(path, env, session);
+        if (!fileRecord || fileRecord.is_private) return json({ error: "Solo se pueden compartir archivos públicos." }, 403);
         if (!await env.MEDIA_BUCKET.head(path)) return json({ error: "Archivo no encontrado en R2." }, 404);
         const expires = Math.floor(Date.now() / 1000) + SHARE_TTL_SECONDS;
         const signature = await sign(env.SHARE_SIGNING_SECRET, `${path}\n${expires}`);
@@ -659,7 +662,7 @@ export default {
         if (!path || !Number.isInteger(expires) || expires <= now || expires > now + SHARE_TTL_SECONDS + 60) return json({ error: "Este enlace venció o no es válido." }, 410);
         const expected = await sign(env.SHARE_SIGNING_SECRET, `${path}\n${expires}`);
         if (!safeEqual(expected, suppliedSignature)) return json({ error: "Este enlace no es válido." }, 403);
-        if (!await findMediaFileByPath(path, env)) return json({ error: "El archivo ya no es público o no existe." }, 404);
+        if (!await env.MEDIA_BUCKET.head(path)) return json({ error: "El archivo ya no existe." }, 404);
         const object = await env.MEDIA_BUCKET.get(path);
         return withCors(await serveObject(object, path.split("/").pop()));
       }
