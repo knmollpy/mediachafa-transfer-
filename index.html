@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#f2f7f3" />
+  <meta name="theme-color" content="#071528" />
   <meta name="description" content="Tu biblioteca de archivos y enlaces, disponible también desde el celular." />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icons/app.svg" type="image/svg+xml" />
@@ -82,6 +82,34 @@
     @media(max-width:600px){#ps4-panel .content-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}#ps4-panel .content-head>.content-title{grid-column:1/-1}#ps4-search{grid-column:1/-1;width:100%}#add-ps4-game{grid-column:1/-1}.ps4-game-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ps4-game-details{grid-template-columns:1fr}.ps4-game-details img{max-height:240px;justify-self:center}.ps4-game-card{border-radius:11px}.ps4-game-copy{padding:8px}.ps4-game-actions{padding:0 8px 8px;gap:5px}.ps4-game-actions button{font-size:9px;padding:6px}}
     .guest-games-only{background-color:#080c24;background-image:radial-gradient(ellipse at 85% 18%,rgba(69,50,143,.55),transparent 35%),radial-gradient(ellipse at 4% 55%,rgba(20,100,143,.28),transparent 34%),linear-gradient(155deg,#111739 0%,#080c24 54%,#121239 100%);color:#f5f3ff}.guest-games-only .topbar,.guest-games-only #ps4-panel{background:rgba(13,18,48,.94);color:#f5f3ff;border-color:rgba(151,171,255,.2)}.guest-games-only #ps4-panel{border-radius:18px}.guest-games-only .ps4-game-card,.guest-games-only .ps4-sidebar{background:rgba(18,25,62,.9);border-color:rgba(151,171,255,.2)}.guest-games-only .ps4-game-title,.guest-games-only .ps4-game-folder,.guest-games-only .content-title{color:#f5f3ff}.guest-games-only .ps4-game-description,.guest-games-only .ps4-game-features{color:#c6d0f4}.guest-games-only .secondary{color:#dce5ff;background:#1b2556;border-color:rgba(151,171,255,.2)}.guest-games-only .topnav> :not(#ps4-tab),.guest-games-only .topright> :not(#logout){display:none!important}.guest-games-only .topbar{height:58px;justify-content:space-between}.guest-games-only .wrap{max-width:1000px;padding-top:16px}#guest-ps4-entry{width:100%;margin-top:12px}.native-report-button{width:100%;margin-bottom:12px;padding:11px;border:1px solid rgba(103,234,255,.28);border-radius:12px;color:#dce5ff;background:rgba(28,43,91,.8);font-size:11px;font-weight:700}.native-report-button.hidden{display:none!important}
     .remember-session{display:flex;align-items:flex-start;gap:9px;margin-top:15px;color:#68766e;font-size:12px;line-height:1.45;cursor:pointer}.remember-session input{width:17px;height:17px;flex:0 0 auto;margin:0;accent-color:#278957}.native-app .remember-session{color:#c8d3ff}
+
+    /* Identidad visual propia de MediaChafa: azul neón, sin controles de tema. */
+    :root:not(.native-app){color-scheme:dark;--ink:#e8f6ff;--muted:#9bb5cf;--green:#37b8ff;--green2:#277dff;--line:rgba(90,183,255,.26);--paper:rgba(8,19,43,.9);--wash:#050a18;--mint:rgba(18,97,176,.2);--shadow:0 0 26px rgba(0,153,255,.13),0 14px 42px rgba(0,0,0,.28)}
+    html:not(.native-app) body{position:relative;isolation:isolate;background-color:#050a18;background-image:radial-gradient(ellipse at 14% 8%,rgba(0,150,255,.18),transparent 34%),radial-gradient(ellipse at 92% 42%,rgba(48,75,255,.16),transparent 37%),radial-gradient(ellipse at 45% 105%,rgba(0,211,255,.11),transparent 42%),var(--user-wallpaper,none),linear-gradient(145deg,#050a18,#0a1027 52%,#050a18);color:var(--ink)}
+    html:not(.native-app) body::before{content:"";position:fixed;inset:-35%;z-index:-1;pointer-events:none;opacity:.34;background:repeating-linear-gradient(118deg,transparent 0 108px,rgba(55,184,255,.18) 109px,transparent 111px 218px),linear-gradient(118deg,transparent 35%,rgba(0,159,255,.12) 49%,transparent 56%);animation:media-neon-drift 24s linear infinite}
+    @keyframes media-neon-drift{0%{transform:translate3d(-3%,0,0)}50%{transform:translate3d(3%,1%,0)}100%{transform:translate3d(-3%,0,0)}}
+    html:not(.native-app) .login-screen{background:radial-gradient(ellipse at 15% 20%,rgba(0,153,255,.22),transparent 40%),radial-gradient(ellipse at 88% 78%,rgba(48,75,255,.19),transparent 42%),transparent}
+    html:not(.native-app) .login-card,html:not(.native-app) .topbar,html:not(.native-app) .storage,html:not(.native-app) .sidebar,html:not(.native-app) .content,html:not(.native-app) .modal,html:not(.native-app) .file-card,html:not(.native-app) .ps4-game-card,html:not(.native-app) .ps4-sidebar,html:not(.native-app) .upload-job{background:rgba(8,19,43,.9);border-color:var(--line);color:var(--ink);box-shadow:var(--shadow);backdrop-filter:blur(14px)}
+    html:not(.native-app) .content-title,html:not(.native-app) .login-card h1,html:not(.native-app) .empty h3,html:not(.native-app) .ps4-game-title,html:not(.native-app) .welcome h1{color:#effaff}
+    html:not(.native-app) .sub,html:not(.native-app) .welcome p,html:not(.native-app) .date,html:not(.native-app) .side-heading,html:not(.native-app) .folder,html:not(.native-app) .file-meta,html:not(.native-app) .file-desc,html:not(.native-app) .storage-foot,html:not(.native-app) .storage-amount,html:not(.native-app) .ps4-game-folder,html:not(.native-app) .logout{color:var(--muted)}
+    html:not(.native-app) .navitem{color:#a8c1da}html:not(.native-app) .navitem.active,html:not(.native-app) .folder:hover,html:not(.native-app) .folder.selected{background:rgba(22,143,255,.19);color:#62c9ff;box-shadow:inset 0 0 0 1px rgba(70,183,255,.14)}
+    html:not(.native-app) .role-chip,html:not(.native-app) .avatar{background:rgba(24,149,255,.2);color:#70d0ff}
+    html:not(.native-app) .field,html:not(.native-app) .search,html:not(.native-app) .select,html:not(.native-app) .secondary,html:not(.native-app) .icon-btn,html:not(.native-app) .color-field{background:rgba(4,13,32,.88);border-color:rgba(79,171,255,.38);color:#e8f6ff}
+    html:not(.native-app) .field:focus,html:not(.native-app) .search:focus{border-color:#51c5ff;box-shadow:0 0 0 3px rgba(26,161,255,.18),0 0 16px rgba(26,161,255,.18)}
+    html:not(.native-app) .primary,html:not(.native-app) .add-btn,html:not(.native-app) .download{background:linear-gradient(110deg,#087eea,#13b8ff);color:white;box-shadow:0 0 16px rgba(0,156,255,.3)}
+    html:not(.native-app) .primary:hover,html:not(.native-app) .add-btn:hover,html:not(.native-app) .download:hover{background:linear-gradient(110deg,#1194ff,#37ceff)}
+    html:not(.native-app) .share-btn,html:not(.native-app) .preview-btn{background:rgba(9,97,165,.24);border-color:rgba(76,186,255,.42);color:#75d5ff}
+    html:not(.native-app) .side-heading button,html:not(.native-app) .folder-edit,html:not(.native-app) .folder-count,html:not(.native-app) .close{background:rgba(14,91,150,.3);border-color:rgba(76,186,255,.34);color:#82d8ff}
+    html:not(.native-app) .file-card:hover,html:not(.native-app) .ps4-game-card:hover{border-color:rgba(70,194,255,.62);box-shadow:0 0 22px rgba(0,156,255,.2),var(--shadow)}
+    html:not(.native-app) .bar{background:rgba(112,163,205,.2)}html:not(.native-app) .bar-fill{background:linear-gradient(90deg,#0789ff,#38e0ff);box-shadow:0 0 14px #16baff}
+    html:not(.native-app) .notice,html:not(.native-app) .login-note,html:not(.native-app) .drop{background:rgba(12,64,108,.34);color:#b9dcf4;border:1px solid rgba(73,176,255,.25)}
+    html:not(.native-app) .drop strong,html:not(.native-app) .link-card-url{color:#70d0ff}
+    html:not(.native-app) .link-card{background:rgba(8,19,43,.9);border-color:var(--line)}
+    html:not(.native-app) .ps4-game-cover-button,html:not(.native-app) .ps4-game-cover-placeholder{background:linear-gradient(145deg,#071a39,#111441)}
+    .ps4-search-area{display:flex;align-items:center;gap:10px;flex:1;min-width:min(300px,100%)}.ps4-search-area .search{width:min(245px,100%);flex:0 1 245px}
+    .homebrew-credits{display:flex;flex-direction:column;gap:2px;max-width:340px;padding:8px 11px;border:1px solid rgba(59,186,255,.4);border-radius:10px;background:rgba(10,63,112,.33);color:#c8eaff;font-size:10px;line-height:1.35;box-shadow:inset 0 0 18px rgba(35,173,255,.08),0 0 14px rgba(0,153,255,.12)}.homebrew-credits strong{color:#74d4ff;font-size:11px;text-shadow:0 0 9px rgba(55,184,255,.35)}
+    @media(max-width:600px){.ps4-search-area{grid-column:1/-1;width:100%;min-width:0;align-items:stretch;flex-wrap:wrap}.ps4-search-area .search{width:100%;flex:1 1 100%;min-width:0;min-height:44px}.homebrew-credits{max-width:none;width:100%}}
+    @media(prefers-reduced-motion:reduce){html:not(.native-app) body::before{animation:none}}
   </style>
 </head>
 <body>
@@ -104,7 +132,7 @@
     </div>
   </section>
   <main id="app" class="app hidden">
-    <header class="topbar"><div class="brand"><img class="brand-mark" src="/icons/app.svg" alt=""> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button><button class="navitem" id="ps4-tab" type="button">Juegos PS4</button><button class="navitem hidden" id="dm-tab" type="button">DM</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="theme-toggle" id="music-toggle" type="button" aria-label="Activar música" aria-pressed="false" title="Activar música">♫ Música</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="dm-top-button" type="button">DM</button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
+    <header class="topbar"><div class="brand"><img class="brand-mark" src="/icons/app.svg" alt=""> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button><button class="navitem" id="ps4-tab" type="button">Juegos PS4</button><button class="navitem hidden" id="dm-tab" type="button">DM</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="navitem hidden" id="dm-top-button" type="button">DM</button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="welcome-actions"><a class="install-mobile-option compact" href="/downloads/MediaChafa.apk?v=2.5.3" download="MediaChafa.apk"><span aria-hidden="true">↓</span> Descargar app móvil (APK)</a><div class="date" id="today"></div></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#4285f4">◉</span> Google Drive compartido</div><div class="storage-amount"><strong id="drive-used-label">—</strong> de <strong id="drive-capacity-label">200 GB</strong></div></div><div class="bar"><div class="bar-fill" id="drive-bar-fill"></div></div><div class="storage-foot"><span id="drive-remaining-label">Cupo compartido con Gmail y Google Fotos</span></div></section><section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Cloudflare R2</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong id="r2-capacity-label">10 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">10 GB disponibles</span></div></section>
@@ -112,10 +140,9 @@
         <section class="content"><div class="content-head"><div class="content-title" id="section-title">Todos los archivos</div><input class="search" id="search" placeholder="⌕  Buscar archivos…"><select class="select" id="type-filter"><option value="all">Todos los tipos</option><option value="apk">APK</option><option value="pkg">PKG</option><option value="pdf">PDF</option><option value="zip">ZIP</option><option value="rar">RAR</option><option value="other">Otros</option></select><button id="add-file" class="add-btn">＋ Subir archivo</button></div><div id="file-list" class="file-list"></div><div id="guest-note" class="notice hidden">Estás en modo invitado. Podés descargar los archivos y leer sus descripciones. Los colaboradores también pueden editar la descripción de los archivos que subieron.</div></section>
       </div>
       <section class="content hidden" id="links-panel"><div class="content-head"><div class="content-title">Enlaces guardados</div><input class="search" id="links-search" placeholder="⌕  Buscar enlaces…"><button id="all-links" class="navitem active" type="button">Todos</button><button id="own-links" class="navitem" type="button">Propios</button><button id="add-link" class="add-btn">＋ Guardar enlace</button></div><div id="links-list" class="file-list"></div></section>
-      <section class="content hidden" id="ps4-panel"><div class="content-head"><button id="report-game" class="secondary" type="button">⚠ Reportar enlace de juego caído</button><div class="content-title">Juegos PS4</div><input class="search" id="ps4-search" placeholder="⌕ Buscar juegos…"><button id="add-ps4-game" class="add-btn hidden" type="button">＋ Agregar juego</button></div><div class="ps4-layout"><aside class="ps4-sidebar"><div class="side-heading">Carpetas <button id="new-ps4-folder" type="button" title="Crear carpeta de juegos">+</button></div><div class="ps4-folder-list" id="ps4-folder-list"></div></aside><div><div class="ps4-game-grid" id="ps4-games-list"></div><nav class="ps4-pagination" id="ps4-pagination" aria-label="Páginas de juegos" hidden></nav></div></div></section><section class="content hidden" id="dm-panel"><div class="content-head"><div class="content-title">DM · Reportes de enlaces caídos</div><button class="secondary" id="refresh-reports" type="button">Actualizar</button></div><div id="dm-list" class="file-list"></div></section>
+      <section class="content hidden" id="ps4-panel"><div class="content-head"><button id="report-game" class="secondary" type="button">⚠ Reportar enlace de juego caído</button><div class="content-title">Juegos PS4</div><div class="ps4-search-area"><input class="search" id="ps4-search" placeholder="⌕ Buscar juegos…"><aside class="homebrew-credits hidden" id="homebrew-credits"><strong>Créditos a quienes correspondan</strong><span>Gracias a los creadores y colaboradores de Homebrew por sus aportes.</span></aside></div><button id="add-ps4-game" class="add-btn hidden" type="button">＋ Agregar juego</button></div><div class="ps4-layout"><aside class="ps4-sidebar"><div class="side-heading">Carpetas <button id="new-ps4-folder" type="button" title="Crear carpeta de juegos">+</button></div><div class="ps4-folder-list" id="ps4-folder-list"></div></aside><div><div class="ps4-game-grid" id="ps4-games-list"></div><nav class="ps4-pagination" id="ps4-pagination" aria-label="Páginas de juegos" hidden></nav></div></div></section><section class="content hidden" id="dm-panel"><div class="content-head"><div class="content-title">DM · Reportes de enlaces caídos</div><button class="secondary" id="refresh-reports" type="button">Actualizar</button></div><div id="dm-list" class="file-list"></div></section>
     </div>
   </main>
-  <audio id="background-music" preload="none" loop src="https://mediachafa-transfer.vercel.app/background.mp3"></audio>
   <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true"><div><strong>Soltá los archivos acá</strong><span>Se van a preparar para subir. La transferencia empieza cuando toques “Subir”.</span></div></div>
   <div id="modal-root"></div>
   <script>
@@ -725,6 +752,8 @@ async function loadGoogleDriveStatus() {
       $('#ps4-folder-list').querySelectorAll('[data-ps4-folder]').forEach(button=>button.onclick=()=>{currentPs4Folder=button.dataset.ps4Folder;currentPs4Page=1;renderPs4Catalog();});
       $('#ps4-folder-list').querySelectorAll('[data-ps4-folder-edit]').forEach(button=>button.onclick=()=>editPs4Folder(button.dataset.ps4FolderEdit));
       $('#ps4-folder-list').querySelectorAll('[data-ps4-folder-delete]').forEach(button=>button.onclick=()=>deletePs4Folder(button.dataset.ps4FolderDelete));
+      const activeFolder=ps4GameFolders.find(folder=>folder.id===currentPs4Folder);
+      $('#homebrew-credits')?.classList.toggle('hidden',activeFolder?.name?.trim().toLowerCase()!=='homebrew');
       const query=($('#ps4-search')?.value||'').trim().toLowerCase();
       const shown=ps4Games.filter(game=>{
         const gameFolders=ps4GameFolders.filter(item=>(game.folder_ids||[game.folder_id]).includes(item.id));
@@ -811,7 +840,7 @@ async function loadGoogleDriveStatus() {
     }
     $('#customize-button').onclick=()=>{
       modal('Fondo personalizado',
-        '<p class="sub">Elegí una imagen o GIF. Se guarda en tu cuenta y el tema claro u oscuro seguirá controlando los paneles y botones.</p><label class="field-label" for="wallpaper-input">Imagen o GIF (máximo 20 MB)</label><input class="field" id="wallpaper-input" type="file" accept="image/*"><div class="notice" id="wallpaper-status">' + (wallpaperPath ? 'Ya tenés un fondo personalizado.' : 'Sin imagen: el fondo general seguirá el modo claro u oscuro.') + '</div><div class="bar hidden" id="wallpaper-progress" style="margin-top:12px"><div class="bar-fill" id="wallpaper-progress-fill"></div></div>' + (wallpaperPath?'<button class="secondary" type="button" id="remove-wallpaper" style="margin-top:12px">Quitar fondo personalizado</button>':''),
+        '<p class="sub">Elegí una imagen o GIF. Se guarda en tu cuenta y el tema claro u oscuro seguirá controlando los paneles y botones.</p><label class="field-label" for="wallpaper-input">Imagen o GIF (máximo 20 MB)</label><input class="field" id="wallpaper-input" type="file" accept="image/*"><div class="notice" id="wallpaper-status">' + (wallpaperPath ? 'Ya tenés un fondo personalizado.' : 'Sin imagen: se muestra el fondo galáctico neón de MediaChafa.') + '</div><div class="bar hidden" id="wallpaper-progress" style="margin-top:12px"><div class="bar-fill" id="wallpaper-progress-fill"></div></div>' + (wallpaperPath?'<button class="secondary" type="button" id="remove-wallpaper" style="margin-top:12px">Quitar fondo personalizado</button>':''),
         'Guardar fondo',async root=>{
           const file=root.querySelector('#wallpaper-input').files[0];
           if(!file){toast('Elegí primero una imagen o GIF.');return;}
@@ -846,27 +875,7 @@ async function loadGoogleDriveStatus() {
         root.replaceChildren();toast('Fondo personalizado quitado.');
       };
     };
-    function setTheme(theme) {
-      const dark = theme === 'dark';
-      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-      const button = $('#theme-toggle');
-      button.setAttribute('aria-pressed', String(dark));
-      button.setAttribute('aria-label', dark ? 'Activar modo claro' : 'Activar modo oscuro');
-      button.querySelector('.theme-icon').textContent = dark ? '☀' : '☾';
-      button.querySelector('.theme-label').textContent = dark ? 'Claro' : 'Oscuro';
-    }
-    const backgroundMusic=$('#background-music'),musicToggle=$('#music-toggle');
-    musicToggle.onclick=async()=>{
-      if(backgroundMusic.paused){
-        try{await backgroundMusic.play();musicToggle.textContent='♫ Música activada';musicToggle.setAttribute('aria-label','Desactivar música');musicToggle.setAttribute('aria-pressed','true');musicToggle.title='Desactivar música';}
-        catch{toast('No se pudo iniciar la música. Volvé a tocar el botón para intentar de nuevo.');}
-      }else{backgroundMusic.pause();musicToggle.textContent='♫ Música';musicToggle.setAttribute('aria-label','Activar música');musicToggle.setAttribute('aria-pressed','false');musicToggle.title='Activar música';}
-    };
-    setTheme(localStorage.getItem('mediachafa-theme') || 'light');
-    $('#theme-toggle').onclick = () => {
-      const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-      setTheme(theme); localStorage.setItem('mediachafa-theme', theme);
-    };
+
 
     async function shareFile(file) {
       if(isPrivateFile(file)){toast('Los archivos privados no generan enlaces públicos.');return;}
