@@ -858,8 +858,12 @@ async function loadGoogleDriveStatus() {
         } else {
           const response=await fetch(`${R2_WORKER_URL}/sign`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session?.access_token||''}`},body:JSON.stringify({path:file.path})});
           const result=await response.json().catch(()=>({}));
-          if(!response.ok)throw new Error(result.error||`Cloudflare respondió ${response.status}.`);
-          signedUrl=result.url;
+          if(response.ok&&result.url)signedUrl=result.url;
+          else {
+            const {data,error}=await client.storage.from(BUCKET).createSignedUrl(storageObjectPath(file),expiresIn,{download:file.name});
+            if(error)throw new Error(`${result.error||`Cloudflare respondió ${response.status}.`} ${error.message}`);
+            signedUrl=data.signedUrl.startsWith('http')?data.signedUrl:SUPABASE_URL+data.signedUrl;
+          }
         }
       } catch(error) { toast('No se pudo crear el enlace: '+(error.message||error));return; }
       modal('Enlace de descarga','<p class="sub">Este enlace permite descargar solo este archivo. Dura 7 días y vence el <strong>'+expiresLabel+'</strong>. Después de esa fecha dejará de funcionar. Cualquiera que tenga el enlace podrá descargarlo.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="'+esc(signedUrl)+'">','Copiar enlace',async root=>{
@@ -878,7 +882,7 @@ async function loadGoogleDriveStatus() {
           const {data:{session}}=await client.auth.getSession();
           if(isGoogleFile(file))url=(await googleSignedUrl(file,false)).url;
           else if(isSupabaseFile(file)){const {data,error}=await client.storage.from(BUCKET).createSignedUrl(storageObjectPath(file),60*60,{download:file.name});if(error)throw error;url=data.signedUrl.startsWith('http')?data.signedUrl:SUPABASE_URL+data.signedUrl;}
-          else {const signed=await fetch(`${R2_WORKER_URL}/sign`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session?.access_token||''}`},body:JSON.stringify({path:file.path})});const result=await signed.json().catch(()=>({}));if(!signed.ok)throw new Error(result.error||`Cloudflare respondió ${signed.status}.`);url=result.url;}
+          else {const signed=await fetch(`${R2_WORKER_URL}/sign`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session?.access_token||''}`},body:JSON.stringify({path:file.path})});const result=await signed.json().catch(()=>({}));if(signed.ok&&result.url)url=result.url;else{const {data,error}=await client.storage.from(BUCKET).createSignedUrl(storageObjectPath(file),60*60,{download:file.name});if(error)throw new Error(`${result.error||`Cloudflare respondió ${signed.status}.`} ${error.message}`);url=data.signedUrl.startsWith('http')?data.signedUrl:SUPABASE_URL+data.signedUrl;}}
           const result=await locationPlugin.saveUrlFile({url,fileName:file.name});if(!result?.cancelled)toast('Descarga guardada en la ubicación elegida.');
         }catch(error){toast('No se pudo descargar: '+(error.message||error));}
         return;
@@ -894,8 +898,12 @@ async function loadGoogleDriveStatus() {
       }
       if(isGoogleFile(file)){try{const {url}=await googleSignedUrl(file,false);const link=document.createElement('a');link.href=url;link.download=file.name;link.click();}catch(error){toast('No se pudo descargar: '+error.message);}return;}
       let data;
-      try{if(!isGoogleFile(file)&&!isSupabaseFile(file)){const {data:{session}}=await client.auth.getSession();const response=await fetch(`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`,{headers:session?.access_token?{Authorization:`Bearer ${session.access_token}`}:{}});if(!response.ok)throw new Error((await response.json().catch(()=>({}))).error||`Cloudflare respondió ${response.status}.`);data=await response.blob();}}catch(error){toast('No se pudo descargar: '+(error.message||error));return;}
-      if(!data){const {data:legacy,error}=await client.storage.from(BUCKET).download(storageObjectPath(file));if(error){toast('No se pudo descargar: '+error.message);return;}data=legacy;}
+      let r2Error='';
+      if(!isGoogleFile(file)&&!isSupabaseFile(file)){
+        try{const {data:{session}}=await client.auth.getSession();const response=await fetch(`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`,{headers:session?.access_token?{Authorization:`Bearer ${session.access_token}`}:{}});if(!response.ok)r2Error=(await response.json().catch(()=>({}))).error||`Cloudflare respondió ${response.status}.`;else data=await response.blob();}
+        catch(error){r2Error=error.message||'No se pudo conectar con Cloudflare.';}
+      }
+      if(!data){const {data:legacy,error}=await client.storage.from(BUCKET).download(storageObjectPath(file));if(error){toast('No se pudo descargar: '+(r2Error?r2Error+' · ':'')+error.message);return;}data=legacy;}
       const link=document.createElement('a'),url=URL.createObjectURL(data);link.href=url;link.download=file.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
     }
 
