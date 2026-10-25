@@ -89,6 +89,11 @@ body.native-app {
   color: #a6f3d0; background: rgba(41, 146, 125, .12); font-size: 10px; white-space: nowrap;
 }
 .native-sync::before { width: 6px; height: 6px; border-radius: 50%; background: #62e6b6; content: ''; box-shadow: 0 0 9px #62e6b6; }
+.native-logout {
+  flex: 0 0 auto; min-height: 34px; padding: 0 11px; border: 1px solid rgba(151,171,255,.28);
+  border-radius: 11px; color: #dce5ff; background: rgba(18,25,62,.78); font-size: 11px; font-weight: 700;
+}
+.native-logout:active { transform: scale(.97); }
 .native-hero { margin-top: 19px; display: flex; align-items: end; justify-content: space-between; gap: 10px; }
 .native-hero-title { min-width: 0; }
 .native-eyebrow { color: var(--cyan); font-size: 9px; font-weight: 800; letter-spacing: 1.8px; text-transform: uppercase; }
