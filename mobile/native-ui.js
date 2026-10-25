@@ -1,6 +1,7 @@
 let nativeShell = null;
 let nativeActiveView = 'files';
 let nativeSearch = '';
+let nativePs4Folder = 'all';
 
 function initializeNativeUI() {
   if (!isNativeApp) return;
@@ -28,7 +29,7 @@ function initializeNativeUI() {
       <section id="native-folders-view" hidden><div class="native-list" id="native-folders-list"></div></section>
       <section id="native-storage-view" hidden><div class="native-storage-list" id="native-storage-list"></div></section>
       <section id="native-links-view" hidden><div class="native-list" id="native-links-list"></div></section>
-      <section id="native-ps4-view" hidden><div class="native-game-grid" id="native-ps4-list"></div></section>
+      <section id="native-ps4-view" hidden><div class="native-game-folders" id="native-ps4-folders"></div><div class="native-game-grid" id="native-ps4-list"></div></section>
     </main>
     <nav class="native-tabs" aria-label="Secciones">
       <button class="native-tab active" data-native-view="files" type="button"><span class="native-tab-icon">▤</span><span>Archivos</span></button>
@@ -53,6 +54,7 @@ function initializeNativeUI() {
     if(action.dataset.nativeAction==='ps4-share'){const game=ps4Games.find(item=>item.id===action.dataset.id);if(game)void sharePs4Game(game);return;}
     if(action.dataset.nativeAction==='ps4-edit'){const game=ps4Games.find(item=>item.id===action.dataset.id);if(game)void openPs4GameEditor(game);return;}
     if(action.dataset.nativeAction==='ps4-delete'){void deletePs4Game(action.dataset.id);return;}
+    if(action.dataset.nativeAction==='ps4-folder'){nativePs4Folder=action.dataset.folder||'all';renderNativeUI();return;}
     if(action.dataset.nativeAction==='select-folder'){
       currentFolder=action.dataset.folder||'Todos los archivos';
       switchNativeView('files');
@@ -139,7 +141,9 @@ function renderNativeUI() {
     $('#native-count').textContent=shown.length+' enlace'+(shown.length===1?'':'s')+' guardado'+(shown.length===1?'':'s');
     $('#native-links-list').innerHTML=shown.length?shown.map(link=>'<article class="native-card"><div class="native-file-icon">↗</div><div class="native-card-main"><h2 class="native-card-title">'+esc(link.title)+'</h2><a class="native-link-url" href="'+esc(link.url)+'" target="_blank" rel="noopener noreferrer">'+esc(link.url)+'</a><div class="native-card-meta">'+(link.is_private?'<span class="native-private">🔒 Solo vos</span>':'<span>🌐 Público</span>')+'</div></div><div class="native-card-actions"><button class="native-action primary-action" data-native-action="open-link" data-id="'+esc(link.id)+'" type="button">Abrir enlace</button>'+((ownerMode||(uploaderMode&&link.created_by===currentUser?.id))?'<button class="native-action danger-action" data-native-action="delete-link" data-id="'+esc(link.id)+'" type="button">× Eliminar</button>':'')+'</div></article>').join(''):nativeEmpty('Todavía no hay enlaces','Guardá uno y lo vas a encontrar aquí.','↗');
   } else if(nativeActiveView==='ps4') {
-    const shown=ps4Games.filter(game=>(!game.is_private||ownerMode||game.created_by===currentUser?.id||game.allowed_user_ids?.includes(currentUser?.id))&&(game.title+' '+game.description+' '+game.features).toLowerCase().includes(nativeSearch));
+    const visibleFolders=ps4GameFolders.filter(folder=>!folder.is_private||ownerMode||folder.created_by===currentUser?.id||folder.allowed_user_ids?.includes(currentUser?.id));
+    $('#native-ps4-folders').innerHTML='<button class="native-game-folder '+(nativePs4Folder==='all'?'active':'')+'" data-native-action="ps4-folder" data-folder="all" type="button">Todos</button>'+visibleFolders.map(folder=>'<button class="native-game-folder '+(nativePs4Folder===folder.id?'active':'')+'" data-native-action="ps4-folder" data-folder="'+esc(folder.id)+'" type="button">'+(folder.is_private?'🔒 ':'')+esc(folder.name)+'</button>').join('');
+    const shown=ps4Games.filter(game=>(nativePs4Folder==='all'||game.folder_id===nativePs4Folder)&&(!game.is_private||ownerMode||game.created_by===currentUser?.id||game.allowed_user_ids?.includes(currentUser?.id))&&(game.title+' '+game.description+' '+game.features).toLowerCase().includes(nativeSearch));
     $('#native-count').textContent=shown.length+' juego'+(shown.length===1?'':'s');
     $('#native-ps4-list').innerHTML=shown.length?shown.map(game=>'<article class="native-game-card"><button class="native-game-cover" data-native-action="ps4-details" data-id="'+esc(game.id)+'" type="button">'+(game.cover_image?'<img src="'+esc(game.cover_image)+'" alt="Portada de '+esc(game.title)+'">':'<span>PS4</span>')+'</button><h2>'+esc(game.title)+'</h2><div class="native-game-actions"><button class="native-action primary-action" data-native-action="ps4-download" data-id="'+esc(game.id)+'" type="button">↓ Descargar</button><button class="native-action" data-native-action="ps4-share" data-id="'+esc(game.id)+'" type="button">↗ Compartir</button>'+((ownerMode||game.created_by===currentUser?.id)?'<button class="native-action" data-native-action="ps4-edit" data-id="'+esc(game.id)+'" type="button">Editar</button><button class="native-action danger-action" data-native-action="ps4-delete" data-id="'+esc(game.id)+'" type="button">Eliminar</button>':'')+'</div></article>').join(''):nativeEmpty('Todavía no hay juegos','Los juegos que agregues aparecerán aquí.','🎮');
   }
