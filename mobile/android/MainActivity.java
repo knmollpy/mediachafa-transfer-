@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(DownloadLocationPlugin.class);
         registerPlugin(ExternalLinkPlugin.class);
+        registerPlugin(MediaFtpPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
