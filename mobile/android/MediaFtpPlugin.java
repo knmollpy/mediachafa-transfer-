@@ -6,6 +6,7 @@ import android.os.Build;
 import androidx.activity.result.ActivityResult;
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.*;
+import org.apache.ftpserver.FtpServer;
 import org.apache.commons.net.ftp.*;
 import org.apache.commons.net.ftp.FTPSClient;
 import java.io.*;
