@@ -153,6 +153,7 @@
     let libraryRealtimeChannel = null;
     let libraryRefreshTimer = null;
     let libraryPollTimer = null;
+    let realtimeFallbackTimer = null;
     const $ = selector => document.querySelector(selector);
     const getCapacity = () => r2Available ? MAX_BYTES : 1024 * 1024 * 1024;
     function updateDeviceMode() {
@@ -381,7 +382,8 @@ async function loadGoogleDriveStatus() {
       await loadLibrary();
       await Promise.all([loadLinks(), loadPreferences(), loadPs4Catalog()]);
       switchView('files');
-      startLibraryRealtime();
+      if(isNativeApp)setNativeSyncStatus('Datos cargados · conectando en vivo…');
+      await startLibraryRealtime();
       if(isNativeApp)initializeNativeState();
     }
 
@@ -402,7 +404,7 @@ async function loadGoogleDriveStatus() {
         if (username === OWNER_USER) {
           const {data, error} = await client.auth.signInWithPassword({email:OWNER_EMAIL, password});
           if (error) throw error;
-          if ((data.user?.email || '').toLowerCase() !== OWNER_EMAIL || data.user?.is_anonymous) { await client.auth.signOut(); throw new Error('Esta cuenta no tiene acceso de dueño.'); }
+          if ((data.user?.email || '').toLowerCase() !== OWNER_EMAIL || data.user?.is_anonymous) { await client.auth.signOut({scope:'local'}); throw new Error('Esta cuenta no tiene acceso de dueño.'); }
           await enterLibrary(true, data.user);
         } else {
           const response = await fetch(`${SUPABASE_URL}/functions/v1/create-uploader`, {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({action:'login',username,password})});
@@ -421,7 +423,7 @@ async function loadGoogleDriveStatus() {
       if(uploadJobs.some(job=>job.status==='uploading')){toast('Esperá a que terminen las subidas antes de cerrar sesión.');return;}
       uploadJobs=[];
       stopLibraryRealtime();
-      if (ownerMode) await client.auth.signOut();
+      if (ownerMode) await client.auth.signOut({scope:'local'});
       ownerMode = false; uploaderMode = false; currentUser = null; files = []; links = []; ps4Games = []; ps4GameFolders = [];
       $('#app').classList.add('hidden'); $('#login').classList.remove('hidden');
       $('#login-form').reset(); $('#login-error').textContent = '';
@@ -434,7 +436,8 @@ async function loadGoogleDriveStatus() {
         client.from('media_files').select('id,storage_path,file_name,file_type,size_bytes,description,preview_image,folder,created_at,created_by,is_private,allowed_user_ids').order('created_at', {ascending:false}),
         client.from('media_folders').select('name,created_by,is_private,allowed_user_ids').order('name')
       ]);
-      if(fileResult.error||folderResult.error){$('#file-list').innerHTML=`<div class="empty"><div class="empty-icon">!</div><h3>No se pudo conectar con la biblioteca</h3><p>${esc((fileResult.error||folderResult.error).message)}</p></div>`;return;}
+      if(fileResult.error||folderResult.error){const error=fileResult.error||folderResult.error;$('#file-list').innerHTML=`<div class="empty"><div class="empty-icon">!</div><h3>No se pudo conectar con la biblioteca</h3><p>${esc(error.message)}</p></div>`;if(isNativeApp){setNativeLoadError('library','Archivos/carpetas: '+error.message);setNativeSyncStatus('Error al cargar datos');}return;}
+      if(isNativeApp)setNativeLoadError('library','');
       folderRecords=(folderResult.data||[]).map(row=>({name:row.name,createdBy:row.created_by,isPrivate:Boolean(row.is_private),allowedUserIds:row.allowed_user_ids||[]}));
       files=(fileResult.data||[]).map(row=>({id:row.id,path:row.storage_path,name:row.file_name,type:row.file_type,createdBy:row.created_by,mimeType:inferMime(row.file_name),size:Number(row.size_bytes),description:row.description||'',previewImage:row.preview_image||null,folder:row.folder||'Sin carpeta',isPrivate:Boolean(row.is_private),allowedUserIds:row.allowed_user_ids||[],date:new Intl.DateTimeFormat('es-AR').format(new Date(row.created_at))}));
       folders=['Todos los archivos',...new Set(['Sin carpeta',...folderRecords.map(row=>row.name)])];
@@ -446,22 +449,27 @@ async function loadGoogleDriveStatus() {
     function stopLibraryRealtime() {
       if(libraryRefreshTimer)clearTimeout(libraryRefreshTimer);
       if(libraryPollTimer)clearInterval(libraryPollTimer);
-      libraryRefreshTimer=null;libraryPollTimer=null;
+      if(realtimeFallbackTimer)clearTimeout(realtimeFallbackTimer);
+      libraryRefreshTimer=null;libraryPollTimer=null;realtimeFallbackTimer=null;
       if(libraryRealtimeChannel){void client.removeChannel(libraryRealtimeChannel);libraryRealtimeChannel=null;}
     }
-    function startLibraryRealtime() {
+    async function startLibraryRealtime() {
       stopLibraryRealtime();
+      try{const {data:{session}}=await client.auth.getSession();if(session?.access_token)await client.realtime.setAuth(session.access_token);}
+      catch{if(isNativeApp)setNativeSyncStatus('Datos cargados · sincronización periódica');}
       const refreshFiles=()=>{if(libraryRefreshTimer)clearTimeout(libraryRefreshTimer);libraryRefreshTimer=setTimeout(()=>{if(currentUser)void loadLibrary();},220);};
       const refreshLinks=()=>{if(libraryRefreshTimer)clearTimeout(libraryRefreshTimer);libraryRefreshTimer=setTimeout(()=>{if(currentUser){void loadLibrary();void loadLinks();}},220);};
       const refreshPs4=()=>{if(libraryRefreshTimer)clearTimeout(libraryRefreshTimer);libraryRefreshTimer=setTimeout(()=>{if(currentUser)void loadPs4Catalog();},220);};
+      let realtimeConnected=false;
       libraryRealtimeChannel=client.channel('mediachafa-live-library')
         .on('postgres_changes',{event:'*',schema:'public',table:'media_files'},refreshFiles)
         .on('postgres_changes',{event:'*',schema:'public',table:'media_folders'},refreshFiles)
         .on('postgres_changes',{event:'*',schema:'public',table:'media_links'},refreshLinks)
         .on('postgres_changes',{event:'*',schema:'public',table:'ps4_games'},refreshPs4)
         .on('postgres_changes',{event:'*',schema:'public',table:'ps4_game_folders'},refreshPs4)
-        .subscribe(status=>{if(isNativeApp)setNativeSyncStatus(status==='SUBSCRIBED'?'Conectada en vivo':'Sincronizando…');});
-      libraryPollTimer=setInterval(()=>{if(currentUser&&!document.hidden){void loadLibrary();void loadLinks();void loadPs4Catalog();}},45000);
+        .subscribe(status=>{if(!isNativeApp)return;if(status==='SUBSCRIBED'){realtimeConnected=true;if(realtimeFallbackTimer)clearTimeout(realtimeFallbackTimer);realtimeFallbackTimer=null;setNativeSyncStatus('Conectada en vivo');renderNativeUI();}else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED')setNativeSyncStatus('Sin vivo · sincronización periódica');else setNativeSyncStatus('Conectando actualizaciones…');});
+      if(isNativeApp)realtimeFallbackTimer=setTimeout(()=>{if(!realtimeConnected)setNativeSyncStatus('Sin vivo · sincronización periódica');},12000);
+      libraryPollTimer=setInterval(()=>{if(currentUser&&!document.hidden){void loadLibrary();void loadLinks();void loadPs4Catalog();}},isNativeApp?20000:45000);
     }
     document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUser){void loadLibrary();void loadLinks();void loadPs4Catalog();}});
 
@@ -545,10 +553,11 @@ async function loadGoogleDriveStatus() {
       const pageSize=500,all=[];
       for(let start=0;;start+=pageSize){
         const {data,error}=await client.from('media_links').select('id,title,url,created_by,created_at,is_private').order('created_at',{ascending:false}).range(start,start+pageSize-1);
-        if(error){$('#links-list').innerHTML=`<div class="empty"><div class="empty-icon">!</div><h3>No se pudieron cargar los enlaces</h3><p>${esc(error.message)}</p></div>`;return;}
+        if(error){$('#links-list').innerHTML=`<div class="empty"><div class="empty-icon">!</div><h3>No se pudieron cargar los enlaces</h3><p>${esc(error.message)}</p></div>`;if(isNativeApp){setNativeLoadError('links','Enlaces: '+error.message);setNativeSyncStatus('Error al cargar datos');}return;}
         all.push(...(data||[]));if(!data||data.length<pageSize)break;
       }
       links = all;
+      if(isNativeApp)setNativeLoadError('links','');
       renderLinks();
       if(isNativeApp)renderNativeUI();
     }
@@ -634,7 +643,8 @@ async function loadGoogleDriveStatus() {
         client.from('ps4_games').select('*').order('created_at',{ascending:false}),
         client.from('ps4_game_folders').select('*').order('name')
       ]);
-      if(gamesError||foldersError){const error=gamesError||foldersError;$('#ps4-games-list').innerHTML='<div class="empty"><div class="empty-icon">!</div><h3>No se pudo cargar Juegos PS4</h3><p>'+esc(error.message)+'</p></div>';return;}
+      if(gamesError||foldersError){const error=gamesError||foldersError;$('#ps4-games-list').innerHTML='<div class="empty"><div class="empty-icon">!</div><h3>No se pudo cargar Juegos PS4</h3><p>'+esc(error.message)+'</p></div>';if(isNativeApp){setNativeLoadError('ps4','Juegos PS4: '+error.message);setNativeSyncStatus('Error al cargar datos');}return;}
+      if(isNativeApp)setNativeLoadError('ps4','');
       ps4Games=games||[];ps4GameFolders=foldersData||[];renderPs4Catalog();if(isNativeApp)renderNativeUI();
     }
     function renderPs4Catalog() {
@@ -1099,7 +1109,7 @@ async function loadGoogleDriveStatus() {
       if (error || !data.session?.user) return;
       const user = data.session.user;
       if ((user.email || '').toLowerCase() === OWNER_EMAIL && !user.is_anonymous) await enterLibrary(true, user);
-      else { const {data:account} = await client.from('media_users').select('username').eq('id',user.id).maybeSingle(); if (account) await enterLibrary(false,user,true); else await client.auth.signOut(); }
+      else { const {data:account} = await client.from('media_users').select('username').eq('id',user.id).maybeSingle(); if (account) await enterLibrary(false,user,true); else await client.auth.signOut({scope:'local'}); }
     });
     if ('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
   </script>
