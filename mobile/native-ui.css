@@ -192,6 +192,9 @@ body.native-app {
 .native-tab { font-size: 9px; }
 .native-link-url { display: block; margin-top: 4px; overflow-wrap: anywhere; color: #8fdbff; font-size: 10px; line-height: 1.4; text-decoration: none; }
 .native-game-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 11px; }
+.native-game-folders { display: flex; gap: 7px; margin-bottom: 12px; overflow: auto; padding-bottom: 4px; }
+.native-game-folder { flex: 0 0 auto; min-height: 36px; padding: 7px 11px; border: 1px solid var(--glass-line); border-radius: 999px; color: #aab8df; background: rgba(14,21,54,.82); font-size: 10px; font-weight: 700; }
+.native-game-folder.active { color: #c6efff; border-color: rgba(103,234,255,.4); background: rgba(48,86,156,.38); }
 .native-game-card { min-width: 0; overflow: hidden; padding: 9px; border: 1px solid var(--glass-line); border-radius: 17px; background: var(--glass); }
 .native-game-cover { display: grid; width: 100%; aspect-ratio: 3/4; place-items: center; padding: 0; overflow: hidden; border: 0; border-radius: 11px; color: #dce5ff; background: linear-gradient(145deg,#19285b,#111632); font-size: 24px; }
 .native-game-cover img { width: 100%; height: 100%; object-fit: contain; background: #11182d; }
