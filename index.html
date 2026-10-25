@@ -62,7 +62,7 @@
     @media(max-width:600px){
       .topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"brand actions" "nav nav";gap:9px 10px;padding:10px 12px;min-height:0}
       .topbar>.brand{grid-area:brand;font-size:15px;gap:8px;min-width:0}.topbar .brand-mark{width:34px;height:34px;flex:0 0 auto}
-      .topnav{grid-area:nav;display:grid;grid-template-columns:1fr 1fr;order:initial;width:100%;margin:0;padding:4px;gap:4px;border-radius:11px;background:#f1f6f2}
+      .topnav{grid-area:nav;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));order:initial;width:100%;margin:0;padding:4px;gap:4px;border-radius:11px;background:#f1f6f2}
       .topnav .navitem{display:block;min-height:40px;padding:8px 10px;font-size:12px}
       .topright{grid-area:actions;display:flex;gap:4px;margin:0;min-width:0;justify-content:flex-end}.topright .avatar,.topright .role-chip{display:none}.topright .theme-toggle{padding:7px 8px;font-size:11px}.topright .theme-label{display:none}.topright .logout{font-size:11px;padding:7px 2px;white-space:nowrap}.topright #users-button{padding:7px 5px;font-size:11px;white-space:nowrap}
       .wrap{padding:17px 11px calc(30px + env(safe-area-inset-bottom))}.welcome{display:block;margin-bottom:15px}.welcome h1{font-size:26px}.welcome p{font-size:13px}.date{display:none}
@@ -76,6 +76,10 @@
       .toast{left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));transform:none;text-align:center}
     }
     @media(pointer:coarse){button,a,.folder{touch-action:manipulation}button{min-height:40px}}
+    .ps4-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px;align-items:start}.ps4-sidebar{padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}.ps4-folder-list{display:grid;gap:4px}.ps4-folder-row{display:flex;gap:5px;align-items:center}.ps4-folder-row .folder{min-width:0}.ps4-folder-edit,.ps4-folder-delete{width:34px;height:34px;flex:0 0 auto;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--muted)}.ps4-game-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:13px}.ps4-game-card{min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:13px;background:var(--paper);box-shadow:var(--shadow)}.ps4-game-cover-button{display:block;width:100%;padding:0;border:0;background:#11182d;aspect-ratio:3/4}.ps4-game-cover{display:block;width:100%;height:100%;object-fit:contain;background:#11182d}.ps4-game-cover-placeholder{display:grid;place-items:center;width:100%;height:100%;color:#b7c2ef;background:linear-gradient(145deg,#172041,#0b1025);font:800 23px Manrope}.ps4-game-copy{padding:10px}.ps4-game-title{margin:0;overflow-wrap:anywhere;font-size:12px;line-height:1.35}.ps4-game-folder{margin-top:5px;color:var(--muted);font-size:10px}.ps4-game-actions{display:flex;gap:6px;padding:0 10px 10px}.ps4-game-actions button{min-width:0;flex:1;min-height:37px;padding:7px 8px;font-size:10px}.ps4-game-details{display:grid;grid-template-columns:minmax(90px,150px) minmax(0,1fr);gap:15px}.ps4-game-details img{width:100%;max-height:220px;object-fit:contain;border-radius:8px;background:#11182d}.ps4-game-details h3{margin:0 0 8px;font:800 18px Manrope}.ps4-game-description,.ps4-game-features{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);font-size:12px;line-height:1.55}.ps4-game-features{margin-top:12px;color:var(--ink)}
+    :root[data-theme="dark"] .ps4-game-card,:root[data-theme="dark"] .ps4-sidebar{background:#1b2720;border-color:#35453b}:root[data-theme="dark"] .ps4-game-folder{color:#a8b5ac}
+    @media(max-width:860px){.ps4-layout{grid-template-columns:1fr}.ps4-sidebar{min-height:0}.ps4-folder-list{display:flex;overflow:auto;gap:6px}.ps4-folder-row{flex:0 0 auto}.ps4-game-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}}
+    @media(max-width:600px){#ps4-panel .content-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}#ps4-panel .content-head>.content-title{grid-column:1/-1}#ps4-search{grid-column:1/-1;width:100%}#add-ps4-game{grid-column:1/-1}.ps4-game-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ps4-game-details{grid-template-columns:1fr}.ps4-game-details img{max-height:240px;justify-self:center}.ps4-game-card{border-radius:11px}.ps4-game-copy{padding:8px}.ps4-game-actions{padding:0 8px 8px;gap:5px}.ps4-game-actions button{font-size:9px;padding:6px}}
   </style>
 </head>
 <body>
@@ -96,7 +100,7 @@
     </div>
   </section>
   <main id="app" class="app hidden">
-    <header class="topbar"><div class="brand"><img class="brand-mark" src="/icons/app.svg" alt=""> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="theme-toggle" id="music-toggle" type="button" aria-label="Activar música" aria-pressed="false" title="Activar música">♫ Música</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
+    <header class="topbar"><div class="brand"><img class="brand-mark" src="/icons/app.svg" alt=""> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button><button class="navitem" id="ps4-tab" type="button">Juegos PS4</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="theme-toggle" id="music-toggle" type="button" aria-label="Activar música" aria-pressed="false" title="Activar música">♫ Música</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Activar modo oscuro" aria-pressed="false" title="Cambiar tema"><span class="theme-icon">☾</span><span class="theme-label">Oscuro</span></button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="welcome-actions"><a class="install-mobile-option compact" href="/downloads/MediaChafa.zip" download="MediaChafa.zip"><span aria-hidden="true">↓</span> Descargar app móvil (.zip)</a><div class="date" id="today"></div></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#4285f4">◉</span> Google Drive compartido</div><div class="storage-amount"><strong id="drive-used-label">—</strong> de <strong id="drive-capacity-label">200 GB</strong></div></div><div class="bar"><div class="bar-fill" id="drive-bar-fill"></div></div><div class="storage-foot"><span id="drive-remaining-label">Cupo compartido con Gmail y Google Fotos</span></div></section><section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#43a66c">◉</span> Cloudflare R2</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong id="r2-capacity-label">10 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">10 GB disponibles</span></div></section>
@@ -104,6 +108,7 @@
         <section class="content"><div class="content-head"><div class="content-title" id="section-title">Todos los archivos</div><input class="search" id="search" placeholder="⌕  Buscar archivos…"><select class="select" id="type-filter"><option value="all">Todos los tipos</option><option value="apk">APK</option><option value="pkg">PKG</option><option value="pdf">PDF</option><option value="zip">ZIP</option><option value="rar">RAR</option><option value="other">Otros</option></select><button id="add-file" class="add-btn">＋ Subir archivo</button></div><div id="file-list" class="file-list"></div><div id="guest-note" class="notice hidden">Estás en modo invitado. Podés descargar los archivos y leer sus descripciones. Los colaboradores también pueden editar la descripción de los archivos que subieron.</div></section>
       </div>
       <section class="content hidden" id="links-panel"><div class="content-head"><div class="content-title">Enlaces guardados</div><input class="search" id="links-search" placeholder="⌕  Buscar enlaces…"><button id="all-links" class="navitem active" type="button">Todos</button><button id="own-links" class="navitem" type="button">Propios</button><button id="add-link" class="add-btn">＋ Guardar enlace</button></div><div id="links-list" class="file-list"></div></section>
+      <section class="content hidden" id="ps4-panel"><div class="content-head"><div class="content-title">Juegos PS4</div><input class="search" id="ps4-search" placeholder="⌕ Buscar juegos…"><button id="add-ps4-game" class="add-btn hidden" type="button">＋ Agregar juego</button></div><div class="ps4-layout"><aside class="ps4-sidebar"><div class="side-heading">Carpetas <button id="new-ps4-folder" type="button" title="Crear carpeta de juegos">+</button></div><div class="ps4-folder-list" id="ps4-folder-list"></div></aside><div class="ps4-game-grid" id="ps4-games-list"></div></div></section>
     </div>
   </main>
   <audio id="background-music" preload="none" loop src="https://mediachafa-transfer.vercel.app/background.mp3"></audio>
@@ -131,6 +136,10 @@
     let currentView = 'files';
     let currentLinkFilter = 'all';
     let links = [];
+    let ps4Games = [];
+    let ps4GameFolders = [];
+    let currentPs4Folder = 'all';
+    let ps4Search = '';
     let uploadJobs = [];
     let wallpaperPath = null;
     let backgroundImageSize = 0;
@@ -353,6 +362,8 @@ async function loadGoogleDriveStatus() {
       $('#users-button').classList.toggle('hidden', !ownerMode);
       $('#new-folder').classList.toggle('hidden', !ownerMode && !uploaderMode);
       $('#add-link').classList.toggle('hidden', !ownerMode && !uploaderMode);
+      $('#add-ps4-game').classList.toggle('hidden', !ownerMode && !uploaderMode);
+      $('#new-ps4-folder').classList.toggle('hidden', !ownerMode && !uploaderMode);
       uploadJobs=[];
       $('#customize-button').classList.toggle('hidden', !ownerMode && !uploaderMode);
       $('#own-links').classList.toggle('hidden', !currentUser);
@@ -368,7 +379,7 @@ async function loadGoogleDriveStatus() {
       $('#guest-note').classList.toggle('hidden', ownerMode);
       $('#today').textContent = new Intl.DateTimeFormat('es-AR', {dateStyle:'full'}).format(new Date());
       await loadLibrary();
-      await Promise.all([loadLinks(), loadPreferences()]);
+      await Promise.all([loadLinks(), loadPreferences(), loadPs4Catalog()]);
       switchView('files');
       startLibraryRealtime();
       if(isNativeApp)initializeNativeState();
@@ -411,7 +422,7 @@ async function loadGoogleDriveStatus() {
       uploadJobs=[];
       stopLibraryRealtime();
       if (ownerMode) await client.auth.signOut();
-      ownerMode = false; uploaderMode = false; currentUser = null; files = []; links = [];
+      ownerMode = false; uploaderMode = false; currentUser = null; files = []; links = []; ps4Games = []; ps4GameFolders = [];
       $('#app').classList.add('hidden'); $('#login').classList.remove('hidden');
       $('#login-form').reset(); $('#login-error').textContent = '';
       currentFolder = 'Todos los archivos';
@@ -442,14 +453,17 @@ async function loadGoogleDriveStatus() {
       stopLibraryRealtime();
       const refreshFiles=()=>{if(libraryRefreshTimer)clearTimeout(libraryRefreshTimer);libraryRefreshTimer=setTimeout(()=>{if(currentUser)void loadLibrary();},220);};
       const refreshLinks=()=>{if(libraryRefreshTimer)clearTimeout(libraryRefreshTimer);libraryRefreshTimer=setTimeout(()=>{if(currentUser){void loadLibrary();void loadLinks();}},220);};
+      const refreshPs4=()=>{if(libraryRefreshTimer)clearTimeout(libraryRefreshTimer);libraryRefreshTimer=setTimeout(()=>{if(currentUser)void loadPs4Catalog();},220);};
       libraryRealtimeChannel=client.channel('mediachafa-live-library')
         .on('postgres_changes',{event:'*',schema:'public',table:'media_files'},refreshFiles)
         .on('postgres_changes',{event:'*',schema:'public',table:'media_folders'},refreshFiles)
         .on('postgres_changes',{event:'*',schema:'public',table:'media_links'},refreshLinks)
+        .on('postgres_changes',{event:'*',schema:'public',table:'ps4_games'},refreshPs4)
+        .on('postgres_changes',{event:'*',schema:'public',table:'ps4_game_folders'},refreshPs4)
         .subscribe(status=>{if(isNativeApp)setNativeSyncStatus(status==='SUBSCRIBED'?'Conectada en vivo':'Sincronizando…');});
-      libraryPollTimer=setInterval(()=>{if(currentUser&&!document.hidden){void loadLibrary();void loadLinks();}},45000);
+      libraryPollTimer=setInterval(()=>{if(currentUser&&!document.hidden){void loadLibrary();void loadLinks();void loadPs4Catalog();}},45000);
     }
-    document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUser){void loadLibrary();void loadLinks();}});
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden&&currentUser){void loadLibrary();void loadLinks();void loadPs4Catalog();}});
 
     function render() {
       const used=files.filter(file=>!isGoogleFile(file)).reduce((sum,file)=>sum+file.size,0)+backgroundImageSize;
@@ -514,15 +528,18 @@ async function loadGoogleDriveStatus() {
     function switchView(view) {
       if(view==='uploads')view='files';
       currentView = view;
-      const filesActive=view==='files',linksActive=view==='links';
+      const filesActive=view==='files',linksActive=view==='links',ps4Active=view==='ps4';
       $('#files-layout').classList.toggle('hidden',!filesActive);
       $('.storage').classList.toggle('hidden',!filesActive);
       $('#links-panel').classList.toggle('hidden',!linksActive);
+      $('#ps4-panel').classList.toggle('hidden',!ps4Active);
       $('#files-tab').classList.toggle('active',filesActive);
       $('#links-tab').classList.toggle('active',linksActive);
+      $('#ps4-tab').classList.toggle('active',ps4Active);
     }
     $('#files-tab').onclick=()=>switchView('files');
     $('#links-tab').onclick=()=>switchView('links');
+    $('#ps4-tab').onclick=()=>{switchView('ps4');void loadPs4Catalog();};
 
     async function loadLinks() {
       const pageSize=500,all=[];
@@ -575,6 +592,100 @@ async function loadGoogleDriveStatus() {
       });
     }
     $('#add-link').onclick=()=>openLinkEditor();
+
+    function directDownloadUrl(rawUrl) {
+      const url=new URL(rawUrl);
+      if(url.hostname==='drive.google.com'||url.hostname==='docs.google.com'){
+        const id=url.pathname.match(/\/file\/d\/([^/]+)/)?.[1]||url.searchParams.get('id');
+        if(id)return `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}`;
+      }
+      if(url.hostname==='dropbox.com'||url.hostname.endsWith('.dropbox.com'))url.searchParams.set('dl','1');
+      if(url.hostname==='1drv.ms'||url.hostname==='onedrive.live.com')url.searchParams.set('download','1');
+      return url.href;
+    }
+    async function sharePs4Game(game) {
+      const direct=directDownloadUrl(game.download_url);
+      modal('Compartir descarga','<p class="sub">Al abrir este enlace, el proveedor intentará descargar el archivo directamente. Enlaces a páginas web pueden mostrar esa página si el servidor no ofrece descarga directa.</p><label class="field-label">Enlace para compartir</label><input class="field" id="ps4-share-link" readonly value="'+esc(direct)+'">','Copiar enlace',async root=>{const field=root.querySelector('#ps4-share-link');try{await navigator.clipboard.writeText(field.value);toast('Enlace de descarga copiado.');root.replaceChildren();}catch{field.focus();field.select();toast('Copiá el enlace seleccionado.');}});
+    }
+    async function downloadPs4Game(id) {
+      const game=ps4Games.find(item=>item.id===id);if(!game)return;
+      if(!confirm(`¿Empezar la descarga directa de “${game.title}”?`))return;
+      const url=directDownloadUrl(game.download_url);
+      const locationPlugin=window.Capacitor?.Plugins?.DownloadLocation;
+      if(isNativeApp&&locationPlugin){try{const suffix=new URL(game.download_url).pathname.match(/\.[a-z0-9]{1,8}$/i)?.[0]||'.pkg';const result=await locationPlugin.saveUrlFile({url,fileName:game.title.replace(/[\\/:*?"<>|]/g,'_')+suffix});if(!result?.cancelled)toast('Descarga guardada en la ubicación elegida.');}catch(error){toast('No se pudo descargar: '+(error.message||error));}return;}
+      const anchor=document.createElement('a');anchor.href=url;anchor.target='_blank';anchor.rel='noopener noreferrer';anchor.download='';document.body.append(anchor);anchor.click();anchor.remove();
+    }
+    function showPs4GameDetails(id) {
+      const game=ps4Games.find(item=>item.id===id);if(!game)return;
+      modal(esc(game.title),`<div class="ps4-game-details">${game.cover_image?`<img src="${esc(game.cover_image)}" alt="Portada de ${esc(game.title)}">`:'<div class="ps4-game-cover-placeholder">PS4</div>'}<div><p class="ps4-game-description">${esc(game.description||'Sin descripción.')}</p>${game.features?`<h3>Características</h3><div class="ps4-game-features">${esc(game.features)}</div>`:''}</div></div>`,'Cerrar',root=>root.replaceChildren());
+      $('#modal-root .submit').className='secondary';
+    }
+    async function makePs4Cover(file) {
+      if(!file)return null;
+      if(!file.type.startsWith('image/'))throw new Error('Elegí una imagen válida para la portada.');
+      if(file.size>20*1024*1024)throw new Error('La imagen original no puede superar 20 MB.');
+      const bitmap=await createImageBitmap(file),scale=Math.min(420/bitmap.width,560/bitmap.height,1),canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+      const ctx=canvas.getContext('2d');ctx.fillStyle='#11182d';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close?.();
+      const image=canvas.toDataURL('image/jpeg',.82);if(image.length>490000)throw new Error('No se pudo optimizar la imagen. Elegí una imagen más liviana.');return image;
+    }
+    async function loadPs4Catalog() {
+      const [{data:games,error:gamesError},{data:foldersData,error:foldersError}]=await Promise.all([
+        client.from('ps4_games').select('*').order('created_at',{ascending:false}),
+        client.from('ps4_game_folders').select('*').order('name')
+      ]);
+      if(gamesError||foldersError){const error=gamesError||foldersError;$('#ps4-games-list').innerHTML='<div class="empty"><div class="empty-icon">!</div><h3>No se pudo cargar Juegos PS4</h3><p>'+esc(error.message)+'</p></div>';return;}
+      ps4Games=games||[];ps4GameFolders=foldersData||[];renderPs4Catalog();if(isNativeApp)renderNativeUI();
+    }
+    function renderPs4Catalog() {
+      if(!$('#ps4-games-list'))return;
+      const visibleFolders=ps4GameFolders.filter(folder=>!folder.is_private||ownerMode||folder.created_by===currentUser?.id||folder.allowed_user_ids?.includes(currentUser?.id));
+      $('#ps4-folder-list').innerHTML='<button class="folder '+(currentPs4Folder==='all'?'active':'')+'" data-ps4-folder="all" type="button">Todos los juegos</button>'+visibleFolders.map(folder=>`<div class="ps4-folder-row"><button class="folder ${currentPs4Folder===folder.id?'active':''}" data-ps4-folder="${esc(folder.id)}" type="button">${folder.is_private?'🔒 ':''}${esc(folder.name)}</button>${ownerMode||folder.created_by===currentUser?.id?`<button class="ps4-folder-edit" data-ps4-folder-edit="${esc(folder.id)}" title="Editar carpeta">✎</button><button class="ps4-folder-delete" data-ps4-folder-delete="${esc(folder.id)}" title="Eliminar carpeta">×</button>`:''}</div>`).join('');
+      $('#ps4-folder-list').querySelectorAll('[data-ps4-folder]').forEach(button=>button.onclick=()=>{currentPs4Folder=button.dataset.ps4Folder;renderPs4Catalog();});
+      $('#ps4-folder-list').querySelectorAll('[data-ps4-folder-edit]').forEach(button=>button.onclick=()=>editPs4Folder(button.dataset.ps4FolderEdit));
+      $('#ps4-folder-list').querySelectorAll('[data-ps4-folder-delete]').forEach(button=>button.onclick=()=>deletePs4Folder(button.dataset.ps4FolderDelete));
+      const query=($('#ps4-search')?.value||'').trim().toLowerCase();
+      const shown=ps4Games.filter(game=>{
+        const folder=ps4GameFolders.find(item=>item.id===game.folder_id);
+        const canSee=!game.is_private||ownerMode||game.created_by===currentUser?.id||game.allowed_user_ids?.includes(currentUser?.id);
+        const folderVisible=!folder||!folder.is_private||ownerMode||folder.created_by===currentUser?.id||folder.allowed_user_ids?.includes(currentUser?.id);
+        return canSee&&folderVisible&&(currentPs4Folder==='all'||game.folder_id===currentPs4Folder)&&`${game.title} ${game.description} ${game.features}`.toLowerCase().includes(query);
+      });
+      $('#ps4-games-list').innerHTML=shown.length?shown.map(game=>{
+        const canManage=ownerMode||game.created_by===currentUser?.id;
+        const folder=ps4GameFolders.find(item=>item.id===game.folder_id);
+        return `<article class="ps4-game-card"><button class="ps4-game-cover-button" data-ps4-details="${esc(game.id)}" type="button" aria-label="Ver detalles de ${esc(game.title)}">${game.cover_image?`<img class="ps4-game-cover" src="${esc(game.cover_image)}" alt="Portada de ${esc(game.title)}">`:'<span class="ps4-game-cover-placeholder">PS4</span>'}</button><div class="ps4-game-copy"><h2 class="ps4-game-title">${esc(game.title)}</h2><div class="ps4-game-folder">${esc(folder?.name||'Sin carpeta')}${game.is_private?' · 🔒 Privado':''}</div></div><div class="ps4-game-actions"><button class="primary" data-ps4-download="${esc(game.id)}" type="button">↓ Descargar</button><button class="share-btn" data-ps4-share="${esc(game.id)}" type="button">↗ Compartir</button>${canManage?`<button class="secondary" data-ps4-edit="${esc(game.id)}" type="button">Editar</button><button class="secondary" data-ps4-delete="${esc(game.id)}" type="button">Eliminar</button>`:''}</div></article>`;
+      }).join(''):'<div class="empty"><div class="empty-icon">🎮</div><h3>Sin juegos por ahora</h3><p>Agregá un juego con su portada y enlace de descarga.</p></div>';
+      $('#ps4-games-list').querySelectorAll('[data-ps4-details]').forEach(button=>button.onclick=()=>showPs4GameDetails(button.dataset.ps4Details));
+      $('#ps4-games-list').querySelectorAll('[data-ps4-download]').forEach(button=>button.onclick=()=>void downloadPs4Game(button.dataset.ps4Download));
+      $('#ps4-games-list').querySelectorAll('[data-ps4-share]').forEach(button=>button.onclick=()=>{const game=ps4Games.find(item=>item.id===button.dataset.ps4Share);if(game)void sharePs4Game(game);});
+      $('#ps4-games-list').querySelectorAll('[data-ps4-edit]').forEach(button=>button.onclick=()=>openPs4GameEditor(ps4Games.find(item=>item.id===button.dataset.ps4Edit)));
+      $('#ps4-games-list').querySelectorAll('[data-ps4-delete]').forEach(button=>button.onclick=()=>void deletePs4Game(button.dataset.ps4Delete));
+    }
+    async function openPs4GameEditor(game=null) {
+      const editing=Boolean(game);let accounts=[];try{accounts=await getSharingAccounts();}catch(error){toast(error.message);return;}
+      const folderOptions=ps4GameFolders.filter(folder=>ownerMode||folder.created_by===currentUser?.id).map(folder=>`<option value="${esc(folder.id)}" ${folder.id===game?.folder_id?'selected':''}>${esc(folder.name)}</option>`).join('');
+      modal(editing?'Editar juego PS4':'Agregar juego PS4',`<label class="field-label">Nombre</label><input class="field" id="ps4-title" maxlength="160" value="${esc(game?.title||'')}" placeholder="Título del juego"><label class="field-label">URL del archivo para descargar</label><input class="field" id="ps4-url" type="url" maxlength="2048" value="${esc(game?.download_url||'')}" placeholder="https://..."><label class="field-label">Carpeta</label><select class="field" id="ps4-folder"><option value="">Sin carpeta</option>${folderOptions}</select><label class="field-label">Portada (cualquier tamaño, se adapta automáticamente)</label><input class="field" id="ps4-cover" type="file" accept="image/*"><div class="notice" id="ps4-cover-current">${game?.cover_image?'La portada actual se conserva si no elegís otra.':'La portada se optimiza para mostrarse bien en el celular.'}</div><label class="field-label">Descripción</label><textarea class="field" id="ps4-description" rows="3" maxlength="2000">${esc(game?.description||'')}</textarea><label class="field-label">Características</label><textarea class="field" id="ps4-features" rows="4" maxlength="5000" placeholder="Versión, idioma, modo de juego…">${esc(game?.features||'')}</textarea>${privacyControls(accounts,game?.is_private,game?.allowed_user_ids||[])}`,'Guardar',async root=>{
+        const title=root.querySelector('#ps4-title').value.trim(),raw=root.querySelector('#ps4-url').value.trim();let url;
+        try{url=new URL(raw);if(!['http:','https:'].includes(url.protocol))throw new Error();}catch{toast('Ingresá una URL válida que empiece con http:// o https://.');return;}
+        if(!title){toast('Escribí el nombre del juego.');return;}
+        let cover=game?.cover_image||null;try{const selected=root.querySelector('#ps4-cover').files[0];if(selected)cover=await makePs4Cover(selected);}catch(error){toast(error.message);return;}
+        const payload={title,download_url:url.href,cover_image:cover,description:root.querySelector('#ps4-description').value.trim(),features:root.querySelector('#ps4-features').value.trim(),folder_id:root.querySelector('#ps4-folder').value||null,...readPrivacy(root),updated_at:new Date().toISOString()};
+        const result=editing?await client.from('ps4_games').update(payload).eq('id',game.id):await client.from('ps4_games').insert({...payload,created_by:currentUser.id});
+        if(result.error){toast('No se pudo guardar el juego: '+result.error.message);return;}root.replaceChildren();await loadPs4Catalog();toast(editing?'Juego actualizado.':'Juego agregado.');
+      });bindPrivacyControls($('#modal-root'));
+    }
+    async function createPs4Folder() {
+      let accounts=[];try{accounts=await getSharingAccounts();}catch(error){toast(error.message);return;}
+      modal('Crear carpeta de juegos','<label class="field-label">Nombre</label><input class="field" id="ps4-folder-name" maxlength="80" placeholder="Por ejemplo, Aventura">'+privacyControls(accounts),'Crear',async root=>{const name=root.querySelector('#ps4-folder-name').value.trim();if(!name){toast('Escribí un nombre para la carpeta.');return;}const {error}=await client.from('ps4_game_folders').insert({name,created_by:currentUser.id,...readPrivacy(root)});if(error){toast('No se pudo crear la carpeta: '+error.message);return;}root.replaceChildren();await loadPs4Catalog();});bindPrivacyControls($('#modal-root'));
+    }
+    async function editPs4Folder(id) {
+      const folder=ps4GameFolders.find(item=>item.id===id);if(!folder)return;let accounts=[];try{accounts=await getSharingAccounts();}catch(error){toast(error.message);return;}
+      modal('Editar carpeta','<label class="field-label">Nombre</label><input class="field" id="ps4-folder-name" maxlength="80" value="'+esc(folder.name)+'">'+privacyControls(accounts,folder.is_private,folder.allowed_user_ids||[]),'Guardar',async root=>{const name=root.querySelector('#ps4-folder-name').value.trim();if(!name){toast('El nombre no puede estar vacío.');return;}const {error}=await client.from('ps4_game_folders').update({name,...readPrivacy(root),updated_at:new Date().toISOString()}).eq('id',id);if(error){toast('No se pudo actualizar: '+error.message);return;}root.replaceChildren();await loadPs4Catalog();});bindPrivacyControls($('#modal-root'));
+    }
+    async function deletePs4Folder(id) {const folder=ps4GameFolders.find(item=>item.id===id);if(!folder||!confirm(`¿Eliminar la carpeta “${folder.name}”? Los juegos quedarán sin carpeta.`))return;const {error}=await client.from('ps4_game_folders').delete().eq('id',id);if(error){toast('No se pudo eliminar la carpeta: '+error.message);return;}if(currentPs4Folder===id)currentPs4Folder='all';await loadPs4Catalog();}
+    async function deletePs4Game(id) {const game=ps4Games.find(item=>item.id===id);if(!game||!confirm(`¿Eliminar “${game.title}”?`))return;const {error}=await client.from('ps4_games').delete().eq('id',id);if(error){toast('No se pudo eliminar: '+error.message);return;}await loadPs4Catalog();toast('Juego eliminado.');}
+    $('#add-ps4-game').onclick=()=>void openPs4GameEditor();$('#new-ps4-folder').onclick=()=>void createPs4Folder();$('#ps4-search').oninput=renderPs4Catalog;
 
     async function applyWallpaper(path) {
       wallpaperPath=typeof path==='string'&&path?path:null;
@@ -673,6 +784,20 @@ async function loadGoogleDriveStatus() {
     }
 
     async function downloadFile(file) {
+      const locationPlugin=window.Capacitor?.Plugins?.DownloadLocation;
+      if(isNativeApp&&locationPlugin&&isPrivateFile(file)){
+        try{const {data:{session}}=await client.auth.getSession();if(!session?.access_token)throw new Error('Iniciá sesión para descargar este archivo privado.');const route=isGoogleFile(file)?`${R2_WORKER_URL}/google/private/${encodeURIComponent(file.path.slice('gdrive://'.length))}`:`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`;const result=await locationPlugin.saveUrlFile({url:route,fileName:file.name,headers:{Authorization:`Bearer ${session.access_token}`}});if(!result?.cancelled)toast('Descarga guardada en la ubicación elegida.');}catch(error){toast('No se pudo descargar: '+(error.message||error));}return;
+      }
+      if(isNativeApp&&locationPlugin&&!isPrivateFile(file)){
+        try{
+          let url;
+          if(isGoogleFile(file))url=(await googleSignedUrl(file,false)).url;
+          else if(r2Available){const signed=await fetch(`${R2_WORKER_URL}/sign`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:file.path})});if(signed.ok)url=(await signed.json()).url;}
+          if(!url){const {data,error}=await client.storage.from(BUCKET).createSignedUrl(file.path,60*60,{download:true});if(error)throw error;url=data.signedUrl.startsWith('http')?data.signedUrl:SUPABASE_URL+data.signedUrl;}
+          const result=await locationPlugin.saveUrlFile({url,fileName:file.name});if(!result?.cancelled)toast('Descarga guardada en la ubicación elegida.');
+        }catch(error){toast('No se pudo descargar: '+(error.message||error));}
+        return;
+      }
       if(isPrivateFile(file)){
         try{
           const handlePromise=window.showSaveFilePicker?window.showSaveFilePicker({suggestedName:file.name}).catch(error=>{if(error.name==='AbortError')throw error;return null;}):null;
