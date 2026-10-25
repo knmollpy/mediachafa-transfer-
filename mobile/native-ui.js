@@ -16,6 +16,7 @@ function initializeNativeUI() {
         <img class="native-brand-icon" src="/icons/app.svg" alt="">
         <div class="native-brand-copy"><div class="native-kicker">Tu universo digital</div><div class="native-brand-name">MediaChafa</div></div>
         <div class="native-sync" id="native-sync-status">Conectando…</div>
+        <button class="native-logout" id="native-logout" type="button">Cerrar sesión</button>
       </div>
       <div class="native-hero">
         <div class="native-hero-title"><div class="native-eyebrow">Biblioteca cósmica</div><h1 class="native-title" id="native-title">Tus archivos</h1><p class="native-subtitle" id="native-subtitle">Todo tu contenido, en un solo lugar.</p></div>
@@ -41,6 +42,7 @@ function initializeNativeUI() {
       <button class="native-tab" data-native-view="dm" type="button"><span class="native-tab-icon">✉</span><span>DM</span></button>
     </nav>`;
   $('#app').append(nativeShell);
+  nativeShell.querySelector('#native-logout').addEventListener('click',()=>$('#logout').click());
   nativeShell.querySelector('#native-search').addEventListener('input',event=>{nativeSearch=event.target.value.trim().toLowerCase();renderNativeUI();});
   nativeShell.addEventListener('click',event=>{
     const tab=event.target.closest('[data-native-view]');
