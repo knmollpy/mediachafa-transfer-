@@ -23,6 +23,7 @@ function initializeNativeUI() {
       </div>
       <div class="native-search-wrap"><input class="native-search" id="native-search" type="search" placeholder="Buscar en tu biblioteca…" autocomplete="off"></div>
       <div class="native-count" id="native-count"></div>
+      <div class="native-load-error" id="native-load-error" hidden></div>
     </header>
     <main class="native-content" id="native-content">
       <section id="native-files-view"><div class="native-list" id="native-files-list"></div></section>
@@ -99,6 +100,14 @@ function switchNativeView(view) {
 
 function setNativeSyncStatus(label) {
   if(isNativeApp&&nativeShell){const status=nativeShell.querySelector('#native-sync-status');if(status)status.textContent=label;}
+}
+
+const nativeLoadErrors = {};
+function setNativeLoadError(source,message) {
+  if(message)nativeLoadErrors[source]=message;else delete nativeLoadErrors[source];
+  if(!isNativeApp||!nativeShell)return;
+  const banner=nativeShell.querySelector('#native-load-error');if(!banner)return;
+  const messages=Object.values(nativeLoadErrors);banner.hidden=!messages.length;banner.textContent=messages.join(' · ');
 }
 
 function nativeEmpty(title,description,icon='✦') {
