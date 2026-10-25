@@ -33,7 +33,7 @@ function initializeNativeUI() {
       <section id="native-links-view" hidden><div class="native-list" id="native-links-list"></div></section>
       <section id="native-ps4-view" hidden><button class="native-report-button" data-native-action="report-game" type="button">⚠ Reportar enlace de juego caído</button><div class="native-game-folders" id="native-ps4-folders"></div><div class="native-game-grid" id="native-ps4-list"></div></section><section id="native-dm-view" hidden><div class="native-list" id="native-dm-list"></div></section>
       <section id="native-ftp-view" hidden>
-        <article class="native-ftp-card">
+        <article class="native-ftp-card" id="ftp-server-card">
           <div class="native-ftp-heading"><span>📡</span><div><strong>Servidor de este teléfono</strong><small>Compartí una carpeta con tu PS4 en la misma red Wi-Fi.</small></div></div>
           <label class="native-ftp-label">IP de este dispositivo</label><div class="native-ftp-address" id="ftp-local-address">Buscando IP…</div>
           <div class="native-ftp-fields"><label>Puerto<input id="ftp-server-port" inputmode="numeric" type="number" min="1024" max="65535" value="2121"></label><label class="native-ftp-check"><input id="ftp-server-writable" type="checkbox"> Permitir subir, mover y borrar desde clientes FTP</label></div>
@@ -44,14 +44,15 @@ function initializeNativeUI() {
           <div id="ftp-drop-zone" class="native-ftp-drop">Arrastrá archivos aquí o elegí “Agregar archivos”</div><input id="ftp-file-input" type="file" multiple hidden>
           <div id="ftp-local-list" class="native-ftp-list"></div>
         </article>
-        <article class="native-ftp-card">
+        <article class="native-ftp-card" id="ftp-ps4-card">
           <div class="native-ftp-heading"><span>🎮</span><div><strong>Conectar con PS4</strong><small>Explorá los archivos del servidor FTP que corre en tu consola.</small></div></div>
-          <div class="native-ftp-fields"><label>IP de tu PS4<input id="ftp-ps4-host" inputmode="decimal" placeholder="192.168.1.25" autocomplete="off"></label><label>Puerto<input id="ftp-ps4-port" inputmode="numeric" type="number" min="1" max="65535" value="2121"></label></div>
-          <div class="native-ftp-fields"><label>Protocolo<select id="ftp-ps4-protocol"><option value="ftp">FTP</option><option value="ftps">FTPS explícito</option></select></label><label class="native-ftp-check"><input id="ftp-ps4-anonymous" type="checkbox" checked> Entrar como anónimo</label></div>
+          <div class="native-ftp-fields native-ftp-connect-fields"><label>IP de tu PS4<input id="ftp-ps4-host" inputmode="decimal" placeholder="Ej.: 192.168.1.25" autocomplete="off"></label><label>Puerto<input id="ftp-ps4-port" inputmode="numeric" type="number" min="1" max="65535" value="2121"></label></div><div id="ftp-ps4-guest-note" class="native-ftp-guest-note" hidden>FTP anónimo · puerto predeterminado 2121</div>
+          <div class="native-ftp-fields" id="ftp-ps4-extra-fields"><label>Protocolo<select id="ftp-ps4-protocol"><option value="ftp">FTP</option><option value="ftps">FTPS explícito</option></select></label><label class="native-ftp-check"><input id="ftp-ps4-anonymous" type="checkbox" checked> Entrar como anónimo</label></div>
           <div id="ftp-ps4-credentials" class="native-ftp-fields" hidden><label>Usuario<input id="ftp-ps4-user" autocomplete="username"></label><label>Contraseña<input id="ftp-ps4-password" type="password" autocomplete="current-password"></label></div>
           <div class="native-ftp-actions"><button class="native-action primary-action" id="ftp-ps4-connect" type="button">↔ Conectar y ver archivos</button><button class="native-action danger-action" id="ftp-ps4-disconnect" type="button" hidden>Desconectar</button></div>
           <div id="ftp-ps4-status" class="native-ftp-status">Ingresá la IP local de tu PS4 y el puerto de su servidor FTP.</div>
-          <div class="native-ftp-toolbar"><strong>Archivos de PS4</strong><button class="native-action" id="ftp-ps4-parent" type="button" hidden>↑ Carpeta anterior</button><button class="native-action" id="ftp-ps4-refresh" type="button" hidden>↻ Actualizar</button></div>
+          <div id="ftp-ps4-transfer" hidden><label class="native-ftp-label" for="ftp-ps4-destination">Enviar a esta carpeta de la PS4</label><input class="native-ftp-destination" id="ftp-ps4-destination" value="/" autocomplete="off" spellcheck="false"><div class="native-ftp-actions"><button class="native-action primary-action" id="ftp-ps4-send" type="button">↑ Enviar archivo</button><button class="native-action" id="ftp-ps4-parent" type="button" hidden>↑ Carpeta anterior</button><button class="native-action" id="ftp-ps4-refresh" type="button" hidden>↻ Actualizar</button></div><div id="ftp-ps4-upload-progress" class="native-ftp-upload-progress" hidden></div></div>
+          <div class="native-ftp-toolbar"><strong>Carpetas y archivos de la PS4</strong></div>
           <div id="ftp-ps4-list" class="native-ftp-list"></div>
         </article>
       </section>
@@ -85,6 +86,7 @@ function initializeNativeUI() {
     if(action.dataset.nativeAction==='ps4-edit'){const game=ps4Games.find(item=>item.id===action.dataset.id);if(game)void openPs4GameEditor(game);return;}
     if(action.dataset.nativeAction==='ps4-delete'){void deletePs4Game(action.dataset.id);return;}
     if(action.dataset.nativeAction==='ps4-folder'){nativePs4Folder=action.dataset.folder||'all';renderNativeUI();return;}
+    if(action.dataset.nativeAction==='ps4-create-folder'){if(ownerMode||uploaderMode)void createPs4Folder();return;}
     if(action.dataset.nativeAction==='select-folder'){
       currentFolder=action.dataset.folder||'Todos los archivos';
       switchNativeView('files');
@@ -106,7 +108,11 @@ function initializeNativeState() {
   nativeShell.hidden=false;
   $('#native-add-button').classList.toggle('hidden',!ownerMode&&!uploaderMode&&!canUploadMode);
   nativeShell.querySelector('[data-native-view=dm]').classList.toggle('hidden',!ownerMode);
-  nativeShell.querySelector('[data-native-view=ftp]').classList.toggle('hidden',guestPs4Mode);
+  nativeShell.querySelector('[data-native-view=ftp]').classList.remove('hidden');
+  $('#ftp-server-card').hidden=guestPs4Mode;
+  $('#ftp-ps4-extra-fields').hidden=guestPs4Mode;
+  $('#ftp-ps4-credentials').hidden=guestPs4Mode;
+  $('#ftp-ps4-guest-note').hidden=!guestPs4Mode;
   nativeShell.querySelector('[data-native-view=ps4]').classList.toggle('hidden',!guestPs4Mode&&memberMode&&!accountPermissions.can_view_ps4_games);
   if(guestPs4Mode){for(const name of ['files','folders','storage','links'])nativeShell.querySelector('[data-native-view='+name+']').classList.add('hidden');}
   const firstView=guestPs4Mode?'ps4':(!memberMode||accountPermissions.can_view_public_files||accountPermissions.can_create_folders||canUploadMode?'files':accountPermissions.can_view_links?'links':accountPermissions.can_view_ps4_games?'ps4':'files');switchNativeView(firstView);
@@ -116,9 +122,8 @@ function initializeNativeState() {
 function switchNativeView(view) {
   if(!isNativeApp||!nativeShell)return;
   if(view==='uploads')view='files';
-  if(guestPs4Mode)view='ps4';
+  if(guestPs4Mode&&!['ps4','ftp'].includes(view))view='ps4';
   if(view==='dm'&&!ownerMode)view='ps4';
-  if(view==='ftp'&&guestPs4Mode)view='ps4';
   if(view==='ps4'&&!guestPs4Mode&&memberMode&&!accountPermissions.can_view_ps4_games)view=accountPermissions.can_view_public_files||accountPermissions.can_create_folders||canUploadMode?'files':accountPermissions.can_view_links?'links':'files';
   if(memberMode&&!accountPermissions.can_view_public_files&&!accountPermissions.can_create_folders&&!canUploadMode&&['files','folders','storage'].includes(view))view='ps4';
   if(memberMode&&view==='links'&&!accountPermissions.can_view_links)view='ps4';
@@ -135,7 +140,7 @@ function switchNativeView(view) {
   const canAdd=ownerMode||uploaderMode||canUploadMode||(memberMode&&accountPermissions.can_create_folders&&view==='folders');
   $('#native-add-button').classList.toggle('hidden',!canAdd||view==='storage'||view==='dm'||guestPs4Mode);
   nativeShell.querySelector('[data-native-view=dm]').classList.toggle('hidden',!ownerMode);
-  nativeShell.querySelector('[data-native-view=ftp]').classList.toggle('hidden',guestPs4Mode);
+  nativeShell.querySelector('[data-native-view=ftp]').classList.remove('hidden');
   nativeShell.querySelector('[data-native-view=ps4]').classList.toggle('hidden',!guestPs4Mode&&memberMode&&!accountPermissions.can_view_ps4_games);
   nativeShell.querySelector('[data-native-action=report-game]').classList.toggle('hidden',view!=='ps4');
   $('#native-add-button').setAttribute('aria-label',view==='links'?'Guardar enlace':view==='folders'?'Crear carpeta':view==='ps4'?'Agregar juego':'Subir archivo');
@@ -198,10 +203,10 @@ function renderNativeUI() {
     $('#native-links-list').innerHTML=shown.length?shown.map(link=>'<article class="native-card"><div class="native-file-icon">↗</div><div class="native-card-main"><h2 class="native-card-title">'+esc(link.title)+'</h2><a class="native-link-url" href="'+esc(link.url)+'" target="_blank" rel="noopener noreferrer">'+esc(link.url)+'</a><div class="native-card-meta">'+(link.is_private?'<span class="native-private">🔒 Solo vos</span>':'<span>🌐 Público</span>')+'</div></div><div class="native-card-actions"><button class="native-action primary-action" data-native-action="open-link" data-id="'+esc(link.id)+'" type="button">Abrir enlace</button>'+((ownerMode||(uploaderMode&&link.created_by===currentUser?.id))?'<button class="native-action danger-action" data-native-action="delete-link" data-id="'+esc(link.id)+'" type="button">× Eliminar</button>':'')+'</div></article>').join(''):nativeEmpty('Todavía no hay enlaces','Guardá uno y lo vas a encontrar aquí.','↗');
   } else if(nativeActiveView==='ps4') {
     const visibleFolders=ps4GameFolders.filter(folder=>!folder.is_private||ownerMode||folder.created_by===currentUser?.id||folder.allowed_user_ids?.includes(currentUser?.id));
-    $('#native-ps4-folders').innerHTML='<button class="native-game-folder '+(nativePs4Folder==='all'?'active':'')+'" data-native-action="ps4-folder" data-folder="all" type="button">Todos</button>'+visibleFolders.map(folder=>'<button class="native-game-folder '+(nativePs4Folder===folder.id?'active':'')+'" data-native-action="ps4-folder" data-folder="'+esc(folder.id)+'" type="button">'+(folder.is_private?'🔒 ':'')+esc(folder.name)+'</button>').join('');
-    const shown=ps4Games.filter(game=>(nativePs4Folder==='all'||game.folder_id===nativePs4Folder)&&(!game.is_private||ownerMode||game.created_by===currentUser?.id||game.allowed_user_ids?.includes(currentUser?.id))&&(game.title+' '+game.description+' '+game.features).toLowerCase().includes(nativeSearch));
+    $('#native-ps4-folders').innerHTML='<button class="native-game-folder '+(nativePs4Folder==='all'?'active':'')+'" data-native-action="ps4-folder" data-folder="all" type="button">Todos</button>'+(ownerMode||uploaderMode?'<button class="native-game-folder native-game-folder-create" data-native-action="ps4-create-folder" type="button">＋ Crear carpeta</button>':'')+visibleFolders.map(folder=>'<button class="native-game-folder '+(nativePs4Folder===folder.id?'active':'')+'" data-native-action="ps4-folder" data-folder="'+esc(folder.id)+'" type="button">'+(folder.is_private?'🔒 ':'')+esc(folder.name)+'</button>').join('');
+    const shown=ps4Games.filter(game=>((game.folder_ids||[game.folder_id]).includes(nativePs4Folder)||nativePs4Folder==='all')&&(!game.is_private||ownerMode||game.created_by===currentUser?.id||game.allowed_user_ids?.includes(currentUser?.id))&&(game.title+' '+game.description+' '+game.features).toLowerCase().includes(nativeSearch));
     $('#native-count').textContent=shown.length+' juego'+(shown.length===1?'':'s');
-    $('#native-ps4-list').innerHTML=shown.length?shown.map(game=>'<article class="native-game-card"><button class="native-game-cover" data-native-action="ps4-details" data-id="'+esc(game.id)+'" type="button">'+(game.cover_image?'<img src="'+esc(game.cover_image)+'" alt="Portada de '+esc(game.title)+'">':'<span>PS4</span>')+'</button><h2>'+esc(game.title)+'</h2><div class="native-game-actions"><button class="native-action primary-action" data-native-action="ps4-open" data-id="'+esc(game.id)+'" type="button">↗ Ir a la descarga</button><button class="native-action" data-native-action="ps4-share" data-id="'+esc(game.id)+'" type="button">↗ Compartir</button>'+((ownerMode||game.created_by===currentUser?.id)?'<button class="native-action" data-native-action="ps4-edit" data-id="'+esc(game.id)+'" type="button">Editar</button><button class="native-action danger-action" data-native-action="ps4-delete" data-id="'+esc(game.id)+'" type="button">Eliminar</button>':'')+'</div></article>').join(''):nativeEmpty('Todavía no hay juegos','Los juegos que agregues aparecerán aquí.','🎮');
+    $('#native-ps4-list').innerHTML=shown.length?shown.map(game=>'<article class="native-game-card"><button class="native-game-cover" data-native-action="ps4-details" data-id="'+esc(game.id)+'" type="button">'+(game.cover_image?'<img src="'+esc(game.cover_image)+'" alt="Portada de '+esc(game.title)+'">':'<span>PS4</span>')+'</button><h2>'+esc(game.title)+'</h2><div class="native-game-meta">'+esc(ps4GameFolders.filter(folder=>(game.folder_ids||[game.folder_id]).includes(folder.id)).map(folder=>folder.name).join(' · ')||'Sin carpeta')+'</div><div class="native-game-actions"><button class="native-action primary-action" data-native-action="ps4-open" data-id="'+esc(game.id)+'" type="button">↗ Ir a la descarga</button><button class="native-action" data-native-action="ps4-share" data-id="'+esc(game.id)+'" type="button">↗ Compartir</button>'+((ownerMode||game.created_by===currentUser?.id)?'<button class="native-action" data-native-action="ps4-edit" data-id="'+esc(game.id)+'" type="button">Editar</button><button class="native-action danger-action" data-native-action="ps4-delete" data-id="'+esc(game.id)+'" type="button">Eliminar</button>':'')+'</div></article>').join(''):nativeEmpty('Todavía no hay juegos','Los juegos que agregues aparecerán aquí.','🎮');
   } else if(nativeActiveView==='ftp') {
     $('#native-count').textContent='FTP · Red local';
   }
@@ -237,6 +242,8 @@ function initializeNativeFtpUI(){
   drop.addEventListener('drop',event=>{event.preventDefault();drop.classList.remove('dragging');void importNativeFtpFiles(Array.from(event.dataTransfer?.files||[]));});
   $('#ftp-ps4-connect').onclick=()=>void connectNativePs4Ftp();
   $('#ftp-ps4-disconnect').onclick=()=>void disconnectNativePs4Ftp();
+  $('#ftp-ps4-send').onclick=()=>void sendNativeFileToPs4();
+  nativeFtpPlugin()?.addListener?.('ftpUploadProgress',event=>{const progress=$('#ftp-ps4-upload-progress');progress.hidden=false;const pct=event.totalBytes>0?Math.min(100,Math.round(event.transferredBytes*100/event.totalBytes)):0;progress.innerHTML='<strong>Subiendo '+esc(event.fileName||'archivo')+' · '+pct+'%</strong><div class="native-progress"><span style="width:'+pct+'%"></span></div><small>'+formatBytes(Number(event.transferredBytes||0))+' de '+formatBytes(Number(event.totalBytes||0))+'</small>';});
   $('#ftp-ps4-refresh').onclick=()=>void loadNativePs4FtpPath(nativeFtpRemotePath);
   $('#ftp-ps4-parent').onclick=()=>{const parts=nativeFtpRemotePath.split('/').filter(Boolean);parts.pop();void loadNativePs4FtpPath('/'+parts.join('/'));};
   $('#ftp-local-list').addEventListener('click',event=>void handleLocalFtpAction(event));
@@ -254,6 +261,7 @@ async function updateNativeFtpServerStatus(info=null){
 }
 
 async function refreshNativeFtp(){
+  if(guestPs4Mode)return;
   await refreshNativeFtpIp();
   await loadNativeFtpLocalFiles();
 }
@@ -295,28 +303,34 @@ function rememberNativePs4Ftp(){localStorage.setItem('mediachafa-ftp-connection'
 
 async function connectNativePs4Ftp(){
   const plugin=nativeFtpPlugin();if(!plugin)return;
-  const host=$('#ftp-ps4-host').value.trim(),port=Number($('#ftp-ps4-port').value||2121),anonymous=$('#ftp-ps4-anonymous').checked;
+  const host=$('#ftp-ps4-host').value.trim(),port=Number($('#ftp-ps4-port').value||2121),anonymous=guestPs4Mode?true:$('#ftp-ps4-anonymous').checked;
   rememberNativePs4Ftp();$('#ftp-ps4-status').textContent='Conectando con la PS4…';$('#ftp-ps4-connect').disabled=true;
-  try{const result=await plugin.connectPs4({host,port,ftps:$('#ftp-ps4-protocol').value==='ftps',anonymous,username:$('#ftp-ps4-user').value.trim(),password:$('#ftp-ps4-password').value});nativeFtpRemoteConnected=true;nativeFtpRemotePath=result.path||'/';$('#ftp-ps4-status').textContent='Conectado a '+host+':'+port+' · '+(result.system||'FTP');$('#ftp-ps4-disconnect').hidden=false;$('#ftp-ps4-refresh').hidden=false;$('#ftp-ps4-parent').hidden=nativeFtpRemotePath==='/';renderNativePs4FtpEntries(result.entries||[]);}
+  try{const result=await plugin.connectPs4({host,port,ftps:!guestPs4Mode&&$('#ftp-ps4-protocol').value==='ftps',anonymous,username:$('#ftp-ps4-user').value.trim(),password:$('#ftp-ps4-password').value});nativeFtpRemoteConnected=true;nativeFtpRemotePath=result.path||'/';$('#ftp-ps4-status').textContent='Conectado a '+host+':'+port+' · '+(result.system||'FTP');$('#ftp-ps4-disconnect').hidden=false;$('#ftp-ps4-transfer').hidden=false;$('#ftp-ps4-destination').value=nativeFtpRemotePath;$('#ftp-ps4-refresh').hidden=false;$('#ftp-ps4-parent').hidden=nativeFtpRemotePath==='/';renderNativePs4FtpEntries(result.entries||[]);}
   catch(error){nativeFtpRemoteConnected=false;$('#ftp-ps4-status').textContent='No se pudo conectar: '+(error.message||error);$('#ftp-ps4-list').innerHTML=nativeEmpty('Conexión fallida','Revisá que el servidor FTP de tu PS4 esté activo y en la misma red.','⚠');}
   finally{$('#ftp-ps4-connect').disabled=false;}
 }
 
-async function disconnectNativePs4Ftp(){try{await nativeFtpPlugin().disconnectPs4();}catch{}nativeFtpRemoteConnected=false;nativeFtpRemotePath='/';$('#ftp-ps4-status').textContent='Desconectado.';$('#ftp-ps4-connect').hidden=false;$('#ftp-ps4-disconnect').hidden=true;$('#ftp-ps4-refresh').hidden=true;$('#ftp-ps4-parent').hidden=true;$('#ftp-ps4-list').innerHTML='';}
+async function disconnectNativePs4Ftp(){try{await nativeFtpPlugin().disconnectPs4();}catch{}nativeFtpRemoteConnected=false;nativeFtpRemotePath='/';$('#ftp-ps4-status').textContent='Desconectado.';$('#ftp-ps4-connect').hidden=false;$('#ftp-ps4-disconnect').hidden=true;$('#ftp-ps4-transfer').hidden=true;$('#ftp-ps4-list').innerHTML='';}
 
 async function loadNativePs4FtpPath(path){
   if(!nativeFtpRemoteConnected)return;
-  try{const result=await nativeFtpPlugin().listPs4Files({path});nativeFtpRemotePath=result.path||path||'/';$('#ftp-ps4-status').textContent='Conectado · '+nativeFtpRemotePath;$('#ftp-ps4-parent').hidden=nativeFtpRemotePath==='/';renderNativePs4FtpEntries(result.entries||[]);}
+  try{const result=await nativeFtpPlugin().listPs4Files({path});nativeFtpRemotePath=result.path||path||'/';$('#ftp-ps4-destination').value=nativeFtpRemotePath;$('#ftp-ps4-status').textContent='Conectado · '+nativeFtpRemotePath;$('#ftp-ps4-parent').hidden=nativeFtpRemotePath==='/';renderNativePs4FtpEntries(result.entries||[]);}
   catch(error){$('#ftp-ps4-status').textContent='No se pudo leer esta carpeta: '+(error.message||error);}
 }
 
 function renderNativePs4FtpEntries(entries){
-  $('#ftp-ps4-list').innerHTML=entries.length?entries.map(entry=>'<article class="native-ftp-row"><button class="ftp-remote-open '+(entry.directory?'folder':'')+'" data-ftp-remote-name="'+esc(entry.name)+'" data-ftp-remote-dir="'+(entry.directory?'1':'0')+'" type="button"><span>'+(entry.directory?'📁':'📄')+'</span><strong>'+esc(entry.name)+'</strong><small>'+(entry.directory?'Carpeta':formatBytes(Number(entry.size||0)))+'</small></button>'+(!entry.directory?'<button class="native-action" data-ftp-remote-download="'+esc(entry.name)+'" type="button">↓ Guardar</button>':'')+'</article>').join(''):nativeEmpty('No hay elementos','La carpeta está vacía.','📂');
+  $('#ftp-ps4-list').innerHTML=entries.length?entries.map(entry=>'<article class="native-ftp-row"><button class="ftp-remote-open '+(entry.directory?'folder':'')+'" data-ftp-remote-name="'+esc(entry.name)+'" data-ftp-remote-dir="'+(entry.directory?'1':'0')+'" type="button"><span>'+(entry.directory?'📁':'📄')+'</span><strong>'+esc(entry.name)+'</strong><small>'+(entry.directory?'Abrir carpeta':formatBytes(Number(entry.size||0)))+'</small></button></article>').join(''):nativeEmpty('No hay elementos','La carpeta está vacía.','📂');
+}
+
+async function sendNativeFileToPs4(){
+  const plugin=nativeFtpPlugin(),destination=$('#ftp-ps4-destination').value.trim()||'/';if(!nativeFtpRemoteConnected||!plugin){toast('Conectate primero al FTP de tu PS4.');return;}
+  const progress=$('#ftp-ps4-upload-progress');progress.hidden=false;progress.innerHTML='<strong>Elegí el archivo para subir…</strong>';
+  try{const result=await plugin.sendFileToPs4({destination});if(result?.cancelled){progress.hidden=true;return;}progress.innerHTML='<strong>Archivo subido</strong><small>'+esc(result.fileName||'El archivo')+' se envió a '+esc(destination)+'</small>';toast('Archivo subido a la PS4.');await loadNativePs4FtpPath(destination);}
+  catch(error){progress.innerHTML='<strong>No se pudo subir el archivo</strong><small>'+esc(error.message||error)+'</small>';toast('No se pudo subir: '+(error.message||error));}
 }
 
 async function handlePs4FtpAction(event){
   const folder=event.target.closest('[data-ftp-remote-dir="1"]');if(folder){const next=nativeFtpRemotePath==='/'?'/'+folder.dataset.ftpRemoteName:nativeFtpRemotePath.replace(/\/$/,'')+'/'+folder.dataset.ftpRemoteName;await loadNativePs4FtpPath(next);return;}
-  const download=event.target.closest('[data-ftp-remote-download]');if(download){try{await nativeFtpPlugin().downloadPs4File({path:nativeFtpRemotePath.replace(/\/$/,'')+'/'+download.dataset.ftpRemoteDownload,fileName:download.dataset.ftpRemoteDownload});toast('Descarga de PS4 completada.');}catch(error){toast('No se pudo guardar el archivo: '+(error.message||error));}}
 }
 
 function renderNativeStorage() {
