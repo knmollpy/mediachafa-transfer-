@@ -216,6 +216,8 @@
     function isPreviewable(mime) { return Boolean(mime && (mime.startsWith('image/') || mime.startsWith('video/') || mime === 'application/pdf')); }
     function objectUrl(file, preview=false) { return `${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}${preview?'?preview=1':''}`; }
     function isGoogleFile(file) { return typeof file?.path === 'string' && file.path.startsWith('gdrive://'); }
+    function isSupabaseFile(file) { return typeof file?.path === 'string' && file.path.startsWith('supabase://'); }
+    function storageObjectPath(file) { return isSupabaseFile(file) ? file.path.slice('supabase://'.length) : file.path; }
     function storageProviderLabel(file) { return isGoogleFile(file) ? 'Google Drive' : (file.path?.startsWith('supabase://') ? 'Supabase Storage' : 'Cloudflare R2'); }
     function isPrivateFile(file) {
       return Boolean(file?.isPrivate || folderRecords.some(folder => folder.isPrivate && file.folder && (file.folder===folder.name || file.folder.startsWith(folder.name+'/'))));
@@ -670,16 +672,19 @@ async function loadGoogleDriveStatus() {
       return url.href;
     }
     async function sharePs4Game(game) {
-      const direct=directDownloadUrl(game.download_url);
-      modal('Compartir descarga','<p class="sub">Al abrir este enlace, el proveedor intentará descargar el archivo directamente. Enlaces a páginas web pueden mostrar esa página si el servidor no ofrece descarga directa.</p><label class="field-label">Enlace para compartir</label><input class="field" id="ps4-share-link" readonly value="'+esc(direct)+'">','Copiar enlace',async root=>{const field=root.querySelector('#ps4-share-link');try{await navigator.clipboard.writeText(field.value);toast('Enlace de descarga copiado.');root.replaceChildren();}catch{field.focus();field.select();toast('Copiá el enlace seleccionado.');}});
+      const destination=game.download_url;
+      modal('Compartir enlace','<p class="sub">Este es el enlace original del proveedor, por ejemplo MediaFire o Google Drive.</p><label class="field-label">Enlace para compartir</label><input class="field" id="ps4-share-link" readonly value="'+esc(destination)+'">','Copiar enlace',async root=>{const field=root.querySelector('#ps4-share-link');try{await navigator.clipboard.writeText(field.value);toast('Enlace copiado.');root.replaceChildren();}catch{field.focus();field.select();toast('Copiá el enlace seleccionado.');}});
     }
-    async function downloadPs4Game(id) {
+    async function openPs4Download(id) {
       const game=ps4Games.find(item=>item.id===id);if(!game)return;
-      if(!confirm(`¿Empezar la descarga directa de “${game.title}”?`))return;
-      const url=directDownloadUrl(game.download_url);
-      const locationPlugin=window.Capacitor?.Plugins?.DownloadLocation;
-      if(isNativeApp&&locationPlugin){try{const suffix=new URL(game.download_url).pathname.match(/\.[a-z0-9]{1,8}$/i)?.[0]||'.pkg';const result=await locationPlugin.saveUrlFile({url,fileName:game.title.replace(/[\\/:*?"<>|]/g,'_')+suffix});if(!result?.cancelled)toast('Descarga guardada en la ubicación elegida.');}catch(error){toast('No se pudo descargar: '+(error.message||error));}return;}
-      const anchor=document.createElement('a');anchor.href=url;anchor.target='_blank';anchor.rel='noopener noreferrer';anchor.download='';document.body.append(anchor);anchor.click();anchor.remove();
+      try {
+        const url=new URL(game.download_url);
+        if(!['http:','https:'].includes(url.protocol))throw new Error('El enlace del juego no es válido.');
+        const externalLinks=window.Capacitor?.Plugins?.ExternalLink;
+        if(isNativeApp&&externalLinks?.open)await externalLinks.open({url:url.href});
+        else if(isNativeApp)window.location.assign(url.href);
+        else window.open(url.href,'_blank','noopener,noreferrer');
+      } catch(error) { toast('No se pudo abrir el enlace: '+(error.message||error)); }
     }
     function showPs4GameDetails(id) {
       const game=ps4Games.find(item=>item.id===id);if(!game)return;
@@ -724,10 +729,10 @@ async function loadGoogleDriveStatus() {
       $('#ps4-games-list').innerHTML=shown.length?shown.map(game=>{
         const canManage=ownerMode||game.created_by===currentUser?.id;
         const folder=ps4GameFolders.find(item=>item.id===game.folder_id);
-        return `<article class="ps4-game-card"><button class="ps4-game-cover-button" data-ps4-details="${esc(game.id)}" type="button" aria-label="Ver detalles de ${esc(game.title)}">${game.cover_image?`<img class="ps4-game-cover" src="${esc(game.cover_image)}" alt="Portada de ${esc(game.title)}">`:'<span class="ps4-game-cover-placeholder">PS4</span>'}</button><div class="ps4-game-copy"><h2 class="ps4-game-title">${esc(game.title)}</h2><div class="ps4-game-folder">${esc(folder?.name||'Sin carpeta')}${game.is_private?' · 🔒 Privado':''}</div></div><div class="ps4-game-actions"><button class="primary" data-ps4-download="${esc(game.id)}" type="button">↓ Descargar</button><button class="share-btn" data-ps4-share="${esc(game.id)}" type="button">↗ Compartir</button>${canManage?`<button class="secondary" data-ps4-edit="${esc(game.id)}" type="button">Editar</button><button class="secondary" data-ps4-delete="${esc(game.id)}" type="button">Eliminar</button>`:''}</div></article>`;
+        return `<article class="ps4-game-card"><button class="ps4-game-cover-button" data-ps4-details="${esc(game.id)}" type="button" aria-label="Ver detalles de ${esc(game.title)}">${game.cover_image?`<img class="ps4-game-cover" src="${esc(game.cover_image)}" alt="Portada de ${esc(game.title)}">`:'<span class="ps4-game-cover-placeholder">PS4</span>'}</button><div class="ps4-game-copy"><h2 class="ps4-game-title">${esc(game.title)}</h2><div class="ps4-game-folder">${esc(folder?.name||'Sin carpeta')}${game.is_private?' · 🔒 Privado':''}</div></div><div class="ps4-game-actions"><button class="primary" data-ps4-open="${esc(game.id)}" type="button">↗ Ir a la descarga</button><button class="share-btn" data-ps4-share="${esc(game.id)}" type="button">↗ Compartir</button>${canManage?`<button class="secondary" data-ps4-edit="${esc(game.id)}" type="button">Editar</button><button class="secondary" data-ps4-delete="${esc(game.id)}" type="button">Eliminar</button>`:''}</div></article>`;
       }).join(''):'<div class="empty"><div class="empty-icon">🎮</div><h3>Sin juegos por ahora</h3><p>Agregá un juego con su portada y enlace de descarga.</p></div>';
       $('#ps4-games-list').querySelectorAll('[data-ps4-details]').forEach(button=>button.onclick=()=>showPs4GameDetails(button.dataset.ps4Details));
-      $('#ps4-games-list').querySelectorAll('[data-ps4-download]').forEach(button=>button.onclick=()=>void downloadPs4Game(button.dataset.ps4Download));
+      $('#ps4-games-list').querySelectorAll('[data-ps4-open]').forEach(button=>button.onclick=()=>void openPs4Download(button.dataset.ps4Open));
       $('#ps4-games-list').querySelectorAll('[data-ps4-share]').forEach(button=>button.onclick=()=>{const game=ps4Games.find(item=>item.id===button.dataset.ps4Share);if(game)void sharePs4Game(game);});
       $('#ps4-games-list').querySelectorAll('[data-ps4-edit]').forEach(button=>button.onclick=()=>openPs4GameEditor(ps4Games.find(item=>item.id===button.dataset.ps4Edit)));
       $('#ps4-games-list').querySelectorAll('[data-ps4-delete]').forEach(button=>button.onclick=()=>void deletePs4Game(button.dataset.ps4Delete));
@@ -844,11 +849,19 @@ async function loadGoogleDriveStatus() {
       const expiresIn=60*60*24*7,expiresAt=new Date(Date.now()+expiresIn*1000),expiresLabel=new Intl.DateTimeFormat('es-AR',{dateStyle:'full',timeStyle:'short'}).format(expiresAt);
       const {data:{session}}=await client.auth.getSession();
       let signedUrl;
-      try{
-        if(isGoogleFile(file))signedUrl=(await googleSignedUrl(file,false)).url;
-        else if(r2Available){const response=await fetch(`${R2_WORKER_URL}/sign`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session?.access_token||''}`},body:JSON.stringify({path:file.path})});if(response.ok)signedUrl=(await response.json()).url;}
-      }catch{}
-      if(!signedUrl){const {data,error}=await client.storage.from(BUCKET).createSignedUrl(file.path,expiresIn,{download:true});if(error){toast('No se pudo crear el enlace: '+error.message);return;}signedUrl=data.signedUrl.startsWith('http')?data.signedUrl:SUPABASE_URL+data.signedUrl;}
+      try {
+        if(isGoogleFile(file)) signedUrl=(await googleSignedUrl(file,false)).url;
+        else if(isSupabaseFile(file)) {
+          const {data,error}=await client.storage.from(BUCKET).createSignedUrl(storageObjectPath(file),expiresIn,{download:file.name});
+          if(error)throw error;
+          signedUrl=data.signedUrl.startsWith('http')?data.signedUrl:SUPABASE_URL+data.signedUrl;
+        } else {
+          const response=await fetch(`${R2_WORKER_URL}/sign`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session?.access_token||''}`},body:JSON.stringify({path:file.path})});
+          const result=await response.json().catch(()=>({}));
+          if(!response.ok)throw new Error(result.error||`Cloudflare respondió ${response.status}.`);
+          signedUrl=result.url;
+        }
+      } catch(error) { toast('No se pudo crear el enlace: '+(error.message||error));return; }
       modal('Enlace de descarga','<p class="sub">Este enlace permite descargar solo este archivo. Dura 7 días y vence el <strong>'+expiresLabel+'</strong>. Después de esa fecha dejará de funcionar. Cualquiera que tenga el enlace podrá descargarlo.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="'+esc(signedUrl)+'">','Copiar enlace',async root=>{
         const input=root.querySelector('#share-link');try{await navigator.clipboard.writeText(input.value);toast('Enlace copiado.');root.replaceChildren();}catch{input.focus();input.select();toast('Copiá el enlace seleccionado.');}
       });
@@ -857,14 +870,15 @@ async function loadGoogleDriveStatus() {
     async function downloadFile(file) {
       const locationPlugin=window.Capacitor?.Plugins?.DownloadLocation;
       if(isNativeApp&&locationPlugin&&isPrivateFile(file)){
-        try{const {data:{session}}=await client.auth.getSession();if(!session?.access_token)throw new Error('Iniciá sesión para descargar este archivo privado.');const route=isGoogleFile(file)?`${R2_WORKER_URL}/google/private/${encodeURIComponent(file.path.slice('gdrive://'.length))}`:`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`;const result=await locationPlugin.saveUrlFile({url:route,fileName:file.name,headers:{Authorization:`Bearer ${session.access_token}`}});if(!result?.cancelled)toast('Descarga guardada en la ubicación elegida.');}catch(error){toast('No se pudo descargar: '+(error.message||error));}return;
+        try{const {data:{session}}=await client.auth.getSession();if(!session?.access_token)throw new Error('Iniciá sesión para descargar este archivo privado.');const route=isGoogleFile(file)?`${R2_WORKER_URL}/google/private/${encodeURIComponent(file.path.slice('gdrive://'.length))}`:isSupabaseFile(file)?`${SUPABASE_URL}/storage/v1/object/authenticated/${BUCKET}/${storageObjectPath(file).split('/').map(encodeURIComponent).join('/')}`:`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`;const headers=isSupabaseFile(file)?{Authorization:`Bearer ${session.access_token}`,apikey:SUPABASE_KEY}:{Authorization:`Bearer ${session.access_token}`};const result=await locationPlugin.saveUrlFile({url:route,fileName:file.name,headers});if(!result?.cancelled)toast('Descarga guardada en la ubicación elegida.');}catch(error){toast('No se pudo descargar: '+(error.message||error));}return;
       }
       if(isNativeApp&&locationPlugin&&!isPrivateFile(file)){
         try{
           let url;
+          const {data:{session}}=await client.auth.getSession();
           if(isGoogleFile(file))url=(await googleSignedUrl(file,false)).url;
-          else if(r2Available){const signed=await fetch(`${R2_WORKER_URL}/sign`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session?.access_token||''}`},body:JSON.stringify({path:file.path})});if(signed.ok)url=(await signed.json()).url;}
-          if(!url){const {data,error}=await client.storage.from(BUCKET).createSignedUrl(file.path,60*60,{download:true});if(error)throw error;url=data.signedUrl.startsWith('http')?data.signedUrl:SUPABASE_URL+data.signedUrl;}
+          else if(isSupabaseFile(file)){const {data,error}=await client.storage.from(BUCKET).createSignedUrl(storageObjectPath(file),60*60,{download:file.name});if(error)throw error;url=data.signedUrl.startsWith('http')?data.signedUrl:SUPABASE_URL+data.signedUrl;}
+          else {const signed=await fetch(`${R2_WORKER_URL}/sign`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session?.access_token||''}`},body:JSON.stringify({path:file.path})});const result=await signed.json().catch(()=>({}));if(!signed.ok)throw new Error(result.error||`Cloudflare respondió ${signed.status}.`);url=result.url;}
           const result=await locationPlugin.saveUrlFile({url,fileName:file.name});if(!result?.cancelled)toast('Descarga guardada en la ubicación elegida.');
         }catch(error){toast('No se pudo descargar: '+(error.message||error));}
         return;
@@ -880,8 +894,8 @@ async function loadGoogleDriveStatus() {
       }
       if(isGoogleFile(file)){try{const {url}=await googleSignedUrl(file,false);const link=document.createElement('a');link.href=url;link.download=file.name;link.click();}catch(error){toast('No se pudo descargar: '+error.message);}return;}
       let data;
-      try{if(r2Available){const response=await fetch(`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`);if(response.ok&&response.headers.has('Content-Disposition'))data=await response.blob();}}catch{}
-      if(!data){const {data:legacy,error}=await client.storage.from(BUCKET).download(file.path);if(error){toast('No se pudo descargar: '+error.message);return;}data=legacy;}
+      try{if(!isGoogleFile(file)&&!isSupabaseFile(file)){const {data:{session}}=await client.auth.getSession();const response=await fetch(`${R2_WORKER_URL}/object/${file.path.split('/').map(encodeURIComponent).join('/')}`,{headers:session?.access_token?{Authorization:`Bearer ${session.access_token}`}:{}});if(!response.ok)throw new Error((await response.json().catch(()=>({}))).error||`Cloudflare respondió ${response.status}.`);data=await response.blob();}}catch(error){toast('No se pudo descargar: '+(error.message||error));return;}
+      if(!data){const {data:legacy,error}=await client.storage.from(BUCKET).download(storageObjectPath(file));if(error){toast('No se pudo descargar: '+error.message);return;}data=legacy;}
       const link=document.createElement('a'),url=URL.createObjectURL(data);link.href=url;link.download=file.name;link.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
     }
 
