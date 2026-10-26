@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
-type Input = { action?: string; username?: string; password?: string; role?: "collaborator" | "member"; can_view_public_files?: boolean; can_view_links?: boolean; can_view_ps4_games?: boolean; can_create_folders?: boolean; can_upload?: boolean; storage_limit_bytes?: number };
+type Input = { action?: string; username?: string; password?: string; captchaToken?: string; role?: "collaborator" | "member"; can_view_public_files?: boolean; can_view_links?: boolean; can_view_ps4_games?: boolean; can_create_folders?: boolean; can_upload?: boolean; storage_limit_bytes?: number };
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -11,11 +11,39 @@ Deno.serve(async (req: Request) => {
   let input: Input;
   try { input = await req.json(); } catch { return json({ error: "Datos inválidos." }, 400); }
   const username = (input.username || "").trim().toLowerCase(), admin = createClient(url, service);
-  if (input.action === "login") {
+  if (input.action === "login" || input.action === "guest") {
+    const secret = Deno.env.get("TURNSTILE_SECRET_KEY");
+    const captchaToken = typeof input.captchaToken === "string" ? input.captchaToken : "";
+    if (!secret) return json({ error: "Falta configurar la verificación de seguridad." }, 503);
+    if (!captchaToken || captchaToken.length > 2048) return json({ error: "Completá la verificación de seguridad." }, 400);
+    const form = new FormData();
+    form.set("secret", secret);
+    form.set("response", captchaToken);
+    const remoteIp = req.headers.get("CF-Connecting-IP");
+    if (remoteIp) form.set("remoteip", remoteIp);
+    let captcha: { success?: boolean; hostname?: string };
+    try {
+      const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
+      captcha = await response.json();
+    } catch {
+      return json({ error: "No se pudo verificar el acceso. Intentá de nuevo." }, 503);
+    }
+    if (!captcha.success || !["mediachafa-transfer.vercel.app", "localhost"].includes(captcha.hostname || "")) {
+      return json({ error: "La verificación venció o no es válida. Intentá de nuevo." }, 403);
+    }
+    if (input.action === "guest") return json({ ok: true });
     if (!/^[a-z0-9_]{3,24}$/.test(username) || !(input.password || "")) return json({ error: "Usuario o contraseña incorrectos." }, 401);
-    const { data: account } = await admin.from("media_users").select("id,username,email,role,can_upload,can_view_public_files,can_view_links,can_view_ps4_games,can_create_folders,storage_limit_bytes").eq("username", username).maybeSingle();
-    if (!account) return json({ error: "Usuario o contraseña incorrectos." }, 401);
-    const auth = createClient(url, anon), { data, error } = await auth.auth.signInWithPassword({ email: account.email, password: input.password! });
+    let email: string;
+    let account: Record<string, unknown> | null = null;
+    if (username === "nxmollpy") {
+      email = "nxmollpy@gmail.com";
+    } else {
+      const { data: member } = await admin.from("media_users").select("id,username,email,role,can_upload,can_view_public_files,can_view_links,can_view_ps4_games,can_create_folders,storage_limit_bytes").eq("username", username).maybeSingle();
+      if (!member) return json({ error: "Usuario o contraseña incorrectos." }, 401);
+      account = member;
+      email = member.email;
+    }
+    const auth = createClient(url, anon), { data, error } = await auth.auth.signInWithPassword({ email, password: input.password! });
     if (error || !data.session) return json({ error: "Usuario o contraseña incorrectos." }, 401);
     return json({ session: data.session, user: data.user, account });
   }
