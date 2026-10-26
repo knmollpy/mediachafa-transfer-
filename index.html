@@ -210,7 +210,7 @@
     let ps4LoadedAt = 0;
     let ps4GameFolders = [];
     let ps4GameFolderAssignments = [];
-    let currentPs4Folder = 'all';
+    const selectedPs4Folders = new Set();
     let currentPs4Page = 1;
     const PS4_PAGE_SIZE = 10;
     let ps4Search = '';
@@ -757,18 +757,19 @@ async function loadGoogleDriveStatus() {
     function renderPs4Catalog() {
       if(!$('#ps4-games-list'))return;
       const visibleFolders=ps4GameFolders.filter(folder=>!folder.is_private||ownerMode||folder.created_by===currentUser?.id||folder.allowed_user_ids?.includes(currentUser?.id));
-      $('#ps4-folder-list').innerHTML='<button class="folder '+(currentPs4Folder==='all'?'active':'')+'" data-ps4-folder="all" type="button">Todos los juegos</button>'+visibleFolders.map(folder=>`<div class="ps4-folder-row"><button class="folder ${currentPs4Folder===folder.id?'active':''}" data-ps4-folder="${esc(folder.id)}" type="button">${folder.is_private?'🔒 ':''}${esc(folder.name)}</button>${ownerMode||folder.created_by===currentUser?.id?`<button class="ps4-folder-edit" data-ps4-folder-edit="${esc(folder.id)}" title="Editar carpeta">✎</button><button class="ps4-folder-delete" data-ps4-folder-delete="${esc(folder.id)}" title="Eliminar carpeta">×</button>`:''}</div>`).join('');
-      $('#ps4-folder-list').querySelectorAll('[data-ps4-folder]').forEach(button=>button.onclick=()=>{currentPs4Folder=button.dataset.ps4Folder;currentPs4Page=1;renderPs4Catalog();});
+      for(const id of selectedPs4Folders)if(!visibleFolders.some(folder=>folder.id===id))selectedPs4Folders.delete(id);
+      $('#ps4-folder-list').innerHTML='<button class="folder '+(selectedPs4Folders.size===0?'selected':'')+'" data-ps4-folder="all" type="button">Todos los juegos</button>'+visibleFolders.map(folder=>`<div class="ps4-folder-row"><button class="folder ${selectedPs4Folders.has(folder.id)?'selected':''}" data-ps4-folder="${esc(folder.id)}" type="button">${folder.is_private?'🔒 ':''}${esc(folder.name)}</button>${ownerMode||folder.created_by===currentUser?.id?`<button class="ps4-folder-edit" data-ps4-folder-edit="${esc(folder.id)}" title="Editar carpeta">✎</button><button class="ps4-folder-delete" data-ps4-folder-delete="${esc(folder.id)}" title="Eliminar carpeta">×</button>`:''}</div>`).join('');
+      $('#ps4-folder-list').querySelectorAll('[data-ps4-folder]').forEach(button=>button.onclick=()=>{const id=button.dataset.ps4Folder;if(id==='all')selectedPs4Folders.clear();else if(selectedPs4Folders.has(id))selectedPs4Folders.delete(id);else selectedPs4Folders.add(id);currentPs4Page=1;renderPs4Catalog();});
       $('#ps4-folder-list').querySelectorAll('[data-ps4-folder-edit]').forEach(button=>button.onclick=()=>editPs4Folder(button.dataset.ps4FolderEdit));
       $('#ps4-folder-list').querySelectorAll('[data-ps4-folder-delete]').forEach(button=>button.onclick=()=>deletePs4Folder(button.dataset.ps4FolderDelete));
-      const activeFolder=ps4GameFolders.find(folder=>folder.id===currentPs4Folder);
-      $('#homebrew-credits')?.classList.toggle('hidden',activeFolder?.name?.trim().toLowerCase()!=='homebrew');
+      const homebrewSelected=visibleFolders.some(folder=>folder.name.trim().toLowerCase()==='homebrew'&&selectedPs4Folders.has(folder.id));
+      $('#homebrew-credits')?.classList.toggle('hidden',!homebrewSelected);
       const query=($('#ps4-search')?.value||'').trim().toLowerCase();
       const shown=ps4Games.filter(game=>{
         const gameFolders=ps4GameFolders.filter(item=>(game.folder_ids||[game.folder_id]).includes(item.id));
         const canSee=!game.is_private||ownerMode||game.created_by===currentUser?.id||game.allowed_user_ids?.includes(currentUser?.id);
         const folderVisible=!gameFolders.some(folder=>folder.is_private&&!ownerMode&&folder.created_by!==currentUser?.id&&!folder.allowed_user_ids?.includes(currentUser?.id));
-        return canSee&&folderVisible&&(currentPs4Folder==='all'||(game.folder_ids||[game.folder_id]).includes(currentPs4Folder))&&`${game.title} ${game.description} ${game.features}`.toLowerCase().includes(query);
+        return canSee&&folderVisible&&(!selectedPs4Folders.size||[...selectedPs4Folders].some(folderId=>(game.folder_ids||[game.folder_id]).includes(folderId)))&&`${game.title} ${game.description} ${game.features}`.toLowerCase().includes(query);
       });
       const pageCount=Math.max(1,Math.ceil(shown.length/PS4_PAGE_SIZE));
       currentPs4Page=Math.min(currentPs4Page,pageCount);
@@ -820,7 +821,7 @@ async function loadGoogleDriveStatus() {
       const folder=ps4GameFolders.find(item=>item.id===id);if(!folder)return;let accounts=[];try{accounts=await getSharingAccounts();}catch(error){toast(error.message);return;}
       modal('Editar carpeta','<label class="field-label">Nombre</label><input class="field" id="ps4-folder-name" maxlength="80" value="'+esc(folder.name)+'">'+privacyControls(accounts,folder.is_private,folder.allowed_user_ids||[]),'Guardar',async root=>{const name=root.querySelector('#ps4-folder-name').value.trim();if(!name){toast('El nombre no puede estar vacío.');return;}const {error}=await client.from('ps4_game_folders').update({name,...readPrivacy(root),updated_at:new Date().toISOString()}).eq('id',id);if(error){toast('No se pudo actualizar: '+error.message);return;}root.replaceChildren();await loadPs4Catalog();});bindPrivacyControls($('#modal-root'));
     }
-    async function deletePs4Folder(id) {const folder=ps4GameFolders.find(item=>item.id===id);if(!folder||!confirm(`¿Eliminar la carpeta “${folder.name}”? Los juegos quedarán sin carpeta.`))return;const {error}=await client.from('ps4_game_folders').delete().eq('id',id);if(error){toast('No se pudo eliminar la carpeta: '+error.message);return;}if(currentPs4Folder===id)currentPs4Folder='all';await loadPs4Catalog();}
+    async function deletePs4Folder(id) {const folder=ps4GameFolders.find(item=>item.id===id);if(!folder||!confirm(`¿Eliminar la carpeta “${folder.name}”? Los juegos quedarán sin carpeta.`))return;const {error}=await client.from('ps4_game_folders').delete().eq('id',id);if(error){toast('No se pudo eliminar la carpeta: '+error.message);return;}selectedPs4Folders.delete(id);await loadPs4Catalog();}
     async function deletePs4Game(id) {const game=ps4Games.find(item=>item.id===id);if(!game||!confirm(`¿Eliminar “${game.title}”?`))return;const {error}=await client.from('ps4_games').delete().eq('id',id);if(error){toast('No se pudo eliminar: '+error.message);return;}await loadPs4Catalog();toast('Juego eliminado.');}
     $('#add-ps4-game').onclick=()=>void openPs4GameEditor();$('#new-ps4-folder').onclick=()=>void createPs4Folder();$('#ps4-search').oninput=()=>{currentPs4Page=1;renderPs4Catalog();};
 
