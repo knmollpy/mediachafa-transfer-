@@ -724,8 +724,7 @@ async function loadGoogleDriveStatus() {
         const destination=directDownloadUrl(url.href);
         const externalLinks=window.Capacitor?.Plugins?.ExternalLink;
         if(isNativeApp&&externalLinks?.open)await externalLinks.open({url:destination});
-        else if(isNativeApp||/PlayStation\s*4/i.test(navigator.userAgent))window.location.assign(destination);
-        else window.open(destination,'_blank','noopener,noreferrer');
+        else window.location.href=destination;
       } catch(error) { toast('No se pudo abrir el enlace: '+(error.message||error)); }
     }
     function showPs4GameDetails(id) {
