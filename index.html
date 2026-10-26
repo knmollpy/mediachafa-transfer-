@@ -721,10 +721,11 @@ async function loadGoogleDriveStatus() {
       try {
         const url=new URL(game.download_url);
         if(!['http:','https:'].includes(url.protocol))throw new Error('El enlace del juego no es válido.');
+        const destination=directDownloadUrl(url.href);
         const externalLinks=window.Capacitor?.Plugins?.ExternalLink;
-        if(isNativeApp&&externalLinks?.open)await externalLinks.open({url:url.href});
-        else if(isNativeApp)window.location.assign(url.href);
-        else window.open(url.href,'_blank','noopener,noreferrer');
+        if(isNativeApp&&externalLinks?.open)await externalLinks.open({url:destination});
+        else if(isNativeApp||/PlayStation\s*4/i.test(navigator.userAgent))window.location.assign(destination);
+        else window.open(destination,'_blank','noopener,noreferrer');
       } catch(error) { toast('No se pudo abrir el enlace: '+(error.message||error)); }
     }
     function showPs4GameDetails(id) {
