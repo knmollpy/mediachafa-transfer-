@@ -8,7 +8,7 @@ const corsHeaders = {
 // R2 supports individual objects up to 5 TiB. Keep the UI aligned with the
 // library quota; multipart uploads avoid sending large bodies through Worker.
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
-const SHARE_TTL_SECONDS = 7 * 24 * 60 * 60;
+const SHARE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const GOOGLE_REDIRECT_URI = "https://mediachafa-storage.nxmollpy.workers.dev/google/callback";
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 

@@ -889,7 +889,7 @@ async function loadGoogleDriveStatus() {
 
     async function shareFile(file) {
       if(isPrivateFile(file)){toast('Los archivos privados no generan enlaces públicos.');return;}
-      const expiresIn=60*60*24*7,expiresAt=new Date(Date.now()+expiresIn*1000),expiresLabel=new Intl.DateTimeFormat('es-AR',{dateStyle:'full',timeStyle:'short'}).format(expiresAt);
+      const expiresIn=60*60*24*30,expiresAt=new Date(Date.now()+expiresIn*1000),expiresLabel=new Intl.DateTimeFormat('es-AR',{dateStyle:'full',timeStyle:'short'}).format(expiresAt);
       const {data:{session}}=await client.auth.getSession();
       let signedUrl;
       try {
@@ -909,7 +909,7 @@ async function loadGoogleDriveStatus() {
           }
         }
       } catch(error) { toast('No se pudo crear el enlace: '+(error.message||error));return; }
-      modal('Enlace de descarga','<p class="sub">Este enlace permite descargar solo este archivo. Dura 7 días y vence el <strong>'+expiresLabel+'</strong>. Después de esa fecha dejará de funcionar. Cualquiera que tenga el enlace podrá descargarlo.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="'+esc(signedUrl)+'">','Copiar enlace',async root=>{
+      modal('Enlace de descarga','<p class="sub">Este enlace permite descargar solo este archivo. Dura 30 días y vence el <strong>'+expiresLabel+'</strong>. Después de esa fecha dejará de funcionar. Cualquiera que tenga el enlace podrá descargarlo.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="'+esc(signedUrl)+'">','Copiar enlace',async root=>{
         const input=root.querySelector('#share-link');try{await navigator.clipboard.writeText(input.value);toast('Enlace copiado.');root.replaceChildren();}catch{input.focus();input.select();toast('Copiá el enlace seleccionado.');}
       });
     }
