@@ -115,6 +115,9 @@
     html:not(.native-app) .storage-amount strong{color:#f1fbff;text-shadow:0 0 10px rgba(57,188,255,.24)}
     html:not(.native-app) .install-mobile-option{border-color:rgba(78,190,255,.48);background:linear-gradient(110deg,rgba(7,91,174,.72),rgba(0,146,218,.52));color:#e7f8ff;box-shadow:0 0 17px rgba(0,153,255,.2)}
     html:not(.native-app) .install-mobile-option:hover{border-color:#5cc8ff;background:linear-gradient(110deg,rgba(8,126,234,.84),rgba(19,184,255,.64))}
+    html:not(.native-app) body,html:not(.native-app) body *{-webkit-user-select:none!important;user-select:none!important}
+    html:not(.native-app) input,html:not(.native-app) textarea,html:not(.native-app) select,html:not(.native-app) [contenteditable="true"]{-webkit-user-select:text!important;user-select:text!important}
+    html:not(.native-app) img{-webkit-user-drag:none;user-drag:none;pointer-events:none}
     @media(prefers-reduced-motion:reduce){html:not(.native-app) body::before{animation:none}}
   </style>
 </head>
@@ -1236,6 +1239,15 @@ async function loadGoogleDriveStatus() {
       if ((user.email || '').toLowerCase() === OWNER_EMAIL && !user.is_anonymous) await enterLibrary(true, user);
       else { const {data:account} = await client.from('media_users').select('*').eq('id',user.id).maybeSingle(); if (account) await enterLibrary(false,user,account.role==='collaborator',false,account); else await client.auth.signOut({scope:'local'}); }
     });
+    if(!document.documentElement.classList.contains('native-app')&&!window.MEDIA_NATIVE_APP){
+      const isEditableTarget=target=>target instanceof Element&&Boolean(target.closest('input,textarea,select,[contenteditable="true"]'));
+      document.addEventListener('contextmenu',event=>{if(!isEditableTarget(event.target))event.preventDefault();},true);
+      document.addEventListener('selectstart',event=>{if(!isEditableTarget(event.target))event.preventDefault();},true);
+      document.addEventListener('copy',event=>{if(!isEditableTarget(document.activeElement))event.preventDefault();},true);
+      document.addEventListener('cut',event=>{if(!isEditableTarget(document.activeElement))event.preventDefault();},true);
+      document.addEventListener('dragstart',event=>{if(event.target instanceof HTMLImageElement)event.preventDefault();},true);
+      document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&['a','c','x'].includes(event.key.toLowerCase())&&!isEditableTarget(event.target)){event.preventDefault();event.stopPropagation();}},true);
+    }
     if ('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
   </script>
 </body>
