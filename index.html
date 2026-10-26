@@ -773,7 +773,7 @@ async function loadGoogleDriveStatus() {
       if(!isGoogleDriveUrl(game.download_url))return {url:directDownloadUrl(game.download_url),fileName:game.title||'descarga'};
       const response=await fetch(`${R2_WORKER_URL}/ps4/sign`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gameId:game.id})});
       const result=await response.json().catch(()=>({}));
-      if(!response.ok||!result.url)throw new Error(result.error||'No se pudo preparar la descarga de Google Drive.');
+      if(!response.ok||!result.url)return {url:directDownloadUrl(game.download_url),fileName:game.title||'descarga',directDriveFallback:true};
       return result;
     }
     async function sharePs4Game(game) {
