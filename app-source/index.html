@@ -12,6 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0"></script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
   <style>
     :root{--ink:#17251f;--muted:#718078;--green:#278957;--green2:#48aa70;--line:#e5ece7;--paper:#fff;--wash:#f3f7f4;--mint:#e9f5ed;--shadow:0 12px 35px #193a2510}
     *{box-sizing:border-box}body{margin:0;background-color:var(--wash);background-image:var(--user-wallpaper,none);background-size:cover;background-position:center;background-attachment:fixed;color:var(--ink);font-family:'DM Sans',sans-serif}button,input,textarea{font:inherit}button{cursor:pointer}.hidden{display:none!important}
@@ -83,6 +84,7 @@
     @media(max-width:860px){.ps4-layout{grid-template-columns:1fr}.ps4-sidebar{min-height:0}.ps4-folder-list{display:flex;overflow:auto;gap:6px}.ps4-folder-row{flex:0 0 auto}.ps4-game-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}}
     @media(max-width:600px){#ps4-panel .content-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}#ps4-panel .content-head>.content-title{grid-column:1/-1}#ps4-search{grid-column:1/-1;width:100%}#add-ps4-game{grid-column:1/-1}.ps4-game-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ps4-game-details{grid-template-columns:1fr}.ps4-game-details img{max-height:240px;justify-self:center}.ps4-game-card{border-radius:11px}.ps4-game-copy{padding:8px}.ps4-game-actions{padding:0 8px 8px;gap:5px}.ps4-game-actions button{font-size:9px;padding:6px}}
     .guest-games-only{background-color:#080c24;background-image:radial-gradient(ellipse at 85% 18%,rgba(69,50,143,.55),transparent 35%),radial-gradient(ellipse at 4% 55%,rgba(20,100,143,.28),transparent 34%),linear-gradient(155deg,#111739 0%,#080c24 54%,#121239 100%);color:#f5f3ff}.guest-games-only .topbar,.guest-games-only #ps4-panel{background:rgba(13,18,48,.94);color:#f5f3ff;border-color:rgba(151,171,255,.2)}.guest-games-only #ps4-panel{border-radius:18px}.guest-games-only .ps4-game-card,.guest-games-only .ps4-sidebar{background:rgba(18,25,62,.9);border-color:rgba(151,171,255,.2)}.guest-games-only .ps4-game-title,.guest-games-only .ps4-game-folder,.guest-games-only .content-title{color:#f5f3ff}.guest-games-only .ps4-game-description,.guest-games-only .ps4-game-features{color:#c6d0f4}.guest-games-only .secondary{color:#dce5ff;background:#1b2556;border-color:rgba(151,171,255,.2)}.guest-games-only .topnav> :not(#ps4-tab),.guest-games-only .topright> :not(#logout){display:none!important}.guest-games-only .topbar{height:58px;justify-content:space-between}.guest-games-only .wrap{max-width:1000px;padding-top:16px}#guest-ps4-entry{width:100%;margin-top:12px}.native-report-button{width:100%;margin-bottom:12px;padding:11px;border:1px solid rgba(103,234,255,.28);border-radius:12px;color:#dce5ff;background:rgba(28,43,91,.8);font-size:11px;font-weight:700}.native-report-button.hidden{display:none!important}
+    .login-turnstile{display:flex;justify-content:center;min-height:65px;margin:16px 0 2px}.turnstile-help{margin:0;color:var(--muted);font-size:11px;text-align:center}
     .remember-session{display:flex;align-items:flex-start;gap:9px;margin-top:15px;color:#68766e;font-size:12px;line-height:1.45;cursor:pointer}.remember-session input{width:17px;height:17px;flex:0 0 auto;margin:0;accent-color:#278957}.native-app .remember-session{color:#c8d3ff}
 
     /* Identidad visual propia de MediaChafa: azul neón, sin controles de tema. */
@@ -130,6 +132,8 @@
       <form id="login-form">
         <label class="field-label" for="username">Usuario</label><input class="field" id="username" autocomplete="username" placeholder="Tu usuario" required>
         <div id="password-wrap"><label class="field-label" for="password">Contraseña</label><input class="field" id="password" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+        <div id="login-turnstile" class="login-turnstile" aria-label="Verificación de seguridad"></div>
+        <p class="turnstile-help">Verificación de seguridad para proteger el acceso.</p>
         <label class="remember-session"><input id="remember-session" type="checkbox" checked><span>Recordarme en este dispositivo y mantener la sesión iniciada</span></label>
         <button class="primary" type="submit">Entrar a la página <span aria-hidden="true">→</span></button>
         <div class="error" id="login-error"></div>
@@ -156,6 +160,7 @@
   <div id="modal-root"></div>
   <script>
     const SUPABASE_URL = 'https://velxgwkujcabdaxbppyj.supabase.co';
+    const TURNSTILE_SITE_KEY = '0x4AAAAAAFm6cwtJzjWXtyC8';
     const SUPABASE_KEY = 'sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-';
     const OWNER_USER = 'nxmollpy';
     const OWNER_EMAIL = 'nxmollpy@gmail.com';
@@ -229,6 +234,32 @@
     let libraryPollTimer = null;
     let realtimeFallbackTimer = null;
     const $ = selector => document.querySelector(selector);
+    let loginCaptchaWidget = null;
+    let loginCaptchaToken = '';
+    let turnstileLoadAttempts = 0;
+    function initializeLoginCaptcha() {
+      if (loginCaptchaWidget !== null) return;
+      if (!window.turnstile) {
+        if (turnstileLoadAttempts++ < 40) setTimeout(initializeLoginCaptcha, 250);
+        return;
+      }
+      loginCaptchaWidget = window.turnstile.render('#login-turnstile', {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: 'dark',
+        callback: token => { loginCaptchaToken = token; },
+        'expired-callback': () => { loginCaptchaToken = ''; },
+        'error-callback': () => { loginCaptchaToken = ''; }
+      });
+    }
+    function resetLoginCaptcha() {
+      loginCaptchaToken = '';
+      if (window.turnstile && loginCaptchaWidget !== null) window.turnstile.reset(loginCaptchaWidget);
+    }
+    function getLoginCaptchaToken() {
+      if (!loginCaptchaToken && window.turnstile && loginCaptchaWidget !== null) loginCaptchaToken = window.turnstile.getResponse(loginCaptchaWidget) || '';
+      return loginCaptchaToken;
+    }
+    initializeLoginCaptcha();
     const getCapacity = () => r2Available ? MAX_BYTES : 1024 * 1024 * 1024;
     function updateDeviceMode() {
       const width = window.visualViewport?.width || document.documentElement.clientWidth;
@@ -475,33 +506,55 @@ async function loadGoogleDriveStatus() {
       localStorage.setItem(REMEMBER_SESSION_KEY, String($('#remember-session').checked));
       if (!$('#remember-session').checked) localStorage.removeItem(REMEMBERED_USERNAME_KEY);
     });
-    $('#guest-ps4-entry').onclick=async()=>{ $('#login-error').textContent=''; await client.auth.signOut({scope:'local'}); await enterLibrary(false,null,false,true); };
+    async function enterGuestAfterVerification() {
+      const errorBox = $('#login-error');
+      errorBox.textContent = '';
+      const captchaToken = getLoginCaptchaToken();
+      if (!captchaToken) { errorBox.textContent = 'Completá la verificación de seguridad.'; return; }
+      const button = $('#guest-ps4-entry');
+      button.disabled = true;
+      try {
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/create-uploader`, {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({action:'guest',captchaToken})});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'No se pudo validar el acceso.');
+        resetLoginCaptcha();
+        await client.auth.signOut({scope:'local'});
+        await enterLibrary(false,null,false,true);
+      } catch (error) {
+        errorBox.textContent = error.message || 'No se pudo validar el acceso.';
+        resetLoginCaptcha();
+      } finally { button.disabled = false; }
+    }
+    $('#guest-ps4-entry').onclick=enterGuestAfterVerification;
     $('#login-form').addEventListener('submit', async event => {
       event.preventDefault();
       const username = $('#username').value.trim().toLowerCase();
       const password = $('#password').value;
       const errorBox = $('#login-error');
       errorBox.textContent = '';
-      if (username === 'invitado' && !password) { await client.auth.signOut({scope:'local'}); await enterLibrary(false,null,false,true); return; }
+      if (username === 'invitado' && !password) { await enterGuestAfterVerification(); return; }
       if (!password) { errorBox.textContent = 'Escribí tu contraseña.'; return; }
+      const captchaToken = getLoginCaptchaToken();
+      if (!captchaToken) { errorBox.textContent = 'Completá la verificación de seguridad.'; return; }
       if ($('#remember-session').checked) localStorage.setItem(REMEMBERED_USERNAME_KEY, username);
       else localStorage.removeItem(REMEMBERED_USERNAME_KEY);
       const submit = $('#login-form button[type="submit"]');
       submit.disabled = true; submit.textContent = 'Verificando…';
       try {
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/create-uploader`, {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({action:'login',username,password,captchaToken})});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'No se pudo iniciar sesión.');
+        const {error} = await client.auth.setSession(result.session); if (error) throw error;
+        resetLoginCaptcha();
         if (username === OWNER_USER) {
-          const {data, error} = await client.auth.signInWithPassword({email:OWNER_EMAIL, password});
-          if (error) throw error;
-          if ((data.user?.email || '').toLowerCase() !== OWNER_EMAIL || data.user?.is_anonymous) { await client.auth.signOut({scope:'local'}); throw new Error('Esta cuenta no tiene acceso de dueño.'); }
-          await enterLibrary(true, data.user);
+          if ((result.user?.email || '').toLowerCase() !== OWNER_EMAIL || result.user?.is_anonymous) { await client.auth.signOut({scope:'local'}); throw new Error('Esta cuenta no tiene acceso de dueño.'); }
+          await enterLibrary(true, result.user);
         } else {
-          const response = await fetch(`${SUPABASE_URL}/functions/v1/create-uploader`, {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({action:'login',username,password})});
-          const result = await response.json(); if (!response.ok) throw new Error(result.error || 'No se pudo iniciar sesión.');
-          const {error} = await client.auth.setSession(result.session); if (error) throw error;
           await enterLibrary(false, result.user, result.account?.role==='collaborator', false, result.account||{});
         }
       } catch (error) {
         errorBox.textContent = error.message || 'No se pudo iniciar sesión.';
+        resetLoginCaptcha();
       } finally {
         submit.disabled = false; submit.innerHTML = 'Entrar a la página <span aria-hidden="true">→</span>';
       }
@@ -712,16 +765,35 @@ async function loadGoogleDriveStatus() {
       if(url.hostname==='1drv.ms'||url.hostname==='onedrive.live.com')url.searchParams.set('download','1');
       return url.href;
     }
+    function isGoogleDriveUrl(rawUrl) {
+      try { return ['drive.google.com','docs.google.com'].includes(new URL(rawUrl).hostname.toLowerCase()); }
+      catch { return false; }
+    }
+    async function getPs4Download(game) {
+      if(!isGoogleDriveUrl(game.download_url))return {url:directDownloadUrl(game.download_url),fileName:game.title||'descarga'};
+      const response=await fetch(`${R2_WORKER_URL}/ps4/sign`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gameId:game.id})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok||!result.url)throw new Error(result.error||'No se pudo preparar la descarga de Google Drive.');
+      return result;
+    }
     async function sharePs4Game(game) {
-      const destination=game.download_url;
-      modal('Compartir enlace','<p class="sub">Este es el enlace original del proveedor, por ejemplo MediaFire o Google Drive.</p><label class="field-label">Enlace para compartir</label><input class="field" id="ps4-share-link" readonly value="'+esc(destination)+'">','Copiar enlace',async root=>{const field=root.querySelector('#ps4-share-link');try{await navigator.clipboard.writeText(field.value);toast('Enlace copiado.');root.replaceChildren();}catch{field.focus();field.select();toast('Copiá el enlace seleccionado.');}});
+      try {
+        const {url:destination}=await getPs4Download(game);
+        modal('Compartir enlace','<p class="sub">El enlace abre la descarga del archivo sin dar permisos para editar o borrar en Google Drive.</p><label class="field-label">Enlace para compartir</label><input class="field" id="ps4-share-link" readonly value="'+esc(destination)+'">','Copiar enlace',async root=>{const field=root.querySelector('#ps4-share-link');try{await navigator.clipboard.writeText(field.value);toast('Enlace copiado.');root.replaceChildren();}catch{field.focus();field.select();toast('Copiá el enlace seleccionado.');}});
+      } catch(error) { toast('No se pudo preparar el enlace: '+(error.message||error)); }
     }
     async function openPs4Download(id) {
       const game=ps4Games.find(item=>item.id===id);if(!game)return;
       try {
         const url=new URL(game.download_url);
         if(!['http:','https:'].includes(url.protocol))throw new Error('El enlace del juego no es válido.');
-        const destination=directDownloadUrl(url.href);
+        const {url:destination,fileName}=await getPs4Download(game);
+        const downloadLocation=window.Capacitor?.Plugins?.DownloadLocation;
+        if(isNativeApp&&downloadLocation&&isGoogleDriveUrl(url.href)){
+          const result=await downloadLocation.saveUrlFile({url:destination,fileName});
+          if(!result?.cancelled)toast('Descarga guardada en la ubicación que elegiste.');
+          return;
+        }
         const externalLinks=window.Capacitor?.Plugins?.ExternalLink;
         if(isNativeApp&&externalLinks?.open)await externalLinks.open({url:destination});
         else window.location.href=destination;
@@ -901,7 +973,7 @@ async function loadGoogleDriveStatus() {
           else throw new Error(result.error||`Cloudflare respondió ${response.status}.`);
         }
       } catch(error) { toast('No se pudo crear el enlace: '+(error.message||error));return; }
-      modal('Enlace de descarga','<p class="sub">Este enlace no vence por tiempo: seguirá funcionando mientras el archivo exista en Google Drive o Cloudflare R2. Cualquiera que tenga el enlace podrá descargarlo; si borrás el archivo del almacenamiento, el enlace dejará de funcionar.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="'+esc(signedUrl)+'">','Copiar enlace',async root=>{
+      modal('Enlace de descarga','<p class="sub">Este enlace solo permite descargar el archivo: no concede permisos para editarlo ni borrarlo en Google Drive o Cloudflare R2. Seguirá funcionando mientras el archivo exista; si lo borrás del almacenamiento, el enlace dejará de funcionar.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="'+esc(signedUrl)+'">','Copiar enlace',async root=>{
         const input=root.querySelector('#share-link');try{await navigator.clipboard.writeText(input.value);toast('Enlace copiado.');root.replaceChildren();}catch{input.focus();input.select();toast('Copiá el enlace seleccionado.');}
       });
     }
