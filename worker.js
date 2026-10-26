@@ -163,6 +163,23 @@ async function findGoogleFileRecord(id, env, session = null) {
   return rows[0] || null;
 }
 
+function googleIdFromPublicUrl(rawUrl) {
+  let url;
+  try { url = new URL(rawUrl); } catch { return null; }
+  if (!["drive.google.com", "docs.google.com"].includes(url.hostname.toLowerCase())) return null;
+  const id = url.pathname.match(/\/(?:file|document|spreadsheets|presentation)\/d\/([^/]+)/)?.[1] || url.searchParams.get("id");
+  return id && /^[A-Za-z0-9_-]{10,200}$/.test(id) ? id : null;
+}
+
+async function findPublicPs4Game(id, env) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+  const query = `${env.SUPABASE_URL}/rest/v1/ps4_games?select=id,title,download_url&id=eq.${encodeURIComponent(id)}&limit=1`;
+  const response = await fetchWithTimeout(query, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY } }, 12000);
+  if (!response.ok) throw new Error(`No se pudo comprobar el juego en el catálogo (Supabase ${response.status}).`);
+  const rows = await response.json();
+  return rows[0] || null;
+}
+
 async function findMediaFileByPath(path, env, session = null) {
   const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=id,storage_path,file_name,created_by,is_private,allowed_user_ids,folder&storage_path=eq.${encodeURIComponent(path)}&limit=1`;
   const headers = { apikey: env.SUPABASE_PUBLISHABLE_KEY };
@@ -578,6 +595,48 @@ export default {
         const file = await response.json().catch(() => ({}));
         if (!file.id) return json({ error: "Google Drive finalizó, pero no devolvió el identificador del archivo." }, 502);
         return json({ ok: true, complete: true, file });
+      }
+
+      if (url.pathname === "/ps4/sign" && request.method === "POST") {
+        if (!env.SHARE_SIGNING_SECRET) return json({ error: "El servicio de descargas no está configurado." }, 503);
+        const input = await request.json().catch(() => ({}));
+        const gameId = String(input.gameId || "");
+        const game = await findPublicPs4Game(gameId, env);
+        if (!game) return json({ error: "El juego no está disponible públicamente en el catálogo." }, 404);
+        const id = googleIdFromPublicUrl(game.download_url);
+        if (!id) return json({ error: "El enlace de Drive no contiene un archivo descargable válido." }, 400);
+        const accessToken = await googleAccessToken(env);
+        if (!accessToken) return json({ error: "Google Drive no está conectado en MediaChafa." }, 503);
+        const metadataResponse = await fetchWithTimeout(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=id,name,mimeType,size&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${accessToken}` } }, 20000);
+        const metadata = await metadataResponse.json().catch(() => ({}));
+        if (!metadataResponse.ok) return json({ error: metadata.error?.message || "MediaChafa no tiene acceso de lectura a ese archivo de Drive. Revisá que el enlace sea de un archivo de tu Drive conectado." }, metadataResponse.status === 404 ? 404 : 502);
+        const fileName = String(metadata.name || game.title || "descarga").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").slice(0, 255);
+        const signature = await sign(env.SHARE_SIGNING_SECRET, `ps4:${gameId}\n${id}\n${fileName}`);
+        const shareUrl = new URL(`/ps4/download/${encodeURIComponent(gameId)}`, url.origin);
+        shareUrl.searchParams.set("file", id);
+        shareUrl.searchParams.set("name", fileName);
+        shareUrl.searchParams.set("signature", signature);
+        return json({ url: shareUrl.toString(), fileName, permanent: true });
+      }
+
+      if (url.pathname.startsWith("/ps4/download/") && request.method === "GET") {
+        const gameId = decodeURIComponent(url.pathname.slice("/ps4/download/".length));
+        const id = url.searchParams.get("file") || "";
+        const fileName = url.searchParams.get("name") || "descarga";
+        const signature = url.searchParams.get("signature") || "";
+        if (!env.SHARE_SIGNING_SECRET || !/^[A-Za-z0-9_-]{10,200}$/.test(id)) return json({ error: "Este enlace de descarga no es válido." }, 403);
+        const game = await findPublicPs4Game(gameId, env);
+        if (!game || googleIdFromPublicUrl(game.download_url) !== id) return json({ error: "El juego ya no está disponible en el catálogo." }, 404);
+        if (!safeEqual(await sign(env.SHARE_SIGNING_SECRET, `ps4:${gameId}\n${id}\n${fileName}`), signature)) return json({ error: "Este enlace de descarga no es válido." }, 403);
+        const accessToken = await googleAccessToken(env);
+        if (!accessToken) return json({ error: "Google Drive no está conectado en MediaChafa." }, 503);
+        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!response.ok || !response.body) return json({ error: response.status === 404 ? "El archivo ya no existe o MediaChafa no tiene acceso de lectura en Drive." : "Google Drive no pudo entregar el archivo." }, response.status === 404 ? 404 : 502);
+        const headers = new Headers({ "Content-Type": response.headers.get("Content-Type") || "application/octet-stream", "Cache-Control": "private, no-store", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}` });
+        const length = response.headers.get("Content-Length");
+        if (length) headers.set("Content-Length", length);
+        for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
+        return new Response(response.body, { headers });
       }
 
       if (url.pathname === "/google/sign" && request.method === "POST") {

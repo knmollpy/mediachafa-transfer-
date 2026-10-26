@@ -239,7 +239,10 @@
     let turnstileLoadAttempts = 0;
     function initializeLoginCaptcha() {
       if (loginCaptchaWidget !== null) return;
-      if (!window.turnstile) { if (turnstileLoadAttempts++ < 40) setTimeout(initializeLoginCaptcha, 250); return; }
+      if (!window.turnstile) {
+        if (turnstileLoadAttempts++ < 40) setTimeout(initializeLoginCaptcha, 250);
+        return;
+      }
       loginCaptchaWidget = window.turnstile.render('#login-turnstile', {
         sitekey: TURNSTILE_SITE_KEY,
         theme: 'dark',
@@ -504,41 +507,57 @@ async function loadGoogleDriveStatus() {
       if (!$('#remember-session').checked) localStorage.removeItem(REMEMBERED_USERNAME_KEY);
     });
     async function enterGuestAfterVerification() {
-      const errorBox = $('#login-error'); errorBox.textContent = '';
+      const errorBox = $('#login-error');
+      errorBox.textContent = '';
       const captchaToken = getLoginCaptchaToken();
       if (!captchaToken) { errorBox.textContent = 'Completá la verificación de seguridad.'; return; }
-      const button = $('#guest-ps4-entry'); button.disabled = true;
+      const button = $('#guest-ps4-entry');
+      button.disabled = true;
       try {
-        const response = await fetch(SUPABASE_URL + '/functions/v1/create-uploader', {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({action:'guest',captchaToken})});
-        const result = await response.json(); if (!response.ok) throw new Error(result.error || 'No se pudo validar el acceso.');
-        resetLoginCaptcha(); await client.auth.signOut({scope:'local'}); await enterLibrary(false,null,false,true);
-      } catch (error) { errorBox.textContent = error.message || 'No se pudo validar el acceso.'; resetLoginCaptcha(); }
-      finally { button.disabled = false; }
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/create-uploader`, {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({action:'guest',captchaToken})});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'No se pudo validar el acceso.');
+        resetLoginCaptcha();
+        await client.auth.signOut({scope:'local'});
+        await enterLibrary(false,null,false,true);
+      } catch (error) {
+        errorBox.textContent = error.message || 'No se pudo validar el acceso.';
+        resetLoginCaptcha();
+      } finally { button.disabled = false; }
     }
     $('#guest-ps4-entry').onclick=enterGuestAfterVerification;
     $('#login-form').addEventListener('submit', async event => {
       event.preventDefault();
       const username = $('#username').value.trim().toLowerCase();
       const password = $('#password').value;
-      const errorBox = $('#login-error'); errorBox.textContent = '';
+      const errorBox = $('#login-error');
+      errorBox.textContent = '';
       if (username === 'invitado' && !password) { await enterGuestAfterVerification(); return; }
       if (!password) { errorBox.textContent = 'Escribí tu contraseña.'; return; }
       const captchaToken = getLoginCaptchaToken();
       if (!captchaToken) { errorBox.textContent = 'Completá la verificación de seguridad.'; return; }
       if ($('#remember-session').checked) localStorage.setItem(REMEMBERED_USERNAME_KEY, username);
       else localStorage.removeItem(REMEMBERED_USERNAME_KEY);
-      const submit = $('#login-form button[type="submit"]'); submit.disabled = true; submit.textContent = 'Verificando…';
+      const submit = $('#login-form button[type="submit"]');
+      submit.disabled = true; submit.textContent = 'Verificando…';
       try {
-        const response = await fetch(SUPABASE_URL + '/functions/v1/create-uploader', {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({action:'login',username,password,captchaToken})});
-        const result = await response.json(); if (!response.ok) throw new Error(result.error || 'No se pudo iniciar sesión.');
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/create-uploader`, {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({action:'login',username,password,captchaToken})});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'No se pudo iniciar sesión.');
         const {error} = await client.auth.setSession(result.session); if (error) throw error;
         resetLoginCaptcha();
         if (username === OWNER_USER) {
           if ((result.user?.email || '').toLowerCase() !== OWNER_EMAIL || result.user?.is_anonymous) { await client.auth.signOut({scope:'local'}); throw new Error('Esta cuenta no tiene acceso de dueño.'); }
           await enterLibrary(true, result.user);
-        } else await enterLibrary(false, result.user, result.account?.role==='collaborator', false, result.account||{});
-      } catch (error) { errorBox.textContent = error.message || 'No se pudo iniciar sesión.'; resetLoginCaptcha(); }
-      finally { submit.disabled = false; submit.innerHTML = 'Entrar a la página <span aria-hidden="true">→</span>'; }
+        } else {
+          await enterLibrary(false, result.user, result.account?.role==='collaborator', false, result.account||{});
+        }
+      } catch (error) {
+        errorBox.textContent = error.message || 'No se pudo iniciar sesión.';
+        resetLoginCaptcha();
+      } finally {
+        submit.disabled = false; submit.innerHTML = 'Entrar a la página <span aria-hidden="true">→</span>';
+      }
     });
 
     $('#logout').onclick = async () => {
@@ -746,16 +765,35 @@ async function loadGoogleDriveStatus() {
       if(url.hostname==='1drv.ms'||url.hostname==='onedrive.live.com')url.searchParams.set('download','1');
       return url.href;
     }
+    function isGoogleDriveUrl(rawUrl) {
+      try { return ['drive.google.com','docs.google.com'].includes(new URL(rawUrl).hostname.toLowerCase()); }
+      catch { return false; }
+    }
+    async function getPs4Download(game) {
+      if(!isGoogleDriveUrl(game.download_url))return {url:directDownloadUrl(game.download_url),fileName:game.title||'descarga'};
+      const response=await fetch(`${R2_WORKER_URL}/ps4/sign`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gameId:game.id})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok||!result.url)throw new Error(result.error||'No se pudo preparar la descarga de Google Drive.');
+      return result;
+    }
     async function sharePs4Game(game) {
-      const destination=game.download_url;
-      modal('Compartir enlace','<p class="sub">Este es el enlace original del proveedor, por ejemplo MediaFire o Google Drive.</p><label class="field-label">Enlace para compartir</label><input class="field" id="ps4-share-link" readonly value="'+esc(destination)+'">','Copiar enlace',async root=>{const field=root.querySelector('#ps4-share-link');try{await navigator.clipboard.writeText(field.value);toast('Enlace copiado.');root.replaceChildren();}catch{field.focus();field.select();toast('Copiá el enlace seleccionado.');}});
+      try {
+        const {url:destination}=await getPs4Download(game);
+        modal('Compartir enlace','<p class="sub">El enlace abre la descarga del archivo sin dar permisos para editar o borrar en Google Drive.</p><label class="field-label">Enlace para compartir</label><input class="field" id="ps4-share-link" readonly value="'+esc(destination)+'">','Copiar enlace',async root=>{const field=root.querySelector('#ps4-share-link');try{await navigator.clipboard.writeText(field.value);toast('Enlace copiado.');root.replaceChildren();}catch{field.focus();field.select();toast('Copiá el enlace seleccionado.');}});
+      } catch(error) { toast('No se pudo preparar el enlace: '+(error.message||error)); }
     }
     async function openPs4Download(id) {
       const game=ps4Games.find(item=>item.id===id);if(!game)return;
       try {
         const url=new URL(game.download_url);
         if(!['http:','https:'].includes(url.protocol))throw new Error('El enlace del juego no es válido.');
-        const destination=directDownloadUrl(url.href);
+        const {url:destination,fileName}=await getPs4Download(game);
+        const downloadLocation=window.Capacitor?.Plugins?.DownloadLocation;
+        if(isNativeApp&&downloadLocation&&isGoogleDriveUrl(url.href)){
+          const result=await downloadLocation.saveUrlFile({url:destination,fileName});
+          if(!result?.cancelled)toast('Descarga guardada en la ubicación que elegiste.');
+          return;
+        }
         const externalLinks=window.Capacitor?.Plugins?.ExternalLink;
         if(isNativeApp&&externalLinks?.open)await externalLinks.open({url:destination});
         else window.location.href=destination;
@@ -1279,3 +1317,8 @@ async function loadGoogleDriveStatus() {
   </script>
 </body>
 </html>
+
+
+
+
+
