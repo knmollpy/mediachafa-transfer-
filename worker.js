@@ -590,32 +590,36 @@ export default {
         const record = await findGoogleFileRecord(id, env, session);
         if (!record) return json({ error: "No encontramos el archivo en la biblioteca. Actualizá la lista y volvé a intentar." }, 404);
         if (record.is_private) return json({ error: "Los archivos privados no generan enlaces públicos." }, 403);
-        const expires = Math.floor(Date.now() / 1000) + SHARE_TTL_SECONDS;
         const preview = input.preview === true;
         const fileName = String(record.file_name || "archivo").slice(0, 255);
-        const signature = await sign(env.SHARE_SIGNING_SECRET, `gdrive:${id}\n${expires}\n${preview ? "inline" : "attachment"}\n${fileName}`);
+        const mode = preview ? "inline" : "attachment";
+        const signature = await sign(env.SHARE_SIGNING_SECRET, `gdrive:${id}\npermanent\n${mode}\n${fileName}`);
         const shareUrl = new URL(`/google/download/${encodeURIComponent(id)}`, url.origin);
-        shareUrl.searchParams.set("expires", String(expires));
         shareUrl.searchParams.set("signature", signature);
         shareUrl.searchParams.set("name", fileName);
         if (preview) shareUrl.searchParams.set("preview", "1");
-        return json({ url: shareUrl.toString(), expiresAt: new Date(expires * 1000).toISOString(), expiresIn: SHARE_TTL_SECONDS });
+        return json({ url: shareUrl.toString(), permanent: true });
       }
 
       if (url.pathname.startsWith("/google/download/") && request.method === "GET") {
         const id = decodeURIComponent(url.pathname.slice("/google/download/".length));
-        const expires = Number(url.searchParams.get("expires"));
+        const expiresValue = url.searchParams.get("expires");
+        const expires = expiresValue === null ? null : Number(expiresValue);
         const preview = url.searchParams.get("preview") === "1";
         const fileName = url.searchParams.get("name") || "archivo";
         const mode = preview ? "inline" : "attachment";
         const suppliedSignature = url.searchParams.get("signature") || "";
         const now = Math.floor(Date.now() / 1000);
-        if (!googleFileId(`gdrive://${id}`) || !Number.isInteger(expires) || expires <= now || expires > now + SHARE_TTL_SECONDS + 60) return json({ error: "Este enlace venció o no es válido." }, 410);
-        if (!safeEqual(await sign(env.SHARE_SIGNING_SECRET, `gdrive:${id}\n${expires}\n${mode}\n${fileName}`), suppliedSignature)) return json({ error: "Este enlace no es válido." }, 403);
+        if (!googleFileId(`gdrive://${id}`)) return json({ error: "El identificador del archivo no es válido." }, 400);
+        if (expires !== null && (!Number.isInteger(expires) || expires <= now || expires > now + SHARE_TTL_SECONDS + 60)) return json({ error: "Este enlace venció o no es válido." }, 410);
+        const signedValue = expires === null
+          ? `gdrive:${id}\npermanent\n${mode}\n${fileName}`
+          : `gdrive:${id}\n${expires}\n${mode}\n${fileName}`;
+        if (!safeEqual(await sign(env.SHARE_SIGNING_SECRET, signedValue), suppliedSignature)) return json({ error: "Este enlace no es válido." }, 403);
         const accessToken = await googleAccessToken(env);
         if (!accessToken) return json({ error: "Google Drive no está conectado." }, 503);
         const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
-        if (!response.ok || !response.body) return json({ error: "Google Drive no pudo entregar el archivo." }, 502);
+        if (!response.ok || !response.body) return json({ error: response.status === 404 || response.status === 410 ? "El archivo ya no existe en Google Drive." : "Google Drive no pudo entregar el archivo." }, response.status === 404 || response.status === 410 ? 404 : 502);
         const headers = new Headers({ "Content-Type": response.headers.get("Content-Type") || "application/octet-stream", "Cache-Control": "private, no-store", "Content-Disposition": `${mode}; filename*=UTF-8''${encodeURIComponent(fileName)}` });
         for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
         return new Response(response.body, { headers });
@@ -651,22 +655,22 @@ export default {
         const fileRecord = await findMediaFileByPath(path, env, session);
         if (!fileRecord || fileRecord.is_private) return json({ error: "Solo se pueden compartir archivos públicos." }, 403);
         if (!await env.MEDIA_BUCKET.head(path)) return json({ error: "Archivo no encontrado en R2." }, 404);
-        const expires = Math.floor(Date.now() / 1000) + SHARE_TTL_SECONDS;
-        const signature = await sign(env.SHARE_SIGNING_SECRET, `${path}\n${expires}`);
+        const signature = await sign(env.SHARE_SIGNING_SECRET, `${path}\npermanent`);
         const shareUrl = new URL("/share/" + encodePath(path), url.origin);
-        shareUrl.searchParams.set("expires", String(expires));
         shareUrl.searchParams.set("signature", signature);
-        return json({ url: shareUrl.toString(), expiresAt: new Date(expires * 1000).toISOString(), expiresIn: SHARE_TTL_SECONDS });
+        return json({ url: shareUrl.toString(), permanent: true });
       }
 
       if (url.pathname.startsWith("/share/") && request.method === "GET") {
         if (!env.SHARE_SIGNING_SECRET) return json({ error: "El servicio de enlaces no está configurado." }, 503);
         const path = objectKey(url.pathname, "/share/");
-        const expires = Number(url.searchParams.get("expires"));
+        const expiresValue = url.searchParams.get("expires");
+        const expires = expiresValue === null ? null : Number(expiresValue);
         const suppliedSignature = url.searchParams.get("signature") || "";
         const now = Math.floor(Date.now() / 1000);
-        if (!path || !Number.isInteger(expires) || expires <= now || expires > now + SHARE_TTL_SECONDS + 60) return json({ error: "Este enlace venció o no es válido." }, 410);
-        const expected = await sign(env.SHARE_SIGNING_SECRET, `${path}\n${expires}`);
+        if (!path) return json({ error: "Archivo inválido." }, 400);
+        if (expires !== null && (!Number.isInteger(expires) || expires <= now || expires > now + SHARE_TTL_SECONDS + 60)) return json({ error: "Este enlace venció o no es válido." }, 410);
+        const expected = await sign(env.SHARE_SIGNING_SECRET, expires === null ? `${path}\npermanent` : `${path}\n${expires}`);
         if (!safeEqual(expected, suppliedSignature)) return json({ error: "Este enlace no es válido." }, 403);
         if (!await env.MEDIA_BUCKET.head(path)) return json({ error: "El archivo ya no existe." }, 404);
         const object = await env.MEDIA_BUCKET.get(path);

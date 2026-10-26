@@ -889,27 +889,19 @@ async function loadGoogleDriveStatus() {
 
     async function shareFile(file) {
       if(isPrivateFile(file)){toast('Los archivos privados no generan enlaces públicos.');return;}
-      const expiresIn=60*60*24*30,expiresAt=new Date(Date.now()+expiresIn*1000),expiresLabel=new Intl.DateTimeFormat('es-AR',{dateStyle:'full',timeStyle:'short'}).format(expiresAt);
       const {data:{session}}=await client.auth.getSession();
       let signedUrl;
       try {
         if(isGoogleFile(file)) signedUrl=(await googleSignedUrl(file,false)).url;
-        else if(isSupabaseFile(file)) {
-          const {data,error}=await client.storage.from(BUCKET).createSignedUrl(storageObjectPath(file),expiresIn,{download:file.name});
-          if(error)throw error;
-          signedUrl=data.signedUrl.startsWith('http')?data.signedUrl:SUPABASE_URL+data.signedUrl;
-        } else {
+        else if(isSupabaseFile(file)) throw new Error('Este archivo está en el almacenamiento heredado de Supabase; los enlaces permanentes están disponibles para Google Drive y Cloudflare R2.');
+        else {
           const response=await fetch(`${R2_WORKER_URL}/sign`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${session?.access_token||''}`},body:JSON.stringify({path:file.path})});
           const result=await response.json().catch(()=>({}));
           if(response.ok&&result.url)signedUrl=result.url;
-          else {
-            const {data,error}=await client.storage.from(BUCKET).createSignedUrl(storageObjectPath(file),expiresIn,{download:file.name});
-            if(error)throw new Error(`${result.error||`Cloudflare respondió ${response.status}.`} ${error.message}`);
-            signedUrl=data.signedUrl.startsWith('http')?data.signedUrl:SUPABASE_URL+data.signedUrl;
-          }
+          else throw new Error(result.error||`Cloudflare respondió ${response.status}.`);
         }
       } catch(error) { toast('No se pudo crear el enlace: '+(error.message||error));return; }
-      modal('Enlace de descarga','<p class="sub">Este enlace permite descargar solo este archivo. Dura 30 días y vence el <strong>'+expiresLabel+'</strong>. Después de esa fecha dejará de funcionar. Cualquiera que tenga el enlace podrá descargarlo.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="'+esc(signedUrl)+'">','Copiar enlace',async root=>{
+      modal('Enlace de descarga','<p class="sub">Este enlace no vence por tiempo: seguirá funcionando mientras el archivo exista en Google Drive o Cloudflare R2. Cualquiera que tenga el enlace podrá descargarlo; si borrás el archivo del almacenamiento, el enlace dejará de funcionar.</p><label class="field-label">Enlace</label><input class="field" id="share-link" readonly value="'+esc(signedUrl)+'">','Copiar enlace',async root=>{
         const input=root.querySelector('#share-link');try{await navigator.clipboard.writeText(input.value);toast('Enlace copiado.');root.replaceChildren();}catch{input.focus();input.select();toast('Copiá el enlace seleccionado.');}
       });
     }
