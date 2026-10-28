@@ -35,6 +35,54 @@
   const betaHeader = $('#beta-panel .beta-header');
   betaHeader.insertBefore(modelControl, betaHeader.querySelector('.beta-nav'));
 
+  // Keep the provider setup available even when an older cached HTML shell is
+  // served by a browser; the model worker still requires an explicitly saved
+  // free-tier API key before it can list or call any model.
+  if (!$('#beta-connection-openrouter')) {
+    const grid = $('#beta-integrations-view .beta-connectors');
+    if (grid) {
+      const card = document.createElement('article');
+      card.className = 'beta-connector beta-free-models';
+      const title = document.createElement('h3');
+      title.textContent = 'Modelos gratuitos · OpenRouter';
+      const description = document.createElement('p');
+      description.append('Conectá una API key gratuita desde ');
+      const keysLink = document.createElement('a');
+      keysLink.href = 'https://openrouter.ai/keys';
+      keysLink.target = '_blank';
+      keysLink.rel = 'noopener noreferrer';
+      keysLink.textContent = 'openrouter.ai/keys';
+      description.append(keysLink, '. No compres créditos ni actives recargas automáticas. Beta solo lista variantes :free cuyo precio actual sea $0, lo comprueba antes de cada consulta y bloquea fallbacks. No envíes claves ni datos privados en el chat.');
+      const tokenInput = document.createElement('input');
+      tokenInput.id = 'beta-token-openrouter';
+      tokenInput.type = 'password';
+      tokenInput.autocomplete = 'off';
+      tokenInput.spellcheck = false;
+      tokenInput.placeholder = 'Pegá tu API key de OpenRouter';
+      tokenInput.setAttribute('aria-label', 'API key de OpenRouter');
+      const actions = document.createElement('div');
+      actions.className = 'beta-actions';
+      const connect = document.createElement('button');
+      connect.className = 'add-btn';
+      connect.type = 'button';
+      connect.dataset.betaConnect = 'openrouter';
+      connect.textContent = 'Validar y guardar';
+      const disconnect = document.createElement('button');
+      disconnect.className = 'secondary hidden';
+      disconnect.type = 'button';
+      disconnect.dataset.betaDisconnect = 'openrouter';
+      disconnect.textContent = 'Desconectar';
+      actions.append(connect, disconnect);
+      const connection = document.createElement('span');
+      connection.className = 'beta-connection-status';
+      connection.id = 'beta-connection-openrouter';
+      connection.setAttribute('role', 'status');
+      connection.textContent = 'Sin conectar';
+      card.append(title, description, tokenInput, actions, connection);
+      grid.append(card);
+    }
+  }
+
   const browserFrame = $('#beta-browser-frame');
   const workPreview = document.createElement('section');
   workPreview.className = 'beta-work-preview';
