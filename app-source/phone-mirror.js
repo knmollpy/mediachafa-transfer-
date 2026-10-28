@@ -21,6 +21,7 @@ let activeAdb;
 let activeClient;
 let activeDecoder;
 let activeVideoStream;
+let activeVideoStats;
 let disconnectListener;
 let isConnecting = false;
 
@@ -65,7 +66,7 @@ async function stopMirror({ message = 'Teléfono desconectado.', state = 'idle' 
   const adb = activeAdb;
   const client = activeClient;
   const decoder = activeDecoder;
-  activeDevice = activeAdb = activeClient = activeDecoder = activeVideoStream = undefined;
+  activeDevice = activeAdb = activeClient = activeDecoder = activeVideoStream = activeVideoStats = undefined;
   if (device && disconnectListener) device.raw.removeEventListener('disconnect', disconnectListener);
   disconnectListener = undefined;
   try { await client?.close(); } catch { /* ya se cerró al quitar el cable */ }
@@ -125,11 +126,15 @@ async function connectMirror() {
     await AdbScrcpyClient.pushServer(adb, serverResponse.body);
     client = await AdbScrcpyClient.start(adb, '/data/local/tmp/scrcpy-server.jar', new AdbScrcpyOptionsLatest({
       video: true,
+      videoCodec: 'h264',
       audio: false,
       control: true,
       maxSize: 1440,
       maxFps: 30,
       videoBitRate: 8000000,
+      sendFrameMeta: true,
+      sendCodecMeta: true,
+      sendDeviceMeta: true,
     }));
     activeClient = client;
     void drainOutput(client);
@@ -143,14 +148,49 @@ async function connectMirror() {
       : new BitmapVideoFrameRenderer(canvas);
     decoder = new WebCodecsVideoDecoder({ codec: videoStream.metadata.codec, renderer });
     activeDecoder = decoder;
+    const videoStats = { packets: 0, frames: 0, configurations: 0, startedAt: performance.now() };
+    activeVideoStats = videoStats;
+    decoder.sizeChanged(({ width, height }) => {
+      if (activeDecoder === decoder) {
+        deviceName.textContent = `${videoStream.metadata.deviceName || device.name || device.raw.productName || 'Teléfono Android'} · ${width} × ${height}`;
+      }
+    });
     stage.replaceChildren(decoder.renderer.canvas);
-    void videoStream.stream.pipeTo(decoder.writable).catch((error) => {
+    const measuredVideoStream = videoStream.stream.pipeThrough(new TransformStream({
+      transform(packet, controller) {
+        videoStats.packets += 1;
+        if (packet.type === 'configuration') videoStats.configurations += 1;
+        else if (packet.type === 'data') videoStats.frames += 1;
+        controller.enqueue(packet);
+      },
+    }));
+    void measuredVideoStream.pipeTo(decoder.writable).catch((error) => {
       if (activeClient === client) void stopMirror({ message: error?.message || 'La transmisión se interrumpió.', state: 'error' });
     });
 
     deviceName.textContent = videoStream.metadata.deviceName || device.name || device.raw.productName || 'Teléfono Android';
     setControlsEnabled(true);
-    setStatus('Teléfono conectado. Hacé clic o tocá la pantalla para controlarlo.', 'connected');
+    setStatus('Teléfono conectado. Esperando la primera imagen…', 'connected');
+    const checkFirstFrame = () => {
+      if (activeClient !== client || activeDecoder !== decoder) return;
+      const width = decoder.width;
+      const height = decoder.height;
+      if (decoder.framesRendered > 0) {
+        setStatus(`Imagen en vivo (${width} × ${height}). Hacé clic o tocá la pantalla para controlarlo.`, 'connected');
+        return;
+      }
+      if (performance.now() - videoStats.startedAt >= 15000) {
+        const detail = videoStats.frames > 0
+          ? `Llegaron ${videoStats.frames} cuadros (${videoStats.configurations} de configuración), pero no se dibujaron. Códec: ${videoStream.metadata.codec}; cuadros dibujados: ${decoder.framesRendered}.`
+          : videoStats.packets > 0
+            ? `Llegó la configuración del video, pero ningún cuadro (${videoStats.configurations} paquetes de configuración). Códec: ${videoStream.metadata.codec}.`
+            : `ADB conectó, pero Scrcpy no envió paquetes de video (códec: ${videoStream.metadata.codec}).`;
+        setStatus(`${detail} Desbloqueá la pantalla del teléfono y volvé a conectar.`, 'error');
+        return;
+      }
+      setTimeout(checkFirstFrame, 750);
+    };
+    setTimeout(checkFirstFrame, 750);
     void client.exited.then(() => {
       if (activeClient === client) void stopMirror({ message: 'La transmisión terminó. Podés volver a conectar el teléfono.', state: 'error' });
     }).catch(() => {});
