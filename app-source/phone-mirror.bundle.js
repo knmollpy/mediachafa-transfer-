@@ -11617,7 +11617,7 @@ async function connectMirror() {
     adb = new Adb(transport);
     activeAdb = adb;
     setStatus("Preparando la transmisi\xF3n\u2026");
-    const serverResponse = await fetch("/scrcpy-server.bin", { cache: "force-cache" });
+    const serverResponse = await fetch("/app-source/scrcpy-server.bin", { cache: "force-cache" });
     if (!serverResponse.ok) throw new Error("No se pudo cargar el componente de transmisi\xF3n. Recarg\xE1 MediaChafa e intent\xE1 otra vez.");
     await AdbScrcpyClient.pushServer(adb, serverResponse.body);
     client = await AdbScrcpyClient.start(adb, "/data/local/tmp/scrcpy-server.jar", new AdbScrcpyOptionsLatest({
