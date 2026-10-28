@@ -127,6 +127,13 @@
     @media(prefers-reduced-motion:reduce){html:not(.native-app) body::before{animation:none}}
 
     /* Tema exclusivo de Beta: negro y rojo. */
+    #app.beta-mode .topbar{background:#090909;border-color:#301010;color:#f5f5f5;box-shadow:0 0 24px #ff202012}
+    #app.beta-mode .topbar .brand,#app.beta-mode .topbar .logout{color:#f5f5f5}
+    #app.beta-mode .topbar .navitem{color:#c1aaaa}
+    #app.beta-mode .topbar .navitem.active{background:#351010;color:#fff}
+    #app.beta-mode .topbar .role-chip{background:#351010;color:#ff9999}
+    #app.beta-mode .topbar .avatar{background:#7c1616;color:#fff}
+    #app.beta-mode .topbar .theme-toggle,#app.beta-mode .topbar .secondary{background:#1b1111;color:#f3dede;border-color:#482020}
     #app.beta-mode #beta-panel{background:#090909!important;color:#f5f5f5;border-color:#301010;--ink:#f5f5f5;--muted:#b6a2a2;--line:#482020;--paper:#101010;--wash:#080808;--shadow:0 0 28px #ff202012}
     #app.beta-mode #beta-panel .beta-header{border-color:#421515}
     #app.beta-mode #beta-panel .beta-brand,#app.beta-mode #beta-panel .beta-prompt-title,#app.beta-mode #beta-panel .beta-connector h3,#app.beta-mode #beta-panel .beta-activity>strong{color:#fff}
