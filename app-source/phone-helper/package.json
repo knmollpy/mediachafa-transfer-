@@ -1,0 +1,8 @@
+{
+  "name": "mediachafa-phone-helper",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": { "start": "node companion.mjs" },
+  "dependencies": { "ws": "8.22.0" }
+}
