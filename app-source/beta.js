@@ -240,7 +240,7 @@
 
   document.querySelectorAll('[data-beta-disconnect]').forEach(button => button.addEventListener('click', async () => {
     const provider = button.dataset.betaDisconnect;
-    if (!window.confirm(`¿Desconectar ${provider}? Beta dejará de usar el token guardado. No se revoca en el servicio.`)) return;
+    if (!window.confirm(`¿Desconectar ${provider}? Beta dejará de acceder a esta integración.`)) return;
     button.disabled = true;
     try { await api('/integrations/disconnect', { method: 'POST', body: JSON.stringify({ provider }) }); await loadIntegrations(); }
     catch (error) { $(`#beta-connection-${provider}`).textContent = error.message; }
