@@ -5,6 +5,19 @@ const OWNER_EMAIL = "nxmollpy@gmail.com";
 const CHAT_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const AUDIO_MODEL = "@cf/openai/whisper-large-v3-turbo";
 const DAILY_REQUEST_LIMIT = 1000;
+const CHAT_MODELS = [
+  { id: "@cf/google/gemma-4-26b-a4b-it", name: "Gemma 4 26B", vision: true },
+  { id: "@cf/zai-org/glm-4.7-flash", name: "GLM 4.7 Flash", vision: false },
+  { id: "@cf/openai/gpt-oss-20b", name: "GPT OSS 20B", vision: false },
+  { id: "@cf/openai/gpt-oss-120b", name: "GPT OSS 120B", vision: false },
+  { id: "@cf/meta/llama-4-scout-17b-16e-instruct", name: "Llama 4 Scout", vision: true },
+  { id: "@cf/meta/llama-3.3-70b-instruct-fp8-fast", name: "Llama 3.3 70B Fast", vision: false },
+  { id: "@cf/qwen/qwen3-30b-a3b-fp8", name: "Qwen 3 30B", vision: false },
+  { id: "@cf/mistralai/mistral-small-3.1-24b-instruct", name: "Mistral Small 3.1", vision: true },
+  { id: "@cf/ibm/granite-4.0-h-micro", name: "Granite 4 Micro", vision: false },
+  { id: "@cf/nvidia/nemotron-3-120b-a12b", name: "Nemotron 3 120B", vision: false },
+];
+const CHAT_MODEL_BY_ID = new Map(CHAT_MODELS.map((model) => [model.id, model]));
 const MAX_BODY_BYTES = 14 * 1024 * 1024;
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
 const PROVIDERS = ["github", "supabase", "cloudflare"];
@@ -226,14 +239,25 @@ async function requireOwner(request) {
   return user;
 }
 
-async function reserveRequest(env, userId) {
+async function reserveRequest(env, userId, modelId) {
   const date = new Date().toISOString().slice(0, 10);
-  const key = `beta-ai-requests:${userId}:${date}`;
-  const current = Number(await env.BETA_LIMITS.get(key) || 0);
-  if (current >= DAILY_REQUEST_LIMIT) return { allowed: false, remaining: 0, resetsAt: `${date}T24:00:00Z` };
+  const key = `beta-ai-requests:${userId}:${encodeURIComponent(modelId)}:${date}`;
+  let current = Number(await env.BETA_LIMITS.get(key) || 0);
+  if (!current && modelId === CHAT_MODEL) {
+    current = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${userId}:${date}`) || 0);
+    if (current) await env.BETA_LIMITS.put(key, String(current), { expirationTtl: 172800 });
+  }
+  if (current >= DAILY_REQUEST_LIMIT) return { allowed: false, usedToday: current, remaining: 0, dailyLimit: DAILY_REQUEST_LIMIT, resetsAt: `${date}T24:00:00Z` };
   const next = current + 1;
   await env.BETA_LIMITS.put(key, String(next), { expirationTtl: 172800 });
-  return { allowed: true, remaining: DAILY_REQUEST_LIMIT - next, resetsAt: `${date}T24:00:00Z` };
+  return { allowed: true, usedToday: next, remaining: DAILY_REQUEST_LIMIT - next, dailyLimit: DAILY_REQUEST_LIMIT, resetsAt: `${date}T24:00:00Z` };
+}
+
+async function modelUsage(env, userId, modelId, date = new Date().toISOString().slice(0, 10)) {
+  const key = `beta-ai-requests:${userId}:${encodeURIComponent(modelId)}:${date}`;
+  let usedToday = Number(await env.BETA_LIMITS.get(key) || 0);
+  if (!usedToday && modelId === CHAT_MODEL) usedToday = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${userId}:${date}`) || 0);
+  return { usedToday, remaining: Math.max(0, DAILY_REQUEST_LIMIT - usedToday), dailyLimit: DAILY_REQUEST_LIMIT };
 }
 
 export default {
@@ -249,8 +273,8 @@ export default {
       const user = await requireOwner(request);
       if (!user) return json({ error: "La Beta está disponible solo para la cuenta dueña." }, 403, origin);
       const date = new Date().toISOString().slice(0, 10);
-      const used = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${user.id}:${date}`) || 0);
-      return json({ ok: true, remaining: Math.max(0, DAILY_REQUEST_LIMIT - used), dailyLimit: DAILY_REQUEST_LIMIT, resetsAt: `${date}T24:00:00Z` }, 200, origin);
+      const models = await Promise.all(CHAT_MODELS.map(async (model) => ({ ...model, ...await modelUsage(env, user.id, model.id, date) })));
+      return json({ ok: true, models, dailyLimit: DAILY_REQUEST_LIMIT, quotaScope: "per-model", providerQuotaNote: "Cloudflare Workers AI shares its neuron allowance across models.", resetsAt: `${date}T24:00:00Z` }, 200, origin);
     }
     if (url.pathname.startsWith("/integrations/") && request.method !== "GET" && request.method !== "POST") return json({ error: "Método no permitido." }, 405, origin);
     if (url.pathname.startsWith("/integrations/")) {
@@ -372,8 +396,12 @@ export default {
     const history = Array.isArray(payload.history)
       ? payload.history.slice(-8).filter((item) => ["user", "assistant"].includes(item?.role)).map((item) => ({ role: item.role, content: String(item.content || "").slice(0, 3000) }))
       : [];
-    const quota = await reserveRequest(env, user.id);
-    if (!quota.allowed) return json({ error: `Llegaste al límite de ${DAILY_REQUEST_LIMIT} consultas por día. Vuelve a intentarlo mañana. También puede aplicar antes el límite del proveedor de IA.`, remaining: 0, resetsAt: quota.resetsAt }, 429, origin);
+    const modelId = String(payload.model || CHAT_MODEL);
+    const selectedModel = CHAT_MODEL_BY_ID.get(modelId);
+    if (!selectedModel) return json({ error: "Ese modelo no está habilitado en Beta." }, 400, origin);
+    if (image && !selectedModel.vision) return json({ error: `${selectedModel.name} no admite imágenes. Elegí Gemma 4, Llama 4 Scout o Mistral Small 3.1 para enviar una imagen.` }, 400, origin);
+    const quota = await reserveRequest(env, user.id, modelId);
+    if (!quota.allowed) return json({ error: `Usaste las ${DAILY_REQUEST_LIMIT} consultas diarias de ${selectedModel.name}. Podés cambiar de modelo; el límite compartido de Cloudflare podría aplicar igualmente.`, ...quota }, 429, origin);
 
     try {
       if (payload.audio) {
@@ -390,7 +418,7 @@ export default {
         ...history,
         { role: "user", content: image ? [ { type: "text", text: context }, { type: "image_url", image_url: { url: image } } ] : context },
       ];
-      const result = await env.AI.run(CHAT_MODEL, {
+      const result = await env.AI.run(modelId, {
         messages,
         max_tokens: 2400,
         temperature: 0.5,
@@ -409,9 +437,9 @@ export default {
           proposals.push({ id, provider: action.provider, type: action.type, summary: action.summary, ...(action.path ? { path: action.path } : {}), ...(action.name ? { name: action.name } : {}), ...(action.content !== undefined ? { content: action.content } : {}), ...(action.query !== undefined ? { query: action.query } : {}), ...(action.message ? { message: action.message } : {}) });
         }
       }
-      return json({ answer: plan.answer, proposals, expiresInSeconds: OPERATION_TTL_SECONDS, transcript, remaining: quota.remaining, dailyLimit: DAILY_REQUEST_LIMIT }, 200, origin);
+      return json({ answer: plan.answer, proposals, expiresInSeconds: OPERATION_TTL_SECONDS, transcript, modelId, modelName: selectedModel.name, ...quota }, 200, origin);
     } catch (error) {
-      return json({ error: error?.message || "No se pudo completar la consulta a la IA.", remaining: quota.remaining }, 502, origin);
+      return json({ error: error?.message || "No se pudo completar la consulta a la IA.", modelId, ...quota }, 502, origin);
     }
   },
 };
