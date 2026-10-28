@@ -179,8 +179,7 @@ export default {
       try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
       const provider = String(payload.provider || "").toLowerCase();
       if (!PROVIDERS.includes(provider)) return json({ error: "Proveedor OAuth desconocido." }, 400, origin);
-      const callback = `${new URL(request.url).origin}/oauth/callback`;
-      return json({ error: `Falta terminar la configuración OAuth de ${provider}. Primero hay que registrar su aplicación y su URL de retorno ${callback}; Google no puede autorizar esa cuenta por ${provider}.` }, 503, origin);
+      return json({ error: `La conexión OAuth de ${provider} todavía no está habilitada. Falta registrar su aplicación y completar el callback seguro en el Worker. Google no puede autorizar esa cuenta por ${provider}.` }, 503, origin);
     }
     if (url.pathname !== "/chat" || request.method !== "POST") return json({ error: "Ruta no encontrada." }, 404, origin);
 
