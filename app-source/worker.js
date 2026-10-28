@@ -1,901 +1,592 @@
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, HEAD, PUT, POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type, apikey, x-client-info",
-  "Access-Control-Max-Age": "86400",
+const APP_ORIGIN = "https://mediachafa-transfer.vercel.app";
+const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
+const SUPABASE_KEY = "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
+const OWNER_EMAIL = "nxmollpy@gmail.com";
+const DAILY_REQUEST_LIMIT = 50;
+const PROVIDER_DAILY_LIMITS = { openrouter: 50, groq: 7000, gemini: 50 };
+const COHERE_MONTHLY_LIMIT = 1000;
+const GROQ_FREE_MODELS = {
+  "allam-2-7b": 7000,
+  "openai/gpt-oss-120b": 1000,
+  "openai/gpt-oss-20b": 1000,
+  "qwen/qwen3.8-27b": 1000,
 };
+// Google documents these models as available on its no-billing Free Tier.
+// Keep this list small and explicit: the model-list API does not expose price data.
+const GEMINI_FREE_MODELS = new Set(["gemini-3.1-flash-lite", "gemini-3-flash-preview"]);
+const MODEL_DIRECTORY = "https://openrouter.ai/api/v1/models";
+const OPENROUTER_CHAT = "https://openrouter.ai/api/v1/chat/completions";
+const THINKING_LEVELS = [
+  { match: /nemotron-3-ultra|xing4\.0|deepseek-r1|gpt-oss-120b|llama-3\.3-70b/i, level: "super alto" },
+  { match: /super-vl|inkling(?!-small)|nemotron-3-nano-omni|qwen.*coder/i, level: "alto" },
+  { match: /lightning|inkling-small|gemma|granite|span-01/i, level: "ligero" },
+];
+const TOOL_PROVIDERS = ["github", "supabase", "cloudflare"];
+const MAX_BODY_BYTES = 14 * 1024 * 1024;
+const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
+const PROVIDERS = ["github", "supabase", "cloudflare", "openrouter", "groq", "gemini", "cohere"];
+const MODEL_PROVIDERS = ["openrouter", "groq", "gemini", "cohere"];
+const GITHUB_REPO = "knmollpy/mediachafa-transfer-";
+const SUPABASE_PROJECT = "velxgwkujcabdaxbppyj";
+const CLOUDFLARE_ACCOUNT = "3ed811eed85e393b5d97f052e812cfaf";
+const OPERATION_TTL_SECONDS = 600;
 
-// R2 supports individual objects up to 5 TiB. Keep the UI aligned with the
-// library quota; multipart uploads avoid sending large bodies through Worker.
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
-const SHARE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const GOOGLE_REDIRECT_URI = "https://mediachafa-storage.nxmollpy.workers.dev/google/callback";
-const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+function safeAction(action) {
+  if (!action || typeof action !== "object") return null;
+  const provider = String(action.provider || "").toLowerCase();
+  const type = String(action.type || "").toLowerCase();
+  const name = String(action.name || "").trim();
+  const path = String(action.path || "").trim();
+  const content = String(action.content || "");
+  const description = String(action.description || "").slice(0, 500);
+  if (provider === "github" && type === "write_file" && path && !path.startsWith("/") && !path.split("/").includes("..") && content.length <= 500_000) {
+    return { provider, type, path, content, message: String(action.message || `Beta: actualizar ${path}`).slice(0, 120), summary: description || `Crear o actualizar ${path} en ${GITHUB_REPO}.` };
+  }
+  if (provider === "github" && type === "create_repository" && /^[a-zA-Z0-9_.-]{1,100}$/.test(name)) {
+    return { provider, type, name, description, summary: description || `Crear el repositorio privado ${name} en GitHub.` };
+  }
+  if (provider === "supabase" && type === "sql" && typeof action.query === "string" && action.query.trim().length > 0 && action.query.length <= 100_000) {
+    return { provider, type, query: action.query, summary: description || "Ejecutar la consulta SQL mostrada en la vista previa en el proyecto Supabase conectado." };
+  }
+  if (provider === "cloudflare" && type === "create_worker" && /^[a-z0-9][a-z0-9-]{1,30}$/.test(name) && content.length > 0 && content.length <= 500_000) {
+    return { provider, type, name, content, summary: description || `Crear un Worker nuevo llamado ${name}. No modifica Workers existentes.` };
+  }
+  return null;
+}
 
-function json(body, status = 200, headers = {}) {
-  return new Response(JSON.stringify(body), {
+function extractPlan(output) {
+  const text = String(output || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    const parsed = JSON.parse(text);
+    return { answer: String(parsed.answer || "Beta preparó una propuesta."), actions: Array.isArray(parsed.actions) ? parsed.actions : [] };
+  } catch {
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[0]);
+        return { answer: String(parsed.answer || "Beta preparó una propuesta."), actions: Array.isArray(parsed.actions) ? parsed.actions : [] };
+      } catch {}
+    }
+    return { answer: text, actions: [] };
+  }
+}
+
+async function providerRequest(provider, token, path, method, body, headers = {}) {
+  const base = provider === "github" ? "https://api.github.com" : provider === "supabase" ? "https://api.supabase.com" : "https://api.cloudflare.com/client/v4";
+  const response = await fetch(`${base}${path}`, { method, headers: { Authorization: `Bearer ${token}`, Accept: provider === "github" ? "application/vnd.github+json" : "application/json", ...(provider === "github" ? { "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "MediaChafa-Beta" } : {}), ...(body && !(body instanceof FormData) ? { "Content-Type": "application/json" } : {}), ...headers }, ...(body ? { body: body instanceof FormData || typeof body === "string" ? body : JSON.stringify(body) } : {}) });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`${provider} respondió HTTP ${response.status}: ${String(data.message || data.error || data.errors?.[0]?.message || "No se pudo aplicar el cambio.").slice(0, 240)}`);
+  return data;
+}
+
+async function applyApprovedAction(env, userId, action) {
+  const token = await storedToken(env, userId, action.provider);
+  if (!token) throw new Error(`La integración ${action.provider} ya no está conectada.`);
+  if (action.provider === "github" && action.type === "write_file") {
+    const current = await providerRequest("github", token, `/repos/${GITHUB_REPO}/contents/${action.path.split("/").map(encodeURIComponent).join("/")}`, "GET").catch(() => null);
+    const result = await providerRequest("github", token, `/repos/${GITHUB_REPO}/contents/${action.path.split("/").map(encodeURIComponent).join("/")}`, "PUT", { message: action.message, content: base64(new TextEncoder().encode(action.content)), ...(current?.sha ? { sha: current.sha } : {}) });
+    return { message: `GitHub guardó ${action.path} en ${GITHUB_REPO}.`, url: result.content?.html_url || `https://github.com/${GITHUB_REPO}/blob/main/${action.path}` };
+  }
+  if (action.provider === "github" && action.type === "create_repository") {
+    const result = await providerRequest("github", token, "/user/repos", "POST", { name: action.name, description: action.description, private: true, auto_init: true });
+    return { message: `Repositorio privado ${result.full_name} creado.`, url: result.html_url };
+  }
+  if (action.provider === "supabase" && action.type === "sql") {
+    await providerRequest("supabase", token, `/v1/projects/${SUPABASE_PROJECT}/database/query`, "POST", { query: action.query });
+    return { message: `Consulta ejecutada en el proyecto ${SUPABASE_PROJECT}.`, url: `https://supabase.com/dashboard/project/${SUPABASE_PROJECT}/sql` };
+  }
+  if (action.provider === "cloudflare" && action.type === "create_worker") {
+    const existing = await providerRequest("cloudflare", token, `/accounts/${CLOUDFLARE_ACCOUNT}/workers/scripts`, "GET");
+    if ((existing.result || []).some(worker => worker.id === action.name)) throw new Error(`Ya existe el Worker ${action.name}; Beta solo puede crear Workers nuevos en esta versión.`);
+    const form = new FormData();
+    form.set("metadata", JSON.stringify({ main_module: "index.js", compatibility_date: new Date().toISOString().slice(0, 10) }));
+    form.set("index.js", new Blob([action.content], { type: "application/javascript+module" }), "index.js");
+    await providerRequest("cloudflare", token, `/accounts/${CLOUDFLARE_ACCOUNT}/workers/scripts/${encodeURIComponent(action.name)}`, "PUT", form);
+    return { message: `Worker ${action.name} creado.`, url: `https://dash.cloudflare.com/${CLOUDFLARE_ACCOUNT}/workers/services/view/${encodeURIComponent(action.name)}/production` };
+  }
+  throw new Error("Esta clase de acción no está habilitada.");
+}
+
+function corsHeaders(origin) {
+  return {
+    "Access-Control-Allow-Origin": origin === APP_ORIGIN ? APP_ORIGIN : "null",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  };
+}
+
+function json(data, status, origin) {
+  return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, ...headers, "Content-Type": "application/json; charset=utf-8" },
+    headers: { ...corsHeaders(origin), "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
   });
 }
 
-async function fetchWithTimeout(input, init = {}, timeoutMs = 15000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try { return await fetch(input, { ...init, signal: controller.signal }); }
-  catch (error) {
-    if (error?.name === "AbortError") throw new Error(`La conexión externa agotó el tiempo de espera (${Math.round(timeoutMs / 1000)} s).`);
-    throw error;
-  } finally { clearTimeout(timer); }
-}
-
-function withCors(response) {
-  const headers = new Headers(response.headers);
-  for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-}
-
-function objectKey(pathname, prefix) {
-  let key;
-  try { key = decodeURIComponent(pathname.slice(prefix.length)); } catch { return null; }
-  if (!key || key.length > 1024 || key.includes("\0") || key.split("/").some(part => part === "..")) return null;
-  return key;
-}
-
-function encodePath(path) {
-  return path.split("/").map(encodeURIComponent).join("/");
-}
-
-async function getUser(request, env) {
-  const authorization = request.headers.get("Authorization") || "";
-  if (!authorization.startsWith("Bearer ")) return null;
-  const response = await fetchWithTimeout(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: authorization },
-  }, 12000);
-  if (!response.ok) return null;
-  return { user: await response.json(), authorization };
-}
-
-async function canUpload(session, env) {
-  if (!session) return false;
-  if (session.user.id === env.OWNER_USER_ID) return true;
-  const url = `${env.SUPABASE_URL}/rest/v1/media_users?select=can_upload&id=eq.${encodeURIComponent(session.user.id)}&limit=1`;
-  const response = await fetchWithTimeout(url, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } }, 12000);
-  if (!response.ok) return false;
-  const rows = await response.json();
-  return rows[0]?.can_upload === true;
-}
-
-async function isRegisteredCollaborator(session, env) {
-  if (!session || session.user.id === env.OWNER_USER_ID) return false;
-  const url = `${env.SUPABASE_URL}/rest/v1/media_users?select=id&id=eq.${encodeURIComponent(session.user.id)}&limit=1`;
-  const response = await fetchWithTimeout(url, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } }, 12000);
-  if (!response.ok) return false;
-  return (await response.json()).length > 0;
-}
-
-async function isOwner(session, env) {
-  return Boolean(session && session.user.id === env.OWNER_USER_ID);
-}
-
-async function canTransfer(session, env) {
-  return Boolean(await isOwner(session, env) || await canUpload(session, env));
-}
-
-async function sign(secret, value) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value)));
+function base64(bytes) {
   let binary = "";
-  for (const byte of signature) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-}
-
-function safeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let difference = 0;
-  for (let i = 0; i < a.length; i++) difference |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return difference === 0;
-}
-
-function bytesToBase64(bytes) {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(binary);
 }
 
-function base64ToBytes(value) {
-  return Uint8Array.from(atob(value), char => char.charCodeAt(0));
+async function encryptionKey(env) {
+  const raw = Uint8Array.from(atob(env.TOKEN_ENCRYPTION_KEY || ""), (c) => c.charCodeAt(0));
+  if (raw.byteLength !== 32) throw new Error("La clave de cifrado de integraciones no está configurada.");
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
-async function googleEncryptionKey(env) {
-  return crypto.subtle.importKey("raw", base64ToBytes(env.GOOGLE_TOKEN_ENCRYPTION_KEY), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
-}
-
-async function encryptGoogleToken(value, env) {
+async function encryptToken(env, token) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await googleEncryptionKey(env), new TextEncoder().encode(value));
-  return JSON.stringify({ iv: bytesToBase64(iv), data: bytesToBase64(new Uint8Array(encrypted)) });
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await encryptionKey(env), new TextEncoder().encode(token));
+  return JSON.stringify({ iv: base64(iv), ciphertext: base64(new Uint8Array(ciphertext)), version: 1 });
 }
 
-async function decryptGoogleToken(value, env) {
-  if (!value || !env.GOOGLE_TOKEN_ENCRYPTION_KEY) return null;
-  const stored = JSON.parse(value);
-  const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(stored.iv) }, await googleEncryptionKey(env), base64ToBytes(stored.data));
-  return new TextDecoder().decode(decrypted);
+async function decryptToken(env, stored) {
+  const record = JSON.parse(stored || "{}");
+  const from64 = (value) => Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
+  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: from64(record.iv) }, await encryptionKey(env), from64(record.ciphertext));
+  return new TextDecoder().decode(plaintext);
 }
 
-async function googleAccessToken(env) {
-  const encrypted = await env.GOOGLE_OAUTH_STORE.get(`refresh:${env.OWNER_USER_ID}`);
-  const refreshToken = await decryptGoogleToken(encrypted, env);
-  if (!refreshToken) return null;
-  const body = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, refresh_token: refreshToken, grant_type: "refresh_token" });
-  const response = await fetchWithTimeout("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body }, 12000);
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const reason = result.error_description || result.error || `HTTP ${response.status}`;
-    throw new Error(`Google rechazó la sesión de Drive (${reason}). Volvé a conectar Google Drive desde la app.`);
+async function storedToken(env, userId, provider) {
+  if (!PROVIDERS.includes(provider)) return null;
+  const value = await env.BETA_LIMITS.get(`integration:${userId}:${provider}`);
+  if (!value) return null;
+  return decryptToken(env, value);
+}
+
+async function verifyProvider(provider, token) {
+  if (provider === "groq") {
+    const response = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${token}` } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !Array.isArray(data.data)) return { ok: false, error: `Groq no validó la clave gratuita (HTTP ${response.status}).` };
+    return { ok: true, detail: "Groq validado · modelos permitidos del plan Free", capabilities: { freePlan: true } };
   }
-  return result.access_token || null;
-}
-
-async function googleQuota(env, accessToken = null) {
-  accessToken = accessToken || await googleAccessToken(env);
-  if (!accessToken) return null;
-  const response = await fetchWithTimeout("https://www.googleapis.com/drive/v3/about?fields=storageQuota(limit,usage,usageInDrive)", { headers: { Authorization: `Bearer ${accessToken}` } }, 12000);
-  if (!response.ok) throw new Error("No se pudo consultar el espacio de Google Drive.");
-  return (await response.json()).storageQuota || null;
-}
-
-function googleFileId(path) {
-  if (typeof path !== "string" || !path.startsWith("gdrive://")) return null;
-  const id = path.slice("gdrive://".length);
-  return /^[A-Za-z0-9_-]{10,200}$/.test(id) ? id : null;
-}
-
-async function findGoogleFileRecord(id, env, session = null) {
-  const path = `gdrive://${id}`;
-  const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=file_name,storage_path,is_private&storage_path=eq.${encodeURIComponent(path)}&limit=1`;
-  const headers = { apikey: env.SUPABASE_PUBLISHABLE_KEY };
-  if (session?.authorization) headers.Authorization = session.authorization;
-  const response = await fetch(query, { headers });
-  if (!response.ok) throw new Error(`No se pudo verificar el archivo en la biblioteca (Supabase ${response.status}).`);
-  const rows = await response.json();
-  return rows[0] || null;
-}
-
-function googleIdFromPublicUrl(rawUrl) {
-  let url;
-  try { url = new URL(rawUrl); } catch { return null; }
-  if (!["drive.google.com", "docs.google.com"].includes(url.hostname.toLowerCase())) return null;
-  const id = url.pathname.match(/\/(?:file|document|spreadsheets|presentation)\/d\/([^/]+)/)?.[1] || url.searchParams.get("id");
-  return id && /^[A-Za-z0-9_-]{10,200}$/.test(id) ? id : null;
-}
-
-async function findPublicPs4Game(id, env) {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
-  const query = `${env.SUPABASE_URL}/rest/v1/ps4_games?select=id,title,download_url&id=eq.${encodeURIComponent(id)}&limit=1`;
-  const response = await fetchWithTimeout(query, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY } }, 12000);
-  if (!response.ok) throw new Error(`No se pudo comprobar el juego en el catálogo (Supabase ${response.status}).`);
-  const rows = await response.json();
-  return rows[0] || null;
-}
-
-async function findMediaFileByPath(path, env, session = null) {
-  const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=id,storage_path,file_name,created_by,is_private,allowed_user_ids,folder&storage_path=eq.${encodeURIComponent(path)}&limit=1`;
-  const headers = { apikey: env.SUPABASE_PUBLISHABLE_KEY };
-  if (session?.authorization) headers.Authorization = session.authorization;
-  const response = await fetch(query, { headers });
-  if (!response.ok) return null;
-  const rows = await response.json();
-  return rows[0] || null;
-}
-
-async function canReadWallpaper(path, session, env) {
-  if (!session) return false;
-  const query = `${env.SUPABASE_URL}/rest/v1/media_preferences?select=background_image_path&user_id=eq.${encodeURIComponent(session.user.id)}&background_image_path=eq.${encodeURIComponent(path)}&limit=1`;
-  const response = await fetch(query, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } });
-  if (!response.ok) return false;
-  return (await response.json()).length > 0;
-}
-
-async function serveObject(object, filename = "", disposition = "attachment") {
-  if (!object) return json({ error: "Archivo no encontrado." }, 404);
-  const headers = new Headers();
-  if (object.httpMetadata?.contentType) headers.set("Content-Type", object.httpMetadata.contentType);
-  else headers.set("Content-Type", "application/octet-stream");
-  headers.set("Content-Length", String(object.size));
-  headers.set("Cache-Control", "private, max-age=60");
-  if (filename) headers.set("Content-Disposition", `${disposition}; filename*=UTF-8''${encodeURIComponent(filename)}`);
-  for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
-  return new Response(object.body, { headers });
-}
-
-async function migrate(files, env) {
-  if (!Array.isArray(files) || files.length > 100) return { status: 400, body: { error: "Lista de migración inválida." } };
-  const results = [];
-  for (const item of files) {
-    const path = typeof item?.path === "string" ? item.path : "";
-    const expectedSize = Number(item?.size);
-    if (!path || !Number.isFinite(expectedSize) || expectedSize < 0) {
-      results.push({ path, ok: false, error: "Datos de archivo inválidos." });
-      continue;
-    }
-    const existing = await env.MEDIA_BUCKET.head(path);
-    if (existing && existing.size === expectedSize) {
-      results.push({ path, ok: true, copied: false, size: existing.size });
-      continue;
-    }
-    const sourceUrl = `${env.SUPABASE_URL}/storage/v1/object/games/${encodePath(path)}`;
-    const source = await fetch(sourceUrl, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY } });
-    if (!source.ok || !source.body) {
-      results.push({ path, ok: false, error: `El archivo de origen respondió ${source.status}.` });
-      continue;
-    }
-    const contentType = source.headers.get("Content-Type") || "application/octet-stream";
-    await env.MEDIA_BUCKET.put(path, source.body, { httpMetadata: { contentType } });
-    const verified = await env.MEDIA_BUCKET.head(path);
-    if (!verified || verified.size !== expectedSize) {
-      results.push({ path, ok: false, error: "La verificación de tamaño no coincidió." });
-      continue;
-    }
-    results.push({ path, ok: true, copied: true, size: verified.size });
+  if (provider === "cohere") {
+    const response = await fetch("https://api.cohere.com/v1/check-api-key", { method: "POST", headers: { Authorization: `Bearer ${token}`, "X-Client-Name": "MediaChafa Beta" } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.valid !== true) return { ok: false, error: `Cohere no validó la clave de prueba gratuita (HTTP ${response.status}).` };
+    return { ok: true, detail: "Cohere validado · usá solo la clave Trial gratuita", capabilities: { freeTrial: true } };
   }
-  return { status: 200, body: { results, copied: results.filter(item => item.ok && item.copied).length, verified: results.filter(item => item.ok).length } };
-}
-
-async function getMediaFile(id, session, env) {
-  const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=id,storage_path,file_name,size_bytes,created_by&id=eq.${encodeURIComponent(id)}&limit=1`;
-  const response = await fetch(query, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } });
-  if (!response.ok) throw new Error("No se pudo consultar el archivo en la biblioteca.");
-  const rows = await response.json();
-  return rows[0] || null;
-}
-
-async function updateMediaFile(session, env, id, storagePath) {
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/media_files?id=eq.${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization, "Content-Type": "application/json", Prefer: "return=representation" },
-    body: JSON.stringify({ storage_path: storagePath, updated_at: new Date().toISOString() }),
-  });
-  if (!response.ok) throw new Error("La copia terminó, pero la biblioteca no permitió actualizar el archivo.");
-  const rows = await response.json();
-  if (!rows.length) throw new Error("La biblioteca no confirmó el cambio de almacenamiento.");
-}
-
-async function saveTransfer(env, id, state) {
-  state.updatedAt = Date.now();
-  try { await env.GOOGLE_OAUTH_STORE.put(`transfer:${id}`, JSON.stringify(state), { expirationTtl: 24 * 60 * 60 }); }
-  catch (error) { console.error("Transfer progress could not be saved", error instanceof Error ? error.message : "unknown error"); }
-}
-
-async function startGoogleTransfer(id, record, session, env) {
-  const size = Number(record.size_bytes);
-  if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) throw new Error("El tamaño del archivo no es válido para transferirlo.");
-  const source = await env.MEDIA_BUCKET.head(record.storage_path);
-  if (!source || source.size !== size) throw new Error("El archivo de origen no está en Cloudflare R2 o su tamaño cambió.");
-  const accessToken = await googleAccessToken(env);
-  if (!accessToken) throw new Error("Google Drive todavía no está conectado.");
-  const contentType = source.httpMetadata?.contentType || "application/octet-stream";
-  const initiation = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,mimeType", {
-    method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": contentType, "X-Upload-Content-Length": String(size) },
-    body: JSON.stringify({ name: record.file_name, mimeType: contentType }),
-  });
-  const uploadUrl = initiation.headers.get("Location");
-  if (!initiation.ok || !uploadUrl) throw new Error("Google Drive no pudo preparar la transferencia.");
-  const state = { userId: session.user.id, fileId: record.id, fileName: record.file_name, size, done: 0, status: "running", phase: "Transfiriendo de Cloudflare R2 a Google Drive", target: "google", source: "r2", sourcePath: record.storage_path, uploadUrl, contentType };
-  await saveTransfer(env, id, state);
-  return state;
-}
-
-async function advanceGoogleTransfer(id, state, session, env) {
-  if (!state || state.status !== "running" || state.target !== "google" || !state.uploadUrl) throw new Error("La transferencia no está activa.");
-  const accessToken = await googleAccessToken(env);
-  if (!accessToken) throw new Error("Google Drive todavía no está conectado.");
-  const start = Number(state.done || 0);
-  if (start >= state.size) throw new Error("Google Drive no confirmó la transferencia completa.");
-  const length = Math.min(8 * 1024 * 1024, state.size - start);
-  const source = await env.MEDIA_BUCKET.get(state.sourcePath, { range: { offset: start, length } });
-  if (!source?.body || source.size !== state.size) throw new Error("No se pudo leer el siguiente fragmento desde Cloudflare R2.");
-  const end = start + length - 1;
-  const chunk = await new Response(source.body).arrayBuffer();
-  if (chunk.byteLength !== length) throw new Error("El fragmento leído desde Cloudflare R2 está incompleto.");
-  let uploadedResponse;
-  try {
-    uploadedResponse = await fetch(state.uploadUrl, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": state.contentType, "Content-Length": String(length), "Content-Range": `bytes ${start}-${end}/${state.size}` }, body: chunk });
-  } catch (error) {
-    throw new Error(`La conexión se interrumpió durante el fragmento ${formatTransferOffset(start)}. Podés reintentar; Google verificará los bytes recibidos.`);
+  if (provider === "gemini") {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models", { headers: { "x-goog-api-key": token } });
+    const data = await response.json().catch(() => ({}));
+    const models = data.models || [];
+    const allowed = models.some((model) => GEMINI_FREE_MODELS.has(String(model.name || "").replace(/^models\//, "")) && (model.supportedGenerationMethods || []).includes("generateContent"));
+    if (!response.ok || !allowed) return { ok: false, error: "Gemini no validó un proyecto Free Tier con los modelos gratuitos permitidos. No conectes un proyecto que muestre Paid o facturación activa." };
+    return { ok: true, detail: "Gemini validado · lista cerrada de modelos Free Tier; el proyecto debe seguir sin facturación", capabilities: { freeTierRequired: true } };
   }
-  if (uploadedResponse.status === 308) {
-    const range = uploadedResponse.headers.get("Range");
-    const lastByte = range?.match(/bytes=0-(\d+)/)?.[1];
-    state.done = lastByte ? Math.min(state.size, Number(lastByte) + 1) : 0;
-    state.phase = "Transfiriendo de Cloudflare R2 a Google Drive";
-    await saveTransfer(env, id, state);
-    return state;
+  if (provider === "openrouter") {
+    const response = await fetch("https://openrouter.ai/api/v1/key", { headers: { Authorization: `Bearer ${token}` } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.data) return { ok: false, error: `OpenRouter no validó la clave (HTTP ${response.status}). Revisá que sea una API key activa.` };
+    if (data.data.is_free_tier !== true) return { ok: false, error: "Esta clave no figura en el nivel gratuito de OpenRouter. Para evitar cualquier gasto, Beta solo acepta claves free sin compras de créditos." };
+    return { ok: true, detail: "OpenRouter validado · solo variantes gratuitas" };
   }
-  if (uploadedResponse.status === 200 || uploadedResponse.status === 201) {
-    const uploaded = await uploadedResponse.json().catch(() => ({}));
-    if (!uploaded.id || (uploaded.size != null && Number(uploaded.size) !== state.size)) throw new Error("Google Drive no confirmó una copia completa del archivo.");
-    state.phase = "Actualizando la biblioteca"; await saveTransfer(env, id, state);
-    try { await updateMediaFile(session, env, state.fileId, `gdrive://${uploaded.id}`); }
-    catch (error) {
-      await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(uploaded.id)}`, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } }).catch(() => {});
-      throw error;
-    }
-    state.phase = "Quitando el original de Cloudflare R2"; await saveTransfer(env, id, state);
-    let sourceRemoved = true;
-    try { await env.MEDIA_BUCKET.delete(state.sourcePath); } catch { sourceRemoved = false; }
-    state.status = "complete"; state.done = state.size; state.sourceRemoved = sourceRemoved;
-    state.message = sourceRemoved ? "Archivo transferido a Google Drive." : "La copia está en Google Drive; el original de R2 quedó conservado.";
-    delete state.uploadUrl; delete state.sourcePath; delete state.contentType;
-    await saveTransfer(env, id, state);
-    return state;
-  }
-  const body = await uploadedResponse.json().catch(() => ({}));
-  if (uploadedResponse.status >= 500 || uploadedResponse.status === 429) throw new Error(`Google Drive respondió ${uploadedResponse.status}; podés reintentar el fragmento.`);
-  throw new Error(body.error?.message || `Google Drive devolvió ${uploadedResponse.status} durante la transferencia.`);
-}
-
-function formatTransferOffset(value) { return `${Math.floor(value / (1024 * 1024))} MB`; }
-
-function publicTransferState(state) {
-  return { fileName: state.fileName, size: state.size, done: state.done, status: state.status, phase: state.phase, error: state.error || null, message: state.message || null, sourceRemoved: state.sourceRemoved };
-}
-
-function trackTransferStream(stream, env, id, state) {
-  let done = 0, lastSavedBytes = 0, lastSavedAt = Date.now();
-  const persist = async force => {
-    const now = Date.now();
-    if (!force && done - lastSavedBytes < 8 * 1024 * 1024 && now - lastSavedAt < 1000) return;
-    state.done = done; state.updatedAt = now; lastSavedBytes = done; lastSavedAt = now;
-    await saveTransfer(env, id, state);
-  };
-  return stream.pipeThrough(new TransformStream({
-    async transform(chunk, controller) { done += chunk.byteLength; controller.enqueue(chunk); await persist(false); },
-    async flush() { state.done = done; await persist(true); },
-  }));
-}
-
-async function runStorageTransfer(id, record, target, session, env) {
-  const sourcePath = record.storage_path;
-  const sourceIsGoogle = sourcePath.startsWith("gdrive://");
-  const size = Number(record.size_bytes);
-  const state = { userId: session.user.id, fileId: record.id, fileName: record.file_name, size, done: 0, status: "running", phase: "Preparando transferencia", target, source: sourceIsGoogle ? "google" : "r2" };
-  let createdGoogleId = null, createdR2Path = null;
-  await saveTransfer(env, id, state);
-  try {
-    if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) throw new Error("El tamaño del archivo no es válido para transferirlo.");
-    if (target === "google") {
-      if (sourceIsGoogle) throw new Error("El archivo ya está en Google Drive.");
-      const source = await env.MEDIA_BUCKET.get(sourcePath);
-      if (!source || source.size !== size) throw new Error("El archivo de origen no está en Cloudflare R2 o su tamaño cambió.");
-      const accessToken = await googleAccessToken(env);
-      if (!accessToken) throw new Error("Google Drive todavía no está conectado.");
-      const contentType = source.httpMetadata?.contentType || "application/octet-stream";
-      const initiation = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,mimeType", {
-        method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": contentType, "X-Upload-Content-Length": String(size) },
-        body: JSON.stringify({ name: record.file_name, mimeType: contentType }),
-      });
-      const uploadUrl = initiation.headers.get("Location");
-      if (!initiation.ok || !uploadUrl) throw new Error("Google Drive no pudo preparar la transferencia.");
-      state.phase = "Transfiriendo de Cloudflare R2 a Google Drive"; await saveTransfer(env, id, state);
-      const upload = await fetch(uploadUrl, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": contentType, "Content-Length": String(size), "Content-Range": `bytes 0-${Math.max(0, size - 1)}/${size}` }, body: trackTransferStream(source.body, env, id, state) });
-      const uploaded = await upload.json().catch(() => ({}));
-      if ((upload.status !== 200 && upload.status !== 201) || !uploaded.id) throw new Error(uploaded.error?.message || `Google Drive devolvió ${upload.status} durante la transferencia.`);
-      createdGoogleId = uploaded.id;
-      if (uploaded.size != null && Number(uploaded.size) !== size) throw new Error("El tamaño de la copia en Google Drive no coincide con el original.");
-      state.phase = "Actualizando la biblioteca"; await saveTransfer(env, id, state);
-      await updateMediaFile(session, env, record.id, `gdrive://${uploaded.id}`);
-      state.phase = "Quitando el original de Cloudflare R2"; await saveTransfer(env, id, state);
-      let sourceRemoved = true;
-      try { await env.MEDIA_BUCKET.delete(sourcePath); } catch { sourceRemoved = false; }
-      state.status = "complete"; state.done = size; state.sourceRemoved = sourceRemoved;
-      state.message = sourceRemoved ? "Archivo transferido a Google Drive." : "La copia está en Google Drive; el original de R2 quedó conservado.";
-    } else if (target === "r2") {
-      if (!sourceIsGoogle) throw new Error("El archivo ya está en Cloudflare R2.");
-      const googleId = sourcePath.slice("gdrive://".length);
-      if (!/^[A-Za-z0-9_-]{10,200}$/.test(googleId)) throw new Error("El identificador de Google Drive no es válido.");
-      const accessToken = await googleAccessToken(env);
-      if (!accessToken) throw new Error("Google Drive todavía no está conectado.");
-      state.phase = "Descargando desde Google Drive"; await saveTransfer(env, id, state);
-      const source = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(googleId)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
-      if (!source.ok || !source.body) throw new Error("Google Drive no pudo entregar el archivo para transferirlo.");
-      const contentType = source.headers.get("Content-Type") || "application/octet-stream";
-      const safeName = String(record.file_name || "archivo").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 180);
-      createdR2Path = `${session.user.id}/${Date.now()}_${crypto.randomUUID()}_${safeName}`;
-      state.phase = "Guardando en Cloudflare R2"; await saveTransfer(env, id, state);
-      const copied = await env.MEDIA_BUCKET.put(createdR2Path, trackTransferStream(source.body, env, id, state), { httpMetadata: { contentType } });
-      if (!copied || copied.size !== size) throw new Error("El tamaño de la copia en Cloudflare R2 no coincide con el original.");
-      state.phase = "Actualizando la biblioteca"; await saveTransfer(env, id, state);
-      await updateMediaFile(session, env, record.id, createdR2Path);
-      createdR2Path = null;
-      state.phase = "Quitando el original de Google Drive"; await saveTransfer(env, id, state);
-      let sourceRemoved = true;
+  const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "MediaChafa-Beta" };
+  if (provider === "github") {
+    headers["X-GitHub-Api-Version"] = "2022-11-28";
+    const repoResponse = await fetch(`https://api.github.com/repos/${GITHUB_REPO}`, { headers });
+    if (repoResponse.status === 401) return { ok: false, error: "GitHub rechazó el token (401). Creá uno nuevo y revisá que no esté vencido, revocado ni copiado con espacios." };
+    if (repoResponse.status === 403) {
+      let reason = "";
       try {
-        const deleted = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(googleId)}`, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } });
-        if (!deleted.ok && deleted.status !== 404) sourceRemoved = false;
-      } catch { sourceRemoved = false; }
-      state.status = "complete"; state.done = size; state.sourceRemoved = sourceRemoved;
-      state.message = sourceRemoved ? "Archivo transferido a Cloudflare R2." : "La copia está en Cloudflare R2; el original de Google Drive quedó conservado.";
-    } else throw new Error("El destino de almacenamiento no es válido.");
-  } catch (error) {
-    if (createdGoogleId) {
-      const token = await googleAccessToken(env).catch(() => null);
-      if (token) await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(createdGoogleId)}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+        const raw = await repoResponse.text();
+        try { reason = String(JSON.parse(raw).message || raw).slice(0, 240); }
+        catch { reason = raw.slice(0, 240); }
+      } catch {}
+      const sso = repoResponse.headers.get("X-GitHub-SSO");
+      return { ok: false, error: `GitHub reconoció el token, pero denegó el acceso (403).${sso ? " GitHub indica que falta autorizar SSO." : ""}${reason ? ` Detalle: ${reason}` : " Revisá el permiso Contents y el acceso al repositorio seleccionado."}` };
     }
-    if (createdR2Path) await env.MEDIA_BUCKET.delete(createdR2Path).catch(() => {});
-    state.status = "error"; state.phase = "Transferencia interrumpida"; state.error = error instanceof Error ? error.message : "No se pudo completar la transferencia.";
+    if (repoResponse.status === 404) return { ok: false, error: `GitHub no permite ver el repositorio privado ${GITHUB_REPO} con este token. Si es fine-grained, asegurate de elegir como Resource owner a knmollpy y de incluir mediachafa-transfer-. Si es classic, activá el alcance repo. La opción “todos los repositorios” debe pertenecer a la cuenta knmollpy.` };
+    if (!repoResponse.ok) return { ok: false, error: `GitHub no pudo consultar el repositorio (HTTP ${repoResponse.status}).` };
+    const repo = await repoResponse.json();
+    return { ok: true, detail: `Repositorio ${GITHUB_REPO}`, capabilities: { read: true, write: Boolean(repo.permissions?.push) } };
   }
-  await saveTransfer(env, id, state);
+  if (provider === "supabase") {
+    const response = await fetch(`https://api.supabase.com/v1/projects/${SUPABASE_PROJECT}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (!response.ok) return { ok: false, error: `Supabase no permitió consultar el proyecto ${SUPABASE_PROJECT} (HTTP ${response.status}). Revisá que el PAT esté vigente y tenga Project Settings: Read para ese proyecto.` };
+    return { ok: true, detail: `Proyecto Supabase ${SUPABASE_PROJECT} validado` };
+  }
+  const verifyUrl = token.startsWith("cfat_")
+    ? `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT}/tokens/verify`
+    : "https://api.cloudflare.com/client/v4/user/tokens/verify";
+  const verify = await fetch(verifyUrl, { headers: { Authorization: `Bearer ${token}` } });
+  let verifyResult;
+  try { verifyResult = await verify.json(); } catch { verifyResult = {}; }
+  if (!verify.ok || !verifyResult.success) {
+    const reason = String(verifyResult.errors?.[0]?.message || "").slice(0, 180);
+    return { ok: false, error: `Cloudflare no validó el token (HTTP ${verify.status}).${reason ? ` Detalle: ${reason}` : " Revisá que esté activo y creado para esta cuenta."}` };
+  }
+  const account = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT}/workers/scripts`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!account.ok) return { ok: false, error: "El token es válido, pero no puede leer Workers en la cuenta de MediaChafa." };
+  return { ok: true, detail: "Cuenta de Cloudflare validada" };
+}
+
+async function integrationStatus(env, userId) {
+  const result = {};
+  for (const provider of PROVIDERS) {
+    const exists = await env.BETA_LIMITS.get(`integration:${userId}:${provider}`);
+    result[provider] = { connected: Boolean(exists), ...(exists ? JSON.parse(exists).meta : {}) };
+  }
+  return result;
+}
+
+async function integrationContext(env, userId) {
+  const context = {};
+  const github = await storedToken(env, userId, "github");
+  const supabase = await storedToken(env, userId, "supabase");
+  const cloudflare = await storedToken(env, userId, "cloudflare");
+  if (github) {
+    try {
+      const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}`, { headers: { Authorization: `Bearer ${github}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "MediaChafa-Beta" } });
+      if (response.ok) { const repo = await response.json(); context.github = { repository: repo.full_name, defaultBranch: repo.default_branch, description: repo.description, canWrite: Boolean(repo.permissions?.push) }; }
+    } catch {}
+  }
+  if (supabase) {
+    try {
+      const response = await fetch(`https://api.supabase.com/v1/projects/${SUPABASE_PROJECT}`, { headers: { Authorization: `Bearer ${supabase}`, Accept: "application/json" } });
+      if (response.ok) { const project = await response.json(); context.supabase = [{ name: project.name, id: project.ref || project.id || SUPABASE_PROJECT, status: project.status, region: project.region }]; }
+    } catch {}
+  }
+  if (cloudflare) {
+    try {
+      const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT}/workers/scripts`, { headers: { Authorization: `Bearer ${cloudflare}` } });
+      if (response.ok) { const payload = await response.json(); context.cloudflare = (payload.result || []).slice(0, 100).map(({ id, handlers, modified_on }) => ({ script: id, handlers, modified: modified_on })); }
+    } catch {}
+  }
+  return context;
+}
+
+async function requireOwner(request) {
+  const authorization = request.headers.get("Authorization") || "";
+  if (!/^Bearer\s+\S+$/i.test(authorization)) return undefined;
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: SUPABASE_KEY, Authorization: authorization },
+  });
+  if (!response.ok) return undefined;
+  const user = await response.json();
+  if (user.is_anonymous || String(user.email || "").toLowerCase() !== OWNER_EMAIL) return undefined;
+  return user;
+}
+
+async function reserveRequest(env, userId, modelId) {
+  const date = new Date().toISOString().slice(0, 10);
+  const month = date.slice(0, 7);
+  const [provider, nativeModel] = String(modelId).split("::", 2);
+  const monthly = provider === "cohere";
+  const bucket = monthly ? month : date;
+  const limit = monthly ? COHERE_MONTHLY_LIMIT : provider === "groq" ? (GROQ_FREE_MODELS[nativeModel] || 0) : PROVIDER_DAILY_LIMITS[provider];
+  const scope = monthly ? "month" : provider === "groq" ? nativeModel : "day";
+  const key = `beta-ai-requests:${userId}:${provider}:${scope}:${bucket}`;
+  let current = Number(await env.BETA_LIMITS.get(key) || 0);
+  if (!limit) return { allowed: false, usedToday: current, remaining: 0, dailyLimit: 0, quotaScope: provider, resetsAt: "" };
+  if (current >= limit) return { allowed: false, usedToday: current, remaining: 0, dailyLimit: limit, quotaScope: provider, period: monthly ? "month" : "day", resetsAt: monthly ? `${month}-01T00:00:00Z` : `${date}T24:00:00Z` };
+  const next = current + 1;
+  await env.BETA_LIMITS.put(key, String(next), { expirationTtl: monthly ? 35 * 86400 : 172800 });
+  return { allowed: true, usedToday: next, remaining: limit - next, dailyLimit: limit, quotaScope: provider, period: monthly ? "month" : "day", resetsAt: monthly ? `${month}-01T00:00:00Z` : `${date}T24:00:00Z` };
+}
+
+async function freeModelCatalog(token) {
+  const response = await fetch(MODEL_DIRECTORY, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error(`OpenRouter no pudo cargar el catálogo gratuito (HTTP ${response.status}).`);
+  const data = await response.json();
+  return (data.data || []).filter((model) => {
+    const p = model.pricing || {};
+    const prices = Object.values(p).filter((value) => value !== null && value !== undefined);
+    return model.id?.endsWith(":free") && p.prompt !== undefined && p.completion !== undefined && prices.length > 0 && prices.every((value) => Number.isFinite(Number(value)) && Number(value) === 0);
+  }).map((model) => {
+    const id = String(model.id);
+    const level = THINKING_LEVELS.find(({ match }) => match.test(id))?.level || "medio";
+    return {
+      id: `openrouter::${id}`,
+      nativeId: id,
+      apiProvider: "openrouter",
+      name: String(model.name || id).replace(/\s*\(free\)/i, ""),
+      vision: (model.architecture?.input_modalities || []).includes("image"),
+      audio: (model.architecture?.input_modalities || []).includes("audio"),
+      thinkingLevel: level,
+      provider: String(id.split("/")[0] || "OpenRouter"),
+    };
+  }).slice(0, 80);
+}
+
+async function providerModelCatalog(provider, token) {
+  if (provider === "openrouter") return freeModelCatalog(token);
+  if (provider === "groq") {
+    const response = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${token}` } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`Groq no pudo listar modelos (HTTP ${response.status}).`);
+    return (data.data || []).filter((model) => Object.hasOwn(GROQ_FREE_MODELS, model.id)).map((model) => ({ id: `groq::${model.id}`, nativeId: model.id, apiProvider: "groq", name: model.id, provider: "Groq", vision: false, audio: false, thinkingLevel: /120b|qwen3\.8/i.test(model.id) ? "alto" : "medio", dailyLimit: GROQ_FREE_MODELS[model.id] }));
+  }
+  if (provider === "gemini") {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models", { headers: { "x-goog-api-key": token } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`Gemini no pudo listar modelos (HTTP ${response.status}).`);
+    return (data.models || []).filter((model) => GEMINI_FREE_MODELS.has(String(model.name || "").replace(/^models\//, "")) && (model.supportedGenerationMethods || []).includes("generateContent")).map((model) => ({ id: `gemini::${String(model.name).replace(/^models\//, "")}`, nativeId: String(model.name).replace(/^models\//, ""), apiProvider: "gemini", name: model.displayName || model.name, provider: "Google AI Studio", vision: false, audio: false, thinkingLevel: /flash-lite/i.test(model.name) ? "ligero" : "alto" }));
+  }
+  if (provider === "cohere") {
+    const response = await fetch("https://api.cohere.com/v1/models?endpoint=chat&page_size=1000", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`Cohere no pudo listar modelos de chat (HTTP ${response.status}).`);
+    return (data.models || []).filter((model) => !model.is_deprecated && (model.endpoints || []).includes("chat")).slice(0, 40).map((model) => ({ id: `cohere::${model.name}`, nativeId: model.name, apiProvider: "cohere", name: model.name, provider: "Cohere Trial", vision: false, audio: false, thinkingLevel: /command-a|north/i.test(model.name) ? "alto" : "medio" }));
+  }
+  return [];
+}
+
+async function openRouterQuota(token) {
+  const response = await fetch("https://openrouter.ai/api/v1/key", { headers: { Authorization: `Bearer ${token}` } });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.data) throw new Error("OpenRouter no pudo verificar la cuota gratuita actual.");
+  if (data.data.is_free_tier !== true) throw new Error("La cuenta OpenRouter ya no figura en el nivel gratuito. Beta bloqueó la solicitud para evitar cargos.");
+  const freeUsage = data.data.free_model_daily_requests || {};
+  return { used: Number(freeUsage.used || 0), providerLimit: Number(freeUsage.limit || 50), providerRemaining: Number(freeUsage.remaining ?? Math.max(0, 50 - Number(freeUsage.used || 0))) };
 }
 
 export default {
-  async fetch(request, env, ctx) {
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+  async fetch(request, env) {
+    const origin = request.headers.get("Origin") || "";
+    if (request.method === "OPTIONS") {
+      if (origin !== APP_ORIGIN) return new Response(null, { status: 403 });
+      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+    }
+    if (origin !== APP_ORIGIN) return json({ error: "Origen no autorizado." }, 403, origin);
     const url = new URL(request.url);
-    try {
-      if (url.pathname === "/health" && request.method === "GET") {
-        return json({ ok: true, storage: Boolean(env.MEDIA_BUCKET), configured: Boolean(env.SUPABASE_URL && env.SUPABASE_PUBLISHABLE_KEY && env.OWNER_USER_ID && env.SHARE_SIGNING_SECRET), googleConfigured: Boolean(env.GOOGLE_CLIENT_SECRET && env.GOOGLE_TOKEN_ENCRYPTION_KEY && env.GOOGLE_OAUTH_STORE) });
-      }
-
-      if (url.pathname === "/google/connect" && request.method === "POST") {
-        const session = await getUser(request, env);
-        if (!session) return json({ error: "La sesión venció. Volvé a iniciar sesión y conectá Drive de nuevo." }, 401);
-        if (!await isOwner(session, env)) return json({ error: "Solo el dueño puede conectar Google Drive." }, 403);
-        if (!env.GOOGLE_CLIENT_SECRET || !env.GOOGLE_TOKEN_ENCRYPTION_KEY || !env.GOOGLE_OAUTH_STORE) return json({ error: "Falta configurar el almacenamiento seguro de Google Drive." }, 503);
-        const stateBytes = crypto.getRandomValues(new Uint8Array(32));
-        const state = bytesToBase64(stateBytes).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-        await env.GOOGLE_OAUTH_STORE.put(`state:${state}`, session.user.id, { expirationTtl: 600 });
-        const authorize = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-        authorize.search = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: GOOGLE_REDIRECT_URI, response_type: "code", scope: GOOGLE_SCOPE, access_type: "offline", prompt: "consent", include_granted_scopes: "true", state }).toString();
-        return json({ url: authorize.toString() });
-      }
-
-      if (url.pathname === "/google/callback" && request.method === "GET") {
-        const state = url.searchParams.get("state") || "";
-        const code = url.searchParams.get("code") || "";
-        if (url.searchParams.has("error")) return new Response("La autorización de Google fue cancelada. Podés cerrar esta ventana.", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-        if (!/^[A-Za-z0-9_-]{40,60}$/.test(state) || !code) return new Response("No se pudo validar la autorización. Volvé a intentarlo desde MediaChafa.", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-        const ownerId = await env.GOOGLE_OAUTH_STORE.get(`state:${state}`);
-        await env.GOOGLE_OAUTH_STORE.delete(`state:${state}`);
-        if (!ownerId || ownerId !== env.OWNER_USER_ID) return new Response("El inicio de sesión expiró. Volvé a intentarlo desde MediaChafa.", { status: 400, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-        const tokenResponse = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ code, client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, redirect_uri: GOOGLE_REDIRECT_URI, grant_type: "authorization_code" }) });
-        const tokens = await tokenResponse.json().catch(() => ({}));
-        if (!tokenResponse.ok || !tokens.access_token) return new Response("Google no pudo completar la conexión. Volvé a intentarlo desde MediaChafa.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-        const existing = await env.GOOGLE_OAUTH_STORE.get(`refresh:${ownerId}`);
-        if (tokens.refresh_token) await env.GOOGLE_OAUTH_STORE.put(`refresh:${ownerId}`, await encryptGoogleToken(tokens.refresh_token, env));
-        else if (!existing) return new Response("Google no entregó un permiso persistente. Revocá la conexión de MediaChafa en tu cuenta de Google y volvé a conectar.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-        return Response.redirect("https://mediachafa-transfer.vercel.app/?drive=connected", 302);
-      }
-
-      if (url.pathname === "/google/status" && request.method === "GET") {
-        const session = await getUser(request, env);
-        if (!session) return json({ error: "La sesión venció. Volvé a iniciar sesión." }, 401);
-        if (!await isOwner(session, env) && !await isRegisteredCollaborator(session, env)) return json({ error: "No tenés permiso para usar el Drive compartido." }, 403);
-        const connected = Boolean(await env.GOOGLE_OAUTH_STORE?.get(`refresh:${env.OWNER_USER_ID}`));
-        if (!connected) return json({ configured: Boolean(env.GOOGLE_CLIENT_SECRET && env.GOOGLE_OAUTH_STORE), connected: false });
-        // Collaborators use the owner's connected Drive, so expose its quota to
-        // them as well. The quota describes the shared Google account pool.
-        const accessToken = await googleAccessToken(env);
-        let quota = null;
-        try { quota = await googleQuota(env, accessToken); }
-        catch (error) { console.warn("Google Drive quota lookup failed", error instanceof Error ? error.message : "unknown error"); }
-        return json({ configured: true, connected: true, quota });
-      }
-
-      if (url.pathname === "/transfer" && request.method === "POST") {
-        const session = await getUser(request, env);
-        if (!session) return json({ error: "La sesión venció. Volvé a iniciar sesión para transferir." }, 401);
-        if (!await canTransfer(session, env)) return json({ error: "Solo el dueño y los colaboradores habilitados pueden transferir archivos." }, 403);
-        if (!await env.GOOGLE_OAUTH_STORE?.get(`refresh:${env.OWNER_USER_ID}`)) return json({ error: "Conectá Google Drive antes de transferir archivos." }, 409);
-        const input = await request.json().catch(() => ({}));
-        const fileId = typeof input.fileId === "string" ? input.fileId : "";
-        const target = input.target;
-        const requestId = typeof input.requestId === "string" && /^[0-9a-f-]{36}$/i.test(input.requestId) ? input.requestId : null;
-        if (!fileId || fileId.length > 100 || !["google", "r2"].includes(target)) return json({ error: "Archivo o destino inválido." }, 400);
-        const requestKey = requestId ? `transfer-start:${session.user.id}:${requestId}` : null;
-        if (requestKey) {
-          const priorId = await env.GOOGLE_OAUTH_STORE.get(requestKey);
-          if (priorId) return json({ transferId: priorId, status: "running" }, 202);
-        }
-        const record = await getMediaFile(fileId, session, env);
-        if (!record) return json({ error: "El archivo no existe en la biblioteca." }, 404);
-        const source = String(record.storage_path || "").startsWith("gdrive://") ? "google" : "r2";
-        if (source === target) return json({ error: "El archivo ya está guardado en ese servicio." }, 409);
-        const transferId = crypto.randomUUID();
-        if (target === "google") {
-          await startGoogleTransfer(transferId, record, session, env);
-          if (requestKey) await env.GOOGLE_OAUTH_STORE.put(requestKey, transferId, { expirationTtl: 24 * 60 * 60 });
-          return json({ transferId, status: "running" }, 202);
-        }
-        const initial = { userId: session.user.id, fileId, fileName: record.file_name, size: Number(record.size_bytes), done: 0, status: "running", phase: "Preparando transferencia", source, target };
-        await saveTransfer(env, transferId, initial);
-        ctx.waitUntil(runStorageTransfer(transferId, record, target, session, env));
-        return json({ transferId, status: "running" }, 202);
-      }
-
-      if (url.pathname === "/transfer/step" && request.method === "POST") {
-        const session = await getUser(request, env);
-        if (!session) return json({ error: "La sesión venció. Volvé a iniciar sesión para transferir." }, 401);
-        if (!await canTransfer(session, env)) return json({ error: "No tenés permiso para transferir archivos." }, 403);
-        const id = url.searchParams.get("id") || "";
-        if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: "Transferencia inválida." }, 400);
-        const state = await env.GOOGLE_OAUTH_STORE.get(`transfer:${id}`, "json");
-        if (!state || state.userId !== session.user.id) return json({ error: "Transferencia no encontrada." }, 404);
+    if (url.pathname === "/status" && request.method === "GET") {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "La Beta está disponible solo para la cuenta dueña." }, 403, origin);
+      const date = new Date().toISOString().slice(0, 10);
+      const month = date.slice(0, 7);
+      const models = [];
+      const quotas = {};
+      const catalogErrors = {};
+      for (const provider of MODEL_PROVIDERS) {
+        const token = await storedToken(env, user.id, provider);
+        if (!token) continue;
         try {
-          await advanceGoogleTransfer(id, state, session, env);
-          return json({ transferId: id, ...publicTransferState(state) });
+          let providerQuota;
+          if (provider === "openrouter") providerQuota = await openRouterQuota(token);
+          const catalog = await providerModelCatalog(provider, token);
+          for (const model of catalog) {
+            const monthly = provider === "cohere";
+            const bucket = monthly ? month : date;
+            const scope = monthly ? "month" : provider === "groq" ? model.nativeId : "day";
+            const countKey = `beta-ai-requests:${user.id}:${provider}:${scope}:${bucket}`;
+            let limit = model.dailyLimit || (monthly ? COHERE_MONTHLY_LIMIT : PROVIDER_DAILY_LIMITS[provider]);
+            let used = Number(await env.BETA_LIMITS.get(countKey) || 0);
+            if (providerQuota) { used = providerQuota.used; limit = Math.min(limit, providerQuota.providerLimit); }
+            model.usedToday = used;
+            model.dailyLimit = limit;
+            model.remaining = Math.max(0, limit - used);
+            model.quotaPeriod = monthly ? "month" : "day";
+            models.push(model);
+          }
+          const limits = catalog.map((model) => model.dailyLimit || (provider === "cohere" ? COHERE_MONTHLY_LIMIT : PROVIDER_DAILY_LIMITS[provider]));
+          const countKey = provider === "cohere" ? `beta-ai-requests:${user.id}:cohere:month:${month}` : `beta-ai-requests:${user.id}:${provider}:day:${date}`;
+          let used = providerQuota?.used ?? Number(await env.BETA_LIMITS.get(countKey) || 0);
+          if (!providerQuota && provider === "groq") {
+            used = 0;
+            for (const model of catalog) used += Number(await env.BETA_LIMITS.get(`beta-ai-requests:${user.id}:groq:${model.nativeId}:${date}`) || 0);
+          }
+          quotas[provider] = { connected: true, used, limit: providerQuota ? providerQuota.providerLimit : (provider === "cohere" ? COHERE_MONTHLY_LIMIT : Math.max(0, ...limits)), period: provider === "cohere" ? "month" : "day" };
+        } catch (error) { catalogErrors[provider] = error.message; }
+      }
+      return json({ ok: true, models, quotas, catalogErrors, dailyLimit: DAILY_REQUEST_LIMIT, connectedProviders: Object.keys(quotas) }, 200, origin);
+    }
+    if (url.pathname.startsWith("/integrations/") && request.method !== "GET" && request.method !== "POST") return json({ error: "Método no permitido." }, 405, origin);
+    if (url.pathname.startsWith("/integrations/")) {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "Conectá la cuenta dueña de MediaChafa para administrar integraciones." }, 403, origin);
+      if (url.pathname === "/integrations/status" && request.method === "GET") return json({ integrations: await integrationStatus(env, user.id), resources: await integrationContext(env, user.id) }, 200, origin);
+      if (url.pathname === "/integrations/connect" && request.method === "POST") {
+        let payload;
+        try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+        const provider = String(payload.provider || "").toLowerCase();
+        const token = String(payload.token || "").trim();
+        if (!PROVIDERS.includes(provider) || token.length < 12 || token.length > 4096) return json({ error: "Proveedor o token inválido." }, 400, origin);
+        try {
+          const verified = await verifyProvider(provider, token);
+          if (!verified.ok) return json({ error: verified.error }, 400, origin);
+          const encrypted = JSON.parse(await encryptToken(env, token));
+          const meta = { detail: verified.detail, connectedAt: new Date().toISOString(), capabilities: verified.capabilities || {} };
+          await env.BETA_LIMITS.put(`integration:${user.id}:${provider}`, JSON.stringify({ ...encrypted, meta }));
+          return json({ provider, connected: true, detail: verified.detail, capabilities: meta.capabilities }, 200, origin);
         } catch (error) {
-          const message = error instanceof Error ? error.message : "No se pudo avanzar la transferencia.";
-          const retryable = /conexión se interrumpió|podés reintentar|NetworkError|fetch failed/i.test(message);
-          if (!retryable) { state.status = "error"; state.phase = "Transferencia interrumpida"; state.error = message; delete state.uploadUrl; delete state.sourcePath; delete state.contentType; await saveTransfer(env, id, state); }
-          return json({ transferId: id, ...publicTransferState(state), retryable }, retryable ? 503 : 502);
+          return json({ error: error?.message || "No se pudo validar o guardar la integración." }, 502, origin);
         }
       }
-
-      if (url.pathname === "/transfer/status" && request.method === "GET") {
-        const session = await getUser(request, env);
-        if (!session) return json({ error: "La sesión venció. Volvé a iniciar sesión para consultar la transferencia." }, 401);
-        if (!await canTransfer(session, env)) return json({ error: "No tenés permiso para consultar estas transferencias." }, 403);
-        const id = url.searchParams.get("id") || "";
-        if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: "Transferencia inválida." }, 400);
-        const state = await env.GOOGLE_OAUTH_STORE.get(`transfer:${id}`, "json");
-        if (!state || state.userId !== session.user.id) return json({ error: "Transferencia no encontrada." }, 404);
-        return json({ transferId: id, ...publicTransferState(state) });
+      if (url.pathname === "/integrations/disconnect" && request.method === "POST") {
+        let payload;
+        try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+        const provider = String(payload.provider || "").toLowerCase();
+        if (!PROVIDERS.includes(provider)) return json({ error: "Servicio desconocido." }, 400, origin);
+        await env.BETA_LIMITS.delete(`integration:${user.id}:${provider}`);
+        return json({ provider, connected: false }, 200, origin);
       }
+      return json({ error: "Ruta de integraciones no encontrada." }, 404, origin);
+    }
+    if (url.pathname === "/actions/propose" && request.method === "POST") {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "Solo la cuenta dueña puede proponer cambios." }, 403, origin);
+      let payload;
+      try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+      const requested = Array.isArray(payload.actions) ? payload.actions.slice(0, 4) : [];
+      const proposals = [];
+      for (const raw of requested) {
+        const action = safeAction(raw);
+        if (!action) continue;
+        const status = await integrationStatus(env, user.id);
+        if (!status[action.provider]?.connected) continue;
+        const id = crypto.randomUUID();
+        const preview = { id, provider: action.provider, type: action.type, summary: action.summary, ...(action.path ? { path: action.path } : {}), ...(action.name ? { name: action.name } : {}), ...(action.content !== undefined ? { content: action.content } : {}), ...(action.query !== undefined ? { query: action.query } : {}), ...(action.message ? { message: action.message } : {}) };
+        await env.BETA_LIMITS.put(`beta-action:${user.id}:${id}`, JSON.stringify({ state: "pending", action }), { expirationTtl: OPERATION_TTL_SECONDS });
+        proposals.push(preview);
+      }
+      return json({ proposals, expiresInSeconds: OPERATION_TTL_SECONDS }, 200, origin);
+    }
+    if (url.pathname.startsWith("/actions/") && (request.method === "POST" || request.method === "GET")) {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "Solo la cuenta dueña puede aprobar cambios." }, 403, origin);
+      const parts = url.pathname.split("/").filter(Boolean);
+      const id = parts[1];
+      if (!/^[0-9a-f-]{36}$/i.test(id || "")) return json({ error: "Propuesta no válida." }, 400, origin);
+      const key = `beta-action:${user.id}:${id}`;
+      const stored = await env.BETA_LIMITS.get(key);
+      if (!stored) return json({ error: "La propuesta venció o ya no existe. Pedile a Beta que la prepare otra vez." }, 410, origin);
+      let record;
+      try { record = JSON.parse(stored); } catch { return json({ error: "La propuesta quedó dañada." }, 410, origin); }
+      if (request.method === "GET") return json({ state: record.state }, 200, origin);
+      const command = parts[2];
+      if (record.state !== "pending") return json({ error: "La propuesta ya fue aprobada, rechazada o procesada." }, 409, origin);
+      if (command === "reject") {
+        await env.BETA_LIMITS.put(key, JSON.stringify({ state: "rejected" }), { expirationTtl: 3600 });
+        return json({ state: "rejected", message: "Cambio rechazado; no se envió al proveedor." }, 200, origin);
+      }
+      if (command !== "approve") return json({ error: "Usá approve o reject." }, 404, origin);
+      await env.BETA_LIMITS.put(key, JSON.stringify({ state: "executing" }), { expirationTtl: 3600 });
+      try {
+        const result = await applyApprovedAction(env, user.id, record.action);
+        await env.BETA_LIMITS.put(key, JSON.stringify({ state: "completed", result }), { expirationTtl: 3600 });
+        return json({ state: "completed", ...result }, 200, origin);
+      } catch (error) {
+        await env.BETA_LIMITS.put(key, JSON.stringify({ state: "failed", message: error?.message || "Falló la acción." }), { expirationTtl: 3600 });
+        return json({ state: "failed", error: error?.message || "No se pudo aplicar el cambio." }, 502, origin);
+      }
+    }
+    if (url.pathname === "/oauth/start" && request.method === "POST") {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "Conectá la cuenta dueña de MediaChafa para administrar integraciones." }, 403, origin);
+      let payload;
+      try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+      const provider = String(payload.provider || "").toLowerCase();
+      if (!PROVIDERS.includes(provider)) return json({ error: "Proveedor OAuth desconocido." }, 400, origin);
+      return json({ error: `La conexión OAuth de ${provider} todavía no está habilitada. Falta registrar su aplicación y completar el callback seguro en el Worker. Google no puede autorizar esa cuenta por ${provider}.` }, 503, origin);
+    }
+    if (url.pathname !== "/chat" || request.method !== "POST") return json({ error: "Ruta no encontrada." }, 404, origin);
 
-      if (url.pathname === "/google/upload-session" && request.method === "POST") {
-        const session = await getUser(request, env);
-        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
-        const input = await request.json().catch(() => ({}));
-        const name = typeof input.name === "string" ? input.name.trim().slice(0, 240) : "";
-        const size = Number(input.size);
-        const contentType = typeof input.contentType === "string" ? input.contentType.slice(0, 160) : "application/octet-stream";
-        if (!name || !Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) return json({ error: "Nombre o tamaño de archivo inválido." }, 400);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive todavía no está conectado por el dueño." }, 409);
-        const response = await fetchWithTimeout("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size,mimeType", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": contentType, "X-Upload-Content-Length": String(size) }, body: JSON.stringify({ name, mimeType: contentType }) }, 20000);
-        if (!response.ok || !response.headers.get("Location")) {
-          const failure = await response.json().catch(() => ({}));
-          const reason = failure.error?.message || failure.error_description || `HTTP ${response.status}`;
-          console.error("Google Drive resumable session rejected", response.status, reason);
-          return json({ error: `Google Drive no pudo iniciar la subida: ${reason}` }, 502);
+    const user = await requireOwner(request);
+    if (!user) return json({ error: "La Beta está disponible solo para la cuenta dueña." }, 403, origin);
+    let payload;
+    try {
+      const rawBody = await request.text();
+      if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) return json({ error: "El mensaje supera el límite de 12 MB." }, 413, origin);
+      payload = JSON.parse(rawBody);
+    }
+    catch { return json({ error: "El mensaje no tiene un formato válido." }, 400, origin); }
+    const prompt = String(payload.message || "").trim().slice(0, 6000);
+    if (!prompt && !payload.image && !payload.audio) return json({ error: "Escribí un mensaje o adjuntá una imagen." }, 400, origin);
+
+    let image;
+    if (payload.image) {
+      const value = String(payload.image.data || "");
+      if (!/^data:image\/(png|jpeg|webp|gif);base64,/i.test(value) || value.length > MAX_MEDIA_BYTES * 1.4) return json({ error: "La imagen debe ser PNG, JPEG, WebP o GIF y pesar hasta 5 MB." }, 400, origin);
+      image = value;
+    }
+
+    let transcript = "";
+    if (payload.audio) {
+      const audio = String(payload.audio.data || "");
+      const mime = String(payload.audio.mime || "").toLowerCase();
+      if (!/^audio\/(mpeg|mp4|wav|webm|ogg|x-wav|x-m4a|mp3)/i.test(mime) || audio.length > MAX_MEDIA_BYTES * 1.4) return json({ error: "El audio debe ser MP3, M4A, WAV, WebM u OGG y pesar hasta 5 MB." }, 400, origin);
+    }
+
+    const history = Array.isArray(payload.history)
+      ? payload.history.slice(-8).filter((item) => ["user", "assistant"].includes(item?.role)).map((item) => ({ role: item.role, content: String(item.content || "").slice(0, 3000) }))
+      : [];
+    const modelId = String(payload.model || "");
+    const [modelProvider, nativeModelId] = modelId.split("::", 2);
+    if (!MODEL_PROVIDERS.includes(modelProvider) || !nativeModelId) return json({ error: "Elegí un modelo gratuito conectado." }, 409, origin);
+    const token = await storedToken(env, user.id, modelProvider);
+    if (!token) return json({ error: `Conectá la clave gratuita de ${modelProvider} en Integraciones.` }, 409, origin);
+    let selectedModel;
+    try { selectedModel = (await providerModelCatalog(modelProvider, token)).find((model) => model.id === modelId); }
+    catch { return json({ error: `No se pudo verificar el catálogo gratuito de ${modelProvider}. La consulta se detuvo y no se probaron modelos pagos.` }, 503, origin); }
+    if (!selectedModel) return json({ error: "Este modelo ya no está disponible en el catálogo gratuito permitido. Elegí otro; no se envió la consulta." }, 409, origin);
+    const audio = payload.audio ? String(payload.audio.data || "").replace(/^data:[^,]+,/, "") : "";
+    const audioMime = String(payload.audio?.mime || "audio/wav").toLowerCase();
+    const audioFormat = /mp3|mpeg/.test(audioMime) ? "mp3" : /m4a|mp4/.test(audioMime) ? "m4a" : /ogg/.test(audioMime) ? "ogg" : /webm/.test(audioMime) ? "webm" : "wav";
+    if (image && !selectedModel.vision) return json({ error: `${selectedModel.name} no admite imágenes. Elegí uno que indique visión.` }, 400, origin);
+    if (audio && !selectedModel.audio) return json({ error: `${selectedModel.name} no admite audio. Elegí uno que indique audio.` }, 400, origin);
+    let providerQuota;
+    if (modelProvider === "openrouter") {
+      try { providerQuota = await openRouterQuota(token); }
+      catch { return json({ error: "No se pudo verificar la cuota gratuita de OpenRouter. Beta detuvo la consulta para evitar cargos." }, 503, origin); }
+      if (providerQuota.used >= Math.min(DAILY_REQUEST_LIMIT, providerQuota.providerLimit)) return json({ error: `Se agotó OpenRouter (${Math.min(DAILY_REQUEST_LIMIT, providerQuota.providerLimit)} consultas al día compartidas entre sus modelos). Podés cambiar a Groq o Cohere; no se usará un modelo pago.`, usedToday: providerQuota.used, remaining: 0, dailyLimit: DAILY_REQUEST_LIMIT }, 429, origin);
+    }
+    const quota = await reserveRequest(env, user.id, modelId);
+    if (!quota.allowed) return json({ error: `Se agotó la cuota de Beta para ${modelProvider}${quota.period === "month" ? " este mes" : " hoy"}. Cambiá de proveedor para usar otra cuota gratuita, o esperá el reinicio.`, ...quota }, 429, origin);
+
+    try {
+      const context = prompt || "Describe la imagen adjunta.";
+      const integrations = await integrationStatus(env, user.id);
+      const connectedContext = await integrationContext(env, user.id);
+      const available = TOOL_PROVIDERS.filter((provider) => integrations[provider]?.connected).map((provider) => `${provider}: ${integrations[provider].detail || "conectado"}`).join("; ") || "ninguna";
+      const userContent = image || audio ? [ { type: "text", text: context } ] : context;
+      if (image) userContent.push({ type: "image_url", image_url: { url: image } });
+      if (audio) userContent.push({ type: "input_audio", input_audio: { data: audio, format: audioFormat } });
+      const messages = [
+        { role: "system", content: `Sos Beta, la asistente privada de MediaChafa. Respondé siempre como un único objeto JSON, sin markdown ni texto fuera del JSON: {"answer":"respuesta breve y clara en español","actions":[]}. Podés analizar imágenes y texto; si recibís una transcripción, tratala como contenido del usuario. Integraciones conectadas: ${available}. Contexto de recursos: ${JSON.stringify(connectedContext).slice(0, 12000)}. Si el usuario pide un cambio externo y la integración está conectada, explica brevemente qué harás y agrega una propuesta exacta a actions. Nunca afirmes que se hizo antes de que el usuario apruebe y el servidor lo confirme. Nunca pidas tokens en el chat. Acciones permitidas: GitHub escribir un archivo del repositorio conectado {provider:"github",type:"write_file",path,content,message,description}; GitHub crear repositorio privado {provider:"github",type:"create_repository",name,description}; Supabase ejecutar SQL exacto {provider:"supabase",type:"sql",query,description}; Cloudflare crear un Worker nuevo {provider:"cloudflare",type:"create_worker",name,content,description}. No propongas borrar recursos, modificar Workers existentes, cambiar secretos/permisos, operar fuera del repo o proyecto conectados ni editar o desplegar el propio Worker de Beta. Para SQL muestra el SQL completo en query; evita operaciones destructivas o cambios de acceso público, y si son necesarios explica el riesgo en answer y no generes la propuesta. Para cambios de archivos, genera contenido completo. Acciones siempre requieren aprobación individual en la interfaz y vencen en 10 minutos.` },
+        ...history,
+        { role: "user", content: userContent },
+      ];
+      let result;
+      let responseData;
+      let rawAnswer;
+      if (modelProvider === "openrouter" || modelProvider === "groq") {
+        const endpoint = modelProvider === "openrouter" ? OPENROUTER_CHAT : "https://api.groq.com/openai/v1/chat/completions";
+        result = await fetch(endpoint, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(modelProvider === "openrouter" ? { "HTTP-Referer": APP_ORIGIN, "X-Title": "MediaChafa Beta" } : {}) }, body: JSON.stringify({ model: nativeModelId, messages, max_tokens: 2400, temperature: 0.5, ...(modelProvider === "openrouter" ? { provider: { allow_fallbacks: false } } : {}) }) });
+        responseData = await result.json().catch(() => ({}));
+        if (result.ok) rawAnswer = responseData?.choices?.[0]?.message?.content;
+      } else if (modelProvider === "cohere") {
+        result = await fetch("https://api.cohere.com/v2/chat", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: nativeModelId, messages, max_tokens: 2400, temperature: 0.5 }) });
+        responseData = await result.json().catch(() => ({}));
+        if (result.ok) rawAnswer = (responseData?.message?.content || []).map((part) => part.text || "").join("\n");
+      } else {
+        const contents = [...history, { role: "user", content: prompt || "Analizá el adjunto." }].map((message) => ({ role: message.role === "assistant" ? "model" : "user", parts: [{ text: String(message.content || "") }] }));
+        if (image) contents[contents.length - 1].parts.push({ inlineData: { mimeType: image.match(/^data:([^;]+)/)?.[1] || "image/jpeg", data: image.split(",", 2)[1] } });
+        const system = messages[0].content;
+        result = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(nativeModelId)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": token, "Content-Type": "application/json" }, body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { responseMimeType: "application/json", maxOutputTokens: 2400, temperature: 0.5 } }) });
+        responseData = await result.json().catch(() => ({}));
+        if (result.ok) rawAnswer = (responseData?.candidates?.[0]?.content?.parts || []).map((part) => part.text || "").join("\n");
+      }
+      if (!result.ok) throw new Error(String(responseData.error?.message || responseData.message || `${modelProvider} respondió HTTP ${result.status}. No se probaron modelos pagos ni otros proveedores automáticamente.`).slice(0, 500));
+      if (!rawAnswer) throw new Error("El modelo no devolvió una respuesta.");
+      const plan = extractPlan(rawAnswer);
+      let proposals = [];
+      if (plan.actions.length) {
+        for (const raw of plan.actions.slice(0, 4)) {
+          const action = safeAction(raw);
+          if (!action || !integrations[action.provider]?.connected) continue;
+          const id = crypto.randomUUID();
+          await env.BETA_LIMITS.put(`beta-action:${user.id}:${id}`, JSON.stringify({ state: "pending", action }), { expirationTtl: OPERATION_TTL_SECONDS });
+          proposals.push({ id, provider: action.provider, type: action.type, summary: action.summary, ...(action.path ? { path: action.path } : {}), ...(action.name ? { name: action.name } : {}), ...(action.content !== undefined ? { content: action.content } : {}), ...(action.query !== undefined ? { query: action.query } : {}), ...(action.message ? { message: action.message } : {}) });
         }
-        const uploadId = crypto.randomUUID();
-        const uploadState = JSON.stringify({ url: response.headers.get("Location"), userId: session.user.id, size, contentType });
-        await env.GOOGLE_OAUTH_STORE.put(`upload:${uploadId}`, await encryptGoogleToken(uploadState, env), { expirationTtl: 7 * 24 * 60 * 60 });
-        return json({ uploadId, partSize: 8 * 1024 * 1024, expiresIn: 7 * 24 * 60 * 60 });
       }
-
-      if (url.pathname === "/google/upload-part" && request.method === "PUT") {
-        const session = await getUser(request, env);
-        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
-        const uploadId = url.searchParams.get("id") || "";
-        const probe=url.searchParams.get("probe")==="1";
-        const start = Number(url.searchParams.get("start")), end = Number(url.searchParams.get("end")), total = Number(url.searchParams.get("total"));
-        if (!/^[0-9a-f-]{36}$/i.test(uploadId) || !Number.isSafeInteger(total) || total<=0 || (!probe&&(!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= total || end - start + 1 > 8 * 1024 * 1024))) return json({ error: "Parte de subida inválida." }, 400);
-        const rawState = await env.GOOGLE_OAUTH_STORE.get(`upload:${uploadId}`);
-        if (!rawState) return json({ error: "La sesión de subida expiró. Iniciá la subida nuevamente." }, 410);
-        const state = JSON.parse(await decryptGoogleToken(rawState, env));
-        if (state.userId !== session.user.id || state.size !== total) return json({ error: "La sesión de subida no pertenece a este usuario o archivo." }, 403);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive todavía no está conectado por el dueño." }, 409);
-        const bytes = probe ? new ArrayBuffer(0) : await request.arrayBuffer();
-        if (!probe&&bytes.byteLength !== end - start + 1) return json({ error: "El tamaño de la parte no coincide." }, 400);
-        const response = await fetchWithTimeout(state.url, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": state.contentType, "Content-Length": String(bytes.byteLength), "Content-Range": probe?`bytes */${total}`:`bytes ${start}-${end}/${total}` }, body: bytes }, 120000);
-        if (response.status === 308) {
-          const last=response.headers.get("Range")?.match(/bytes=0-(\d+)/i)?.[1];
-          return json({ ok:true, complete:false, next:last?Number(last)+1:0 });
-        }
-        if (response.status !== 200 && response.status !== 201) {
-          const failure = await response.json().catch(() => ({}));
-          return json({ error: failure.error?.message || `Google Drive devolvió ${response.status}.`, retryable:response.status>=500||response.status===429 }, response.status>=500||response.status===429?503:502);
-        }
-        await env.GOOGLE_OAUTH_STORE.delete(`upload:${uploadId}`);
-        const file = await response.json().catch(() => ({}));
-        if (!file.id) return json({ error: "Google Drive finalizó, pero no devolvió el identificador del archivo." }, 502);
-        return json({ ok: true, complete: true, file });
-      }
-
-      if (url.pathname === "/ps4/sign" && request.method === "POST") {
-        if (!env.SHARE_SIGNING_SECRET) return json({ error: "El servicio de descargas no está configurado." }, 503);
-        const input = await request.json().catch(() => ({}));
-        const gameId = String(input.gameId || "");
-        const game = await findPublicPs4Game(gameId, env);
-        if (!game) return json({ error: "El juego no está disponible públicamente en el catálogo." }, 404);
-        const id = googleIdFromPublicUrl(game.download_url);
-        if (!id) return json({ error: "El enlace de Drive no contiene un archivo descargable válido." }, 400);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive no está conectado en MediaChafa." }, 503);
-        const metadataResponse = await fetchWithTimeout(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=id,name,mimeType,size&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${accessToken}` } }, 20000);
-        const metadata = await metadataResponse.json().catch(() => ({}));
-        if (!metadataResponse.ok) return json({ error: metadata.error?.message || "MediaChafa no tiene acceso de lectura a ese archivo de Drive. Revisá que el enlace sea de un archivo de tu Drive conectado." }, metadataResponse.status === 404 ? 404 : 502);
-        const fileName = String(metadata.name || game.title || "descarga").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").slice(0, 255);
-        const signature = await sign(env.SHARE_SIGNING_SECRET, `ps4:${gameId}\n${id}\n${fileName}`);
-        const shareUrl = new URL(`/ps4/download/${encodeURIComponent(gameId)}`, url.origin);
-        shareUrl.searchParams.set("file", id);
-        shareUrl.searchParams.set("name", fileName);
-        shareUrl.searchParams.set("signature", signature);
-        return json({ url: shareUrl.toString(), fileName, permanent: true });
-      }
-
-      if (url.pathname.startsWith("/ps4/download/") && request.method === "GET") {
-        const gameId = decodeURIComponent(url.pathname.slice("/ps4/download/".length));
-        const id = url.searchParams.get("file") || "";
-        const fileName = url.searchParams.get("name") || "descarga";
-        const signature = url.searchParams.get("signature") || "";
-        if (!env.SHARE_SIGNING_SECRET || !/^[A-Za-z0-9_-]{10,200}$/.test(id)) return json({ error: "Este enlace de descarga no es válido." }, 403);
-        const game = await findPublicPs4Game(gameId, env);
-        if (!game || googleIdFromPublicUrl(game.download_url) !== id) return json({ error: "El juego ya no está disponible en el catálogo." }, 404);
-        if (!safeEqual(await sign(env.SHARE_SIGNING_SECRET, `ps4:${gameId}\n${id}\n${fileName}`), signature)) return json({ error: "Este enlace de descarga no es válido." }, 403);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive no está conectado en MediaChafa." }, 503);
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${accessToken}` } });
-        if (!response.ok || !response.body) return json({ error: response.status === 404 ? "El archivo ya no existe o MediaChafa no tiene acceso de lectura en Drive." : "Google Drive no pudo entregar el archivo." }, response.status === 404 ? 404 : 502);
-        const headers = new Headers({ "Content-Type": response.headers.get("Content-Type") || "application/octet-stream", "Cache-Control": "private, no-store", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}` });
-        const length = response.headers.get("Content-Length");
-        if (length) headers.set("Content-Length", length);
-        for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
-        return new Response(response.body, { headers });
-      }
-
-      if (url.pathname === "/google/sign" && request.method === "POST") {
-        if (!env.SHARE_SIGNING_SECRET) return json({ error: "El servicio de enlaces no está configurado." }, 503);
-        const session = await getUser(request, env);
-        if (!session) return json({ error: "Iniciá sesión para compartir este archivo." }, 401);
-        const input = await request.json().catch(() => ({}));
-        const id = googleFileId(input.path);
-        if (!id) return json({ error: "El identificador del archivo de Google Drive no es válido." }, 400);
-        const record = await findGoogleFileRecord(id, env, session);
-        if (!record) return json({ error: "No encontramos el archivo en la biblioteca. Actualizá la lista y volvé a intentar." }, 404);
-        if (record.is_private) return json({ error: "Los archivos privados no generan enlaces públicos." }, 403);
-        const preview = input.preview === true;
-        const fileName = String(record.file_name || "archivo").slice(0, 255);
-        const mode = preview ? "inline" : "attachment";
-        const signature = await sign(env.SHARE_SIGNING_SECRET, `gdrive:${id}\npermanent\n${mode}\n${fileName}`);
-        const shareUrl = new URL(`/google/download/${encodeURIComponent(id)}`, url.origin);
-        shareUrl.searchParams.set("signature", signature);
-        shareUrl.searchParams.set("name", fileName);
-        if (preview) shareUrl.searchParams.set("preview", "1");
-        return json({ url: shareUrl.toString(), permanent: true });
-      }
-
-      if (url.pathname.startsWith("/google/download/") && request.method === "GET") {
-        const id = decodeURIComponent(url.pathname.slice("/google/download/".length));
-        const expiresValue = url.searchParams.get("expires");
-        const expires = expiresValue === null ? null : Number(expiresValue);
-        const preview = url.searchParams.get("preview") === "1";
-        const fileName = url.searchParams.get("name") || "archivo";
-        const mode = preview ? "inline" : "attachment";
-        const suppliedSignature = url.searchParams.get("signature") || "";
-        const now = Math.floor(Date.now() / 1000);
-        if (!googleFileId(`gdrive://${id}`)) return json({ error: "El identificador del archivo no es válido." }, 400);
-        if (expires !== null && (!Number.isInteger(expires) || expires <= now || expires > now + SHARE_TTL_SECONDS + 60)) return json({ error: "Este enlace venció o no es válido." }, 410);
-        const signedValue = expires === null
-          ? `gdrive:${id}\npermanent\n${mode}\n${fileName}`
-          : `gdrive:${id}\n${expires}\n${mode}\n${fileName}`;
-        if (!safeEqual(await sign(env.SHARE_SIGNING_SECRET, signedValue), suppliedSignature)) return json({ error: "Este enlace no es válido." }, 403);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive no está conectado." }, 503);
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
-        if (!response.ok || !response.body) return json({ error: response.status === 404 || response.status === 410 ? "El archivo ya no existe en Google Drive." : "Google Drive no pudo entregar el archivo." }, response.status === 404 || response.status === 410 ? 404 : 502);
-        const headers = new Headers({ "Content-Type": response.headers.get("Content-Type") || "application/octet-stream", "Cache-Control": "private, no-store", "Content-Disposition": `${mode}; filename*=UTF-8''${encodeURIComponent(fileName)}` });
-        for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
-        return new Response(response.body, { headers });
-      }
-
-      if (url.pathname.startsWith("/google/delete/") && request.method === "DELETE") {
-        const session = await getUser(request, env);
-        if (!session) return json({ error: "Iniciá sesión para eliminar archivos." }, 401);
-        const id = decodeURIComponent(url.pathname.slice("/google/delete/".length));
-        if (!googleFileId(`gdrive://${id}`)) return json({ error: "Archivo inválido." }, 400);
-        const path = `gdrive://${id}`;
-        const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=id,created_by&storage_path=eq.${encodeURIComponent(path)}&limit=1`;
-        const recordResponse = await fetch(query, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } });
-        if (!recordResponse.ok) return json({ error: "No se pudo verificar quién subió este archivo." }, 502);
-        const rows = await recordResponse.json();
-        const owner = await isOwner(session, env);
-        if (!rows.length) return json({ error: "El archivo no existe en la biblioteca." }, 404);
-        if (!owner && rows[0].created_by !== session.user.id) return json({ error: "Solo podés borrar los archivos que subiste." }, 403);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive no está conectado." }, 503);
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}`, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } });
-        if (!response.ok && response.status !== 404) return json({ error: "No se pudo eliminar en Google Drive." }, 502);
-        return json({ ok: true });
-      }
-
-      if (url.pathname === "/sign" && request.method === "POST") {
-        if (!env.SHARE_SIGNING_SECRET) return json({ error: "El servicio de enlaces no está configurado." }, 503);
-        const input = await request.json().catch(() => ({}));
-        const path = typeof input.path === "string" ? input.path : "";
-        if (!path || path.length > 1024 || path.split("/").some(part => part === "..")) return json({ error: "Archivo inválido." }, 400);
-        const session = await getUser(request, env);
-        if (!session) return json({ error: "Iniciá sesión para crear un enlace compartido." }, 401);
-        const fileRecord = await findMediaFileByPath(path, env, session);
-        if (!fileRecord || fileRecord.is_private) return json({ error: "Solo se pueden compartir archivos públicos." }, 403);
-        if (!await env.MEDIA_BUCKET.head(path)) return json({ error: "Archivo no encontrado en R2." }, 404);
-        const signature = await sign(env.SHARE_SIGNING_SECRET, `${path}\npermanent`);
-        const shareUrl = new URL("/share/" + encodePath(path), url.origin);
-        shareUrl.searchParams.set("signature", signature);
-        return json({ url: shareUrl.toString(), permanent: true });
-      }
-
-      if (url.pathname.startsWith("/share/") && request.method === "GET") {
-        if (!env.SHARE_SIGNING_SECRET) return json({ error: "El servicio de enlaces no está configurado." }, 503);
-        const path = objectKey(url.pathname, "/share/");
-        const expiresValue = url.searchParams.get("expires");
-        const expires = expiresValue === null ? null : Number(expiresValue);
-        const suppliedSignature = url.searchParams.get("signature") || "";
-        const now = Math.floor(Date.now() / 1000);
-        if (!path) return json({ error: "Archivo inválido." }, 400);
-        if (expires !== null && (!Number.isInteger(expires) || expires <= now || expires > now + SHARE_TTL_SECONDS + 60)) return json({ error: "Este enlace venció o no es válido." }, 410);
-        const expected = await sign(env.SHARE_SIGNING_SECRET, expires === null ? `${path}\npermanent` : `${path}\n${expires}`);
-        if (!safeEqual(expected, suppliedSignature)) return json({ error: "Este enlace no es válido." }, 403);
-        if (!await env.MEDIA_BUCKET.head(path)) return json({ error: "El archivo ya no existe." }, 404);
-        const object = await env.MEDIA_BUCKET.get(path);
-        return withCors(await serveObject(object, path.split("/").pop()));
-      }
-
-      if (url.pathname.startsWith("/object/") && request.method === "GET") {
-        const path = objectKey(url.pathname, "/object/");
-        if (!path) return json({ error: "Archivo inválido." }, 400);
-        const session = await getUser(request, env);
-        const fileRecord = await findMediaFileByPath(path, env, session);
-        if (!fileRecord && !await canReadWallpaper(path, session, env)) return json({ error: "Archivo no encontrado o no tenés permiso para verlo." }, 404);
-        const object = await env.MEDIA_BUCKET.get(path);
-        const mode = url.searchParams.get("preview") === "1" ? "inline" : "attachment";
-        return withCors(await serveObject(object, path.split("/").pop(), mode));
-      }
-
-      if (url.pathname.startsWith("/google/private/") && request.method === "GET") {
-        const session = await getUser(request, env);
-        if (!session) return json({ error: "Iniciá sesión para ver este archivo privado." }, 401);
-        const id = decodeURIComponent(url.pathname.slice("/google/private/".length));
-        if (!googleFileId(`gdrive://${id}`)) return json({ error: "Archivo inválido." }, 400);
-        const record = await findGoogleFileRecord(id, env, session);
-        if (!record) return json({ error: "Archivo no encontrado o no tenés permiso para verlo." }, 404);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive no está conectado." }, 503);
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
-        if (!response.ok || !response.body) return json({ error: "Google Drive no pudo entregar el archivo." }, 502);
-        const preview = url.searchParams.get("preview") === "1";
-        const headers = new Headers({
-          "Content-Type": response.headers.get("Content-Type") || "application/octet-stream",
-          "Cache-Control": "private, no-store",
-          "Content-Disposition": `${preview ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(record.file_name || "archivo")}`
-        });
-        const length = response.headers.get("Content-Length");
-        if (length) headers.set("Content-Length", length);
-        for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
-        return new Response(response.body, { headers });
-      }
-
-      if (url.pathname === "/migrate" && request.method === "POST") {
-        const session = await getUser(request, env);
-        if (!await isOwner(session, env)) return json({ error: "Solo el dueño puede migrar archivos." }, 403);
-        const input = await request.json().catch(() => ({}));
-        const result = await migrate(input.files, env);
-        return json(result.body, result.status);
-      }
-
-      if (url.pathname.startsWith("/object/") && request.method === "PUT") {
-        const path = objectKey(url.pathname, "/object/");
-        if (!path) return json({ error: "Archivo inválido." }, 400);
-        const session = await getUser(request, env);
-        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
-        if (session.user.id !== env.OWNER_USER_ID && !path.startsWith(`${session.user.id}/`)) return json({ error: "Ruta de archivo no autorizada." }, 403);
-        const size = Number(request.headers.get("Content-Length") || 0);
-        if (size > MAX_UPLOAD_BYTES) return json({ error: "El máximo por archivo es 10 GB." }, 413);
-        if (size > 100 * 1024 * 1024) return json({ error: "Para archivos mayores a 100 MB usá carga multipart." }, 413);
-        if (!request.body) return json({ error: "El archivo está vacío." }, 400);
-        const contentType = request.headers.get("Content-Type") || "application/octet-stream";
-        const object = await env.MEDIA_BUCKET.put(path, request.body, { httpMetadata: { contentType } });
-        return json({ ok: true, path, etag: object.etag });
-      }
-
-      if (url.pathname === "/multipart/create" && request.method === "POST") {
-        const session = await getUser(request, env);
-        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
-        const input = await request.json().catch(() => ({}));
-        const path = typeof input.path === "string" ? input.path : "";
-        const size = Number(input.size);
-        const contentType = typeof input.contentType === "string" ? input.contentType : "application/octet-stream";
-        if (!path || path.length > 1024 || path.split("/").some(part => part === "..")) return json({ error: "Ruta inválida." }, 400);
-        if (session.user.id !== env.OWNER_USER_ID && !path.startsWith(`${session.user.id}/`)) return json({ error: "Ruta de archivo no autorizada." }, 403);
-        if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) return json({ error: "El máximo por archivo es 10 GB." }, 413);
-        const partSize = 8 * 1024 * 1024;
-        const upload = await env.MEDIA_BUCKET.createMultipartUpload(path, { httpMetadata: { contentType } });
-        try {
-          if (!env.GOOGLE_OAUTH_STORE) throw new Error("No hay almacenamiento temporal configurado.");
-          await env.GOOGLE_OAUTH_STORE.put(`r2-upload:${upload.uploadId}`, JSON.stringify({ userId: session.user.id, path, size, partSize }), { expirationTtl: 7 * 24 * 60 * 60 });
-        } catch {
-          await upload.abort().catch(() => {});
-          return json({ error: "No se pudo reservar la carga. Volvé a intentarlo." }, 503);
-        }
-        return json({ ok: true, path, uploadId: upload.uploadId, partSize });
-      }
-
-      if (url.pathname === "/multipart/part" && request.method === "PUT") {
-        const session = await getUser(request, env);
-        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
-        const path = url.searchParams.get("path") || "";
-        const uploadId = url.searchParams.get("uploadId") || "";
-        const partNumber = Number(url.searchParams.get("partNumber"));
-        if (!path || !uploadId || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) return json({ error: "Parte inválida." }, 400);
-        const metadata = await env.GOOGLE_OAUTH_STORE?.get(`r2-upload:${uploadId}`, "json");
-        if (!metadata || metadata.userId !== session.user.id || metadata.path !== path) return json({ error: "La carga no existe o no te pertenece." }, 403);
-        const expectedParts = Math.ceil(metadata.size / metadata.partSize);
-        const expectedSize = partNumber === expectedParts ? metadata.size - metadata.partSize * (expectedParts - 1) : metadata.partSize;
-        if (partNumber > expectedParts || !request.body) return json({ error: "Parte inválida." }, 400);
-        const upload = env.MEDIA_BUCKET.resumeMultipartUpload(path, uploadId);
-        const bytes = await request.arrayBuffer();
-        if (bytes.byteLength !== expectedSize) return json({ error: `La parte ${partNumber} llegó incompleta; reintentá subirla.` }, 400);
-        const part = await upload.uploadPart(partNumber, bytes);
-        return json({ ok: true, partNumber, etag: part.etag });
-      }
-
-      if (url.pathname === "/multipart/complete" && request.method === "POST") {
-        const session = await getUser(request, env);
-        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
-        const input = await request.json().catch(() => ({}));
-        const path = typeof input.path === "string" ? input.path : "";
-        const uploadId = typeof input.uploadId === "string" ? input.uploadId : "";
-        const parts = Array.isArray(input.parts) ? input.parts : [];
-        if (!path || !uploadId || !parts.length || parts.length > 10000) return json({ error: "Datos de finalización inválidos." }, 400);
-        const metadata = await env.GOOGLE_OAUTH_STORE?.get(`r2-upload:${uploadId}`, "json");
-        if (!metadata || metadata.userId !== session.user.id || metadata.path !== path) return json({ error: "La carga no existe o no te pertenece." }, 403);
-        const expectedParts = Math.ceil(metadata.size / metadata.partSize);
-        if (parts.length !== expectedParts || parts.some((part, index) => Number(part.partNumber) !== index + 1 || typeof part.etag !== "string" || !part.etag)) return json({ error: "Faltan partes o están desordenadas. Volvé a subir el archivo." }, 400);
-        const upload = env.MEDIA_BUCKET.resumeMultipartUpload(path, uploadId);
-        const object = await upload.complete(parts.map(part => ({ partNumber: Number(part.partNumber), etag: String(part.etag) })));
-        await env.GOOGLE_OAUTH_STORE.delete(`r2-upload:${uploadId}`);
-        if (object.size !== metadata.size) {
-          await env.MEDIA_BUCKET.delete(path);
-          return json({ error: "La verificación del tamaño no coincidió. Volvé a subir el archivo." }, 502);
-        }
-        return json({ ok: true, path, etag: object.etag, size: object.size });
-      }
-
-      if (url.pathname === "/multipart/abort" && request.method === "POST") {
-        const session = await getUser(request, env);
-        if (!await canUpload(session, env)) return json({ error: "No tenés permiso para subir archivos." }, 403);
-        const input = await request.json().catch(() => ({}));
-        const path = typeof input.path === "string" ? input.path : "";
-        const uploadId = typeof input.uploadId === "string" ? input.uploadId : "";
-        if (!path || !uploadId) return json({ error: "Datos de cancelación inválidos." }, 400);
-        const metadata = await env.GOOGLE_OAUTH_STORE?.get(`r2-upload:${uploadId}`, "json");
-        if (!metadata || metadata.userId !== session.user.id || metadata.path !== path) return json({ error: "La carga no existe o no te pertenece." }, 403);
-        await env.MEDIA_BUCKET.resumeMultipartUpload(path, uploadId).abort();
-        await env.GOOGLE_OAUTH_STORE.delete(`r2-upload:${uploadId}`);
-        return json({ ok: true });
-      }
-
-      if (url.pathname.startsWith("/object/") && request.method === "DELETE") {
-        const path = objectKey(url.pathname, "/object/");
-        if (!path) return json({ error: "Archivo inválido." }, 400);
-        const session = await getUser(request, env);
-        if (!session) return json({ error: "Iniciá sesión para eliminar archivos." }, 401);
-        const owner = await isOwner(session, env);
-        if (!owner) {
-          const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=id,created_by&storage_path=eq.${encodeURIComponent(path)}&limit=1`;
-          const record = await fetch(query, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } });
-          if (!record.ok) return json({ error: "No se pudo verificar quién subió este archivo." }, 502);
-          const rows = await record.json();
-          if (!rows.length || rows[0].created_by !== session.user.id || !path.startsWith(`${session.user.id}/`)) return json({ error: "Solo podés borrar los archivos que subiste." }, 403);
-        }
-        if (!await env.MEDIA_BUCKET.head(path)) return json({ error: "Archivo no encontrado en R2." }, 404);
-        await env.MEDIA_BUCKET.delete(path);
-        return json({ ok: true });
-      }
-
-      return json({ error: "Ruta no encontrada." }, 404);
+      const displayedUsed = modelProvider === "openrouter" ? Math.max(quota.usedToday, providerQuota.used + 1) : quota.usedToday;
+      return json({ answer: plan.answer, proposals, expiresInSeconds: OPERATION_TTL_SECONDS, modelId, modelName: selectedModel.name, provider: modelProvider, thinkingLevel: selectedModel.thinkingLevel, ...quota, usedToday: displayedUsed, remaining: providerQuota ? Math.max(0, Math.min(quota.remaining, providerQuota.providerRemaining - 1)) : quota.remaining }, 200, origin);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "unknown error";
-      console.error("MediaChafa storage request failed", url.pathname, message);
-      if (url.pathname.startsWith("/google/")) return json({ error: message }, 502);
-      return json({ error: "No se pudo completar la operación de almacenamiento." }, 500);
+      return json({ error: error?.message || "No se pudo completar la consulta a la IA.", modelId, ...quota }, 502, origin);
     }
   },
 };
-
-

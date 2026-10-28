@@ -21,6 +21,7 @@
   const activityList = $('#beta-activity-list');
   let activityItems = [];
   let modelCatalog = [];
+  let providerQuotas = {};
   const modelSelect = document.createElement('select');
   modelSelect.id = 'beta-model-select';
   modelSelect.setAttribute('aria-label', 'Modelo de inteligencia artificial');
@@ -35,52 +36,30 @@
   const betaHeader = $('#beta-panel .beta-header');
   betaHeader.insertBefore(modelControl, betaHeader.querySelector('.beta-nav'));
 
-  // Keep the provider setup available even when an older cached HTML shell is
-  // served by a browser; the model worker still requires an explicitly saved
-  // free-tier API key before it can list or call any model.
-  if (!$('#beta-connection-openrouter')) {
-    const grid = $('#beta-integrations-view .beta-connectors');
-    if (grid) {
-      const card = document.createElement('article');
-      card.className = 'beta-connector beta-free-models';
-      const title = document.createElement('h3');
-      title.textContent = 'Modelos gratuitos · OpenRouter';
-      const description = document.createElement('p');
-      description.append('Conectá una API key gratuita desde ');
-      const keysLink = document.createElement('a');
-      keysLink.href = 'https://openrouter.ai/keys';
-      keysLink.target = '_blank';
-      keysLink.rel = 'noopener noreferrer';
-      keysLink.textContent = 'openrouter.ai/keys';
-      description.append(keysLink, '. No compres créditos ni actives recargas automáticas. Beta solo lista variantes :free cuyo precio actual sea $0, lo comprueba antes de cada consulta y bloquea fallbacks. No envíes claves ni datos privados en el chat.');
-      const tokenInput = document.createElement('input');
-      tokenInput.id = 'beta-token-openrouter';
-      tokenInput.type = 'password';
-      tokenInput.autocomplete = 'off';
-      tokenInput.spellcheck = false;
-      tokenInput.placeholder = 'Pegá tu API key de OpenRouter';
-      tokenInput.setAttribute('aria-label', 'API key de OpenRouter');
-      const actions = document.createElement('div');
-      actions.className = 'beta-actions';
-      const connect = document.createElement('button');
-      connect.className = 'add-btn';
-      connect.type = 'button';
-      connect.dataset.betaConnect = 'openrouter';
-      connect.textContent = 'Validar y guardar';
-      const disconnect = document.createElement('button');
-      disconnect.className = 'secondary hidden';
-      disconnect.type = 'button';
-      disconnect.dataset.betaDisconnect = 'openrouter';
-      disconnect.textContent = 'Desconectar';
-      actions.append(connect, disconnect);
-      const connection = document.createElement('span');
-      connection.className = 'beta-connection-status';
-      connection.id = 'beta-connection-openrouter';
-      connection.setAttribute('role', 'status');
-      connection.textContent = 'Sin conectar';
-      card.append(title, description, tokenInput, actions, connection);
-      grid.append(card);
-    }
+  // Build missing cards at runtime too, so cached HTML shells still support
+  // every provider and never strand the owner on the old OpenRouter-only form.
+  const modelProviderInfo = {
+    openrouter: { title: 'OpenRouter · modelos :free', url: 'https://openrouter.ai/settings/keys', link: 'Crear API key', note: 'No compres créditos ni actives recargas. Solo se aceptan variantes :free con precios comprobados en cero; OpenRouter limita su pool gratuito a 50 solicitudes diarias compartidas.' },
+    groq: { title: 'Groq · plan Free', url: 'https://console.groq.com/keys', link: 'Abrir claves de Groq', note: 'La cuenta conectada debe mantenerse en el plan Free. Beta solo ofrece modelos publicados en los límites gratuitos de tu cuenta y se detiene ante el límite del proveedor.' },
+    cohere: { title: 'Cohere · clave Trial gratis', url: 'https://dashboard.cohere.com/api-keys', link: 'Abrir claves Trial', note: 'Usá una clave Trial de la cuenta gratuita; nunca una Production. Cohere indica un máximo de 1.000 llamadas al mes para claves Trial.' },
+    gemini: { title: 'Google AI Studio · Free Tier', url: 'https://aistudio.google.com/apikey', link: 'Abrir AI Studio', note: 'Solo conectes una API key de un proyecto que AI Studio muestre como Free Tier y sin facturación vinculada. Beta permite únicamente modelos de una lista gratuita cerrada.' },
+  };
+  const connectorGrid = $('#beta-integrations-view .beta-connectors');
+  if (connectorGrid) for (const [provider, info] of Object.entries(modelProviderInfo)) {
+    if ($('#beta-connection-' + provider)) continue;
+    const card = document.createElement('article');
+    card.className = 'beta-connector beta-free-models';
+    const title = document.createElement('h3'); title.textContent = info.title;
+    const description = document.createElement('p');
+    const link = document.createElement('a'); link.href = info.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = info.link;
+    description.append(link, '. ', info.note, ' La clave se guarda cifrada en el Worker privado de Beta.');
+    const tokenInput = document.createElement('input'); tokenInput.id = 'beta-token-' + provider; tokenInput.type = 'password'; tokenInput.autocomplete = 'off'; tokenInput.spellcheck = false; tokenInput.placeholder = 'Pegá tu clave gratuita de ' + provider; tokenInput.setAttribute('aria-label', 'Clave gratuita de ' + provider);
+    const actions = document.createElement('div'); actions.className = 'beta-actions';
+    const connect = document.createElement('button'); connect.className = 'add-btn'; connect.type = 'button'; connect.dataset.betaConnect = provider; connect.textContent = 'Validar y guardar';
+    const disconnect = document.createElement('button'); disconnect.className = 'secondary hidden'; disconnect.type = 'button'; disconnect.dataset.betaDisconnect = provider; disconnect.textContent = 'Desconectar';
+    actions.append(connect, disconnect);
+    const connection = document.createElement('span'); connection.className = 'beta-connection-status'; connection.id = 'beta-connection-' + provider; connection.setAttribute('role', 'status'); connection.textContent = 'Sin conectar';
+    card.append(title, description, tokenInput, actions, connection); connectorGrid.append(card);
   }
 
   const browserFrame = $('#beta-browser-frame');
@@ -122,10 +101,10 @@
 
   function renderModelOptions() {
     if (!modelCatalog.length) {
-      modelSelect.replaceChildren(new Option('Conectá OpenRouter para cargar modelos', ''));
+      modelSelect.replaceChildren(new Option('Conectá un proveedor gratuito en Integraciones', ''));
       modelSelect.disabled = true;
       modelCount.textContent = 'Catálogo gratuito no conectado';
-      $('#beta-count').textContent = `${usedToday} de ${dailyLimit} consultas gratuitas usadas hoy · ${remaining} disponibles · reinicio 00:00 UTC`;
+      $('#beta-count').textContent = 'Conectá OpenRouter, Groq, Cohere o Gemini Free Tier en Integraciones para cargar los modelos gratuitos disponibles.';
       imageInput.disabled = true;
       audioInput.disabled = true;
       return;
@@ -136,13 +115,15 @@
     modelSelect.replaceChildren(...modelCatalog.map(model => {
       const option = document.createElement('option');
       option.value = model.id;
-      option.textContent = `${model.name} · ${model.thinkingLevel || 'medio'} · ${[model.vision && 'imagen', model.audio && 'audio'].filter(Boolean).join('+') || 'texto'}`;
+      const quotaLabel = Number.isFinite(model.dailyLimit) ? ` · ${model.usedToday || 0}/${model.dailyLimit} ${model.quotaPeriod === 'month' ? 'mes' : 'hoy'}` : '';
+      option.textContent = `${model.provider} · ${model.name} · ${model.thinkingLevel || 'medio'}${quotaLabel}`;
       return option;
     }));
     modelSelect.value = modelCatalog.some(model => model.id === prior) ? prior : modelCatalog[0].id;
     const model = modelCatalog.find(item => item.id === modelSelect.value);
-    modelCount.textContent = model ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider}` : 'Conectá OpenRouter para ver modelos gratuitos';
-    $('#beta-count').textContent = `${usedToday} de ${dailyLimit} consultas gratuitas usadas hoy · ${remaining} disponibles en todos los modelos · reinicio 00:00 UTC`;
+    const periodLabel = model?.quotaPeriod === 'month' ? 'este mes' : 'hoy';
+    modelCount.textContent = model ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0}/${model.dailyLimit || '—'} ${periodLabel}` : 'Conectá proveedores para ver modelos gratuitos';
+    $('#beta-count').textContent = model ? `${model.usedToday || 0} de ${model.dailyLimit || '—'} consultas gratuitas usadas ${periodLabel} en ${model.provider}; ${model.remaining ?? '—'} disponibles para este modelo/proveedor.` : 'Sin modelo seleccionado.';
     const imageLabel = document.querySelector('label[for="beta-image"]');
     const audioLabel = document.querySelector('label[for="beta-audio"]');
     const imageAllowed = Boolean(model?.vision);
@@ -157,7 +138,7 @@
 
   const usageNote = document.createElement('p');
   usageNote.className = 'beta-model-note';
-  usageNote.textContent = 'Modelos gratuitos de varios laboratorios. Límite duro de 50 consultas al día compartidas: cambiar de modelo no lo reinicia. Solo se muestran variantes :free con entrada y salida a $0; si el precio no se puede confirmar, Beta se detiene. Sin fallback a modelos pagos.';
+  usageNote.textContent = 'Cambiá entre OpenRouter, Groq, Cohere Trial y Gemini Free Tier. Cada proveedor conserva su propia cuota gratuita; OpenRouter comparte 50 solicitudes diarias entre sus modelos. Sin fallback a opciones pagas. Los niveles de pensamiento son orientativos.';
   modelControl.append(usageNote);
   modelSelect.addEventListener('change', () => {
     try { if (ownerId) localStorage.setItem(`mediachafa-beta-model:${ownerId}`, modelSelect.value); } catch {}
@@ -384,12 +365,12 @@
       await currentSession();
       const data = await api('/status');
       modelCatalog = Array.isArray(data.models) ? data.models : [];
-      usedToday = Number(data.usedToday || 0);
-      dailyLimit = Number(data.dailyLimit || 50);
-      remaining = Number(data.remaining ?? Math.max(0, dailyLimit - usedToday));
+      providerQuotas = data.quotas || {};
       renderModelOptions();
-      if (!data.providerConnected) setStatus('Conectá una clave gratuita de OpenRouter en Integraciones para cargar el catálogo.', 'error');
-      else if (data.catalogError) setStatus(data.catalogError, 'error');
+      if (!modelCatalog.length) {
+        const detail = Object.values(data.catalogErrors || {})[0];
+        setStatus(detail || 'Conectá al menos una API gratuita en Integraciones para cargar modelos.', detail ? 'error' : '');
+      }
       else setStatus('Sesión conectada. El chat se guarda en este dispositivo.');
       restoreHistory();
       await loadIntegrations();
@@ -426,9 +407,9 @@
     event.stopPropagation();
     const prompt = input.value.trim();
     if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
-    if (remaining <= 0) { setStatus(`Llegaste al límite compartido de ${dailyLimit} consultas gratuitas de hoy. Cambiar de modelo no lo reinicia.`, 'error'); return; }
     const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
     if (!selectedModel) { setStatus('Conectá OpenRouter y elegí un modelo gratuito disponible.', 'error'); return; }
+    if (Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
     if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
     if (pendingAudio && !selectedModel?.audio) { setStatus('Este modelo no admite audio. Elegí uno que indique audio.', 'error'); return; }
     input.value = '';
@@ -507,7 +488,7 @@
   async function loadIntegrations() {
     try {
       const data = await api('/integrations/status');
-      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter']) {
+      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter', 'groq', 'cohere', 'gemini']) {
         const record = data.integrations?.[provider] || {};
         const node = $(`#beta-connection-${provider}`);
         const disconnect = $(`[data-beta-disconnect="${provider}"]`);
@@ -522,7 +503,7 @@
       if (resources.cloudflare) details.push(`Cloudflare: ${resources.cloudflare.length} Workers disponibles`);
       $('#beta-resource-summary').textContent = details.join(' · ') || 'Conectá un servicio para que Beta pueda consultar sus recursos.';
     } catch (error) {
-      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter']) $(`#beta-connection-${provider}`).textContent = error.message;
+      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter', 'groq', 'cohere', 'gemini']) { const node = $(`#beta-connection-${provider}`); if (node) node.textContent = error.message; }
     }
   }
 
@@ -531,13 +512,18 @@
     const input = $(`#beta-token-${provider}`);
     const token = input?.value.trim();
     if (!token) { input?.focus(); $(`#beta-connection-${provider}`).textContent = 'Pegá el token de acceso para conectarlo.'; return; }
+    if (provider === 'gemini' && !$('#beta-gemini-free-confirm')?.checked) {
+      $(`#beta-connection-${provider}`).textContent = 'Confirmá que el proyecto de Google AI Studio es Free Tier y que no tiene facturación vinculada.';
+      $('#beta-gemini-free-confirm')?.focus();
+      return;
+    }
     button.disabled = true;
     $(`#beta-connection-${provider}`).textContent = 'Validando y guardando cifrado…';
     try {
       await api('/integrations/connect', { method: 'POST', body: JSON.stringify({ provider, token }) });
       input.value = '';
       await loadIntegrations();
-      if (provider === 'openrouter') await refreshQuota();
+      if (['openrouter', 'groq', 'cohere', 'gemini'].includes(provider)) await refreshQuota();
     } catch (error) {
       $(`#beta-connection-${provider}`).textContent = error.message;
     } finally { button.disabled = false; }
@@ -547,7 +533,7 @@
     const provider = button.dataset.betaDisconnect;
     if (!window.confirm(`¿Desconectar ${provider}? Beta dejará de acceder a esta integración.`)) return;
     button.disabled = true;
-    try { await api('/integrations/disconnect', { method: 'POST', body: JSON.stringify({ provider }) }); await loadIntegrations(); if (provider === 'openrouter') { modelCatalog = []; renderModelOptions(); } }
+    try { await api('/integrations/disconnect', { method: 'POST', body: JSON.stringify({ provider }) }); await loadIntegrations(); if (['openrouter', 'groq', 'cohere', 'gemini'].includes(provider)) await refreshQuota(); }
     catch (error) { $(`#beta-connection-${provider}`).textContent = error.message; }
     finally { button.disabled = false; }
   }));
