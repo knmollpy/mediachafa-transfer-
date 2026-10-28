@@ -245,16 +245,23 @@
       const card = document.createElement('section');
       card.className = 'beta-proposal';
       card.dataset.actionId = proposal.id;
+      const destructive = ['delete_path', 'delete_repository'].includes(proposal.type);
+      card.dataset.destructive = destructive ? 'true' : 'false';
       const title = document.createElement('strong');
       title.textContent = `${proposal.provider} · ${proposal.type.replaceAll('_', ' ')}`;
       const summary = document.createElement('p');
       summary.textContent = proposal.summary;
       card.append(title, summary);
-      if (proposal.path || proposal.name) {
+      if (proposal.repository || proposal.path || proposal.name) {
         const target = document.createElement('p');
         target.className = 'beta-proposal-target';
-        target.textContent = proposal.path ? `Ruta: ${proposal.path}` : `Nombre: ${proposal.name}`;
+        target.textContent = [proposal.repository ? `Repositorio: ${proposal.repository}` : '', proposal.path ? `Ruta: ${proposal.path}` : '', proposal.name ? `Nombre: ${proposal.name}` : ''].filter(Boolean).join(' · ');
         card.append(target);
+      }
+      if (Array.isArray(proposal.affectedPaths) && proposal.affectedPaths.length) {
+        const affected = document.createElement('pre');
+        affected.textContent = `Archivos que se borrarán (${proposal.affectedCount || proposal.affectedPaths.length}):\n${proposal.affectedPaths.join('\n')}`;
+        card.append(affected);
       }
       const detail = proposal.query ?? proposal.content;
       if (detail !== undefined) {
@@ -263,14 +270,16 @@
         card.append(pre);
       }
       const warning = document.createElement('small');
-      warning.textContent = `Vista previa exacta · vence en ${Math.ceil(expiresInSeconds / 60)} min · se ejecutará solo si aprobás esta vez.`;
+      warning.textContent = destructive
+        ? `BORRADO DESTRUCTIVO · revisá el destino y los archivos enumerados. Al aprobar, tendrás que escribirlo exactamente. La propuesta vence en ${Math.ceil(expiresInSeconds / 60)} min.`
+        : `Vista previa exacta · vence en ${Math.ceil(expiresInSeconds / 60)} min · se ejecutará solo si aprobás esta vez.`;
       card.append(warning);
       const controls = document.createElement('div');
       controls.className = 'beta-proposal-controls';
       const approve = document.createElement('button');
       approve.type = 'button';
       approve.className = 'add-btn beta-action-approve';
-      approve.textContent = 'Aprobar una vez';
+      approve.textContent = destructive ? 'Continuar con el borrado…' : 'Aprobar una vez';
       const reject = document.createElement('button');
       reject.type = 'button';
       reject.className = 'secondary beta-action-reject';
@@ -280,6 +289,15 @@
       controls.append(approve, reject);
       card.append(controls, result);
       approve.addEventListener('click', async () => {
+        if (destructive) {
+          const exactTarget = proposal.type === 'delete_repository' ? proposal.repository : `${proposal.repository}:${proposal.path}`;
+          const typedTarget = window.prompt(`Borrado destructivo de GitHub. Escribí exactamente:\n${exactTarget}\n\nSi confirmás, no hay botón para deshacer desde Beta.`, '');
+          if (typedTarget !== exactTarget) {
+            result.textContent = 'Borrado cancelado; no se envió a GitHub.';
+            result.dataset.state = 'error';
+            return;
+          }
+        }
         approve.disabled = reject.disabled = true;
         result.textContent = 'Enviando al proveedor…';
         activity(`Preparando aprobación de ${proposal.provider}: ${proposal.summary}`);
@@ -442,7 +460,9 @@
         updateModelUsage(data.modelId, data);
       }
       if (!response.ok) throw new Error(data.error || `Beta respondió ${response.status}.`);
-      const answer = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
+      const preparationErrors = Array.isArray(data.proposalErrors) ? data.proposalErrors : [];
+      const answerBase = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
+      const answer = preparationErrors.length ? `${answerBase}\n\nNo pude preparar una o más acciones:\n• ${preparationErrors.join('\n• ')}` : answerBase;
       history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer, modelName: data.modelName, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds });
       history = history.slice(-30);
       saveHistory();
@@ -454,7 +474,7 @@
         setStatus('Beta preparó cambios; revisalos y aprobá cada uno por separado.');
       }
       renderModelOptions();
-      if (!data.proposals?.length) setStatus('Respuesta recibida.');
+      if (!data.proposals?.length) setStatus(preparationErrors.length ? 'La consulta terminó; revisá los permisos indicados para GitHub.' : 'Respuesta recibida.', preparationErrors.length ? 'error' : 'idle');
       activity('Respuesta recibida y mostrada en el chat.', 'done');
       pendingImage = pendingAudio = undefined;
       imageInput.value = audioInput.value = '';
