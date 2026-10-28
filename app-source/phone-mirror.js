@@ -36,6 +36,41 @@ function helperRequest(path, token, payload) {
   });
 }
 
+async function downloadPhoneHelper() {
+  const button = $('#phone-helper-download');
+  const output = $('#phone-helper-download-status');
+  button.disabled = true; output.textContent = 'Preparando el ZIP…'; output.dataset.state = 'idle';
+  try {
+    const names = ['README.md', 'package.json', 'companion.mjs', 'start-linux.sh', 'start-windows.bat'];
+    const entries = await Promise.all(names.map(async (name) => {
+      const response = await fetch(`/app-source/phone-helper/${name}`);
+      if (!response.ok) throw new Error(`No se pudo descargar ${name}.`);
+      return { name: `MediaChafa-Phone-Helper/${name}`, data: new Uint8Array(await response.arrayBuffer()) };
+    }));
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; table[n] = c >>> 0; }
+    const crc32 = (bytes) => { let crc = 0xffffffff; for (const byte of bytes) crc = table[(crc ^ byte) & 255] ^ (crc >>> 8); return (crc ^ 0xffffffff) >>> 0; };
+    const encoder = new TextEncoder(); const localParts = []; const directoryParts = []; let offset = 0;
+    for (const entry of entries) {
+      const name = encoder.encode(entry.name); const crc = crc32(entry.data);
+      const local = new Uint8Array(30 + name.length + entry.data.length); const localView = new DataView(local.buffer);
+      localView.setUint32(0, 0x04034b50, true); localView.setUint16(4, 20, true); localView.setUint16(6, 0x0800, true); localView.setUint16(8, 0, true);
+      localView.setUint32(14, crc, true); localView.setUint32(18, entry.data.length, true); localView.setUint32(22, entry.data.length, true); localView.setUint16(26, name.length, true); localView.setUint16(28, 0, true);
+      local.set(name, 30); local.set(entry.data, 30 + name.length); localParts.push(local);
+      const directory = new Uint8Array(46 + name.length); const directoryView = new DataView(directory.buffer);
+      directoryView.setUint32(0, 0x02014b50, true); directoryView.setUint16(4, 20, true); directoryView.setUint16(6, 20, true); directoryView.setUint16(8, 0x0800, true); directoryView.setUint16(10, 0, true);
+      directoryView.setUint32(16, crc, true); directoryView.setUint32(20, entry.data.length, true); directoryView.setUint32(24, entry.data.length, true); directoryView.setUint16(28, name.length, true);
+      directoryView.setUint32(42, offset, true); directory.set(name, 46); directoryParts.push(directory); offset += local.length;
+    }
+    const directorySize = directoryParts.reduce((sum, part) => sum + part.length, 0); const end = new Uint8Array(22); const endView = new DataView(end.buffer);
+    endView.setUint32(0, 0x06054b50, true); endView.setUint16(8, entries.length, true); endView.setUint16(10, entries.length, true); endView.setUint32(12, directorySize, true); endView.setUint32(16, offset, true);
+    const blob = new Blob([...localParts, ...directoryParts, end], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = 'MediaChafa-Phone-Helper.zip'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+    output.textContent = 'ZIP descargado. Extraelo y ejecutá el iniciador de tu sistema.'; output.dataset.state = 'connected';
+  } catch (error) { output.textContent = error?.message || 'No se pudo preparar el ZIP.'; output.dataset.state = 'error'; }
+  finally { button.disabled = false; }
+}
+
 function createWirelessConnector(token) {
   return {
     async connect() {
@@ -375,6 +410,7 @@ $('#phone-pair').addEventListener('click', async () => {
   finally { button.disabled = false; }
 });
 $('#phone-wifi-connect').addEventListener('click', () => void connectWirelessMirror());
+$('#phone-helper-download').addEventListener('click', () => void downloadPhoneHelper());
 $('#phone-wifi-disconnect').addEventListener('click', () => void stopMirror({ message: 'Conexión Wi‑Fi cerrada.' }));
 $('#phone-usb-mode').addEventListener('click', () => { $('#phone-usb-setup').classList.remove('hidden'); $('#phone-wifi-setup').classList.add('hidden'); $('#phone-usb-mode').setAttribute('aria-pressed', 'true'); $('#phone-wifi-mode').setAttribute('aria-pressed', 'false'); });
 $('#phone-wifi-mode').addEventListener('click', () => { $('#phone-usb-setup').classList.add('hidden'); $('#phone-wifi-setup').classList.remove('hidden'); $('#phone-usb-mode').setAttribute('aria-pressed', 'false'); $('#phone-wifi-mode').setAttribute('aria-pressed', 'true'); });
