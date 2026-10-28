@@ -65,7 +65,10 @@ async function verifyProvider(provider, token) {
   if (provider === "github") {
     headers["X-GitHub-Api-Version"] = "2022-11-28";
     const repoResponse = await fetch(`https://api.github.com/repos/${GITHUB_REPO}`, { headers });
-    if (!repoResponse.ok) return { ok: false, error: "El token no tiene acceso al repositorio privado knmollpy/mediachafa-transfer-. Comprobá el token y su acceso a ese repositorio." };
+    if (repoResponse.status === 401) return { ok: false, error: "GitHub rechazó el token (401). Creá uno nuevo y revisá que no esté vencido, revocado ni copiado con espacios." };
+    if (repoResponse.status === 403) return { ok: false, error: "GitHub reconoció el token, pero denegó el acceso (403). Revisá Contents: Read and write, SSO y cualquier aprobación pendiente." };
+    if (repoResponse.status === 404) return { ok: false, error: `GitHub no permite ver el repositorio privado ${GITHUB_REPO} con este token. Si es fine-grained, asegurate de elegir como Resource owner a knmollpy y de incluir mediachafa-transfer-. Si es classic, activá el alcance repo. La opción “todos los repositorios” debe pertenecer a la cuenta knmollpy.` };
+    if (!repoResponse.ok) return { ok: false, error: `GitHub no pudo consultar el repositorio (HTTP ${repoResponse.status}).` };
     const repo = await repoResponse.json();
     return { ok: true, detail: `Repositorio ${GITHUB_REPO}`, capabilities: { read: true, write: Boolean(repo.permissions?.push) } };
   }
