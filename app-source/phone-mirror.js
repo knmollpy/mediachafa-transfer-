@@ -120,7 +120,7 @@ async function connectMirror() {
     activeAdb = adb;
 
     setStatus('Preparando la transmisión…');
-    const serverResponse = await fetch('/scrcpy-server.bin', { cache: 'force-cache' });
+    const serverResponse = await fetch('/app-source/scrcpy-server.bin', { cache: 'force-cache' });
     if (!serverResponse.ok) throw new Error('No se pudo cargar el componente de transmisión. Recargá MediaChafa e intentá otra vez.');
     await AdbScrcpyClient.pushServer(adb, serverResponse.body);
     client = await AdbScrcpyClient.start(adb, '/data/local/tmp/scrcpy-server.jar', new AdbScrcpyOptionsLatest({
