@@ -4,15 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:phone": "esbuild phone-mirror.js --bundle --format=esm --platform=browser --target=es2022 --outfile=phone-mirror.bundle.js",
     "mobile:copy": "node mobile/copy-web.mjs",
     "mobile:sync": "npm run mobile:copy && cap sync android",
     "mobile:android": "npm run mobile:copy && cap open android"
   },
   "dependencies": {
     "@capacitor/android": "8.0.0",
-    "@capacitor/core": "8.0.0"
+    "@capacitor/core": "8.0.0",
+    "@yume-chan/adb": "2.6.4",
+    "@yume-chan/adb-credential-web": "2.1.0",
+    "@yume-chan/adb-daemon-webusb": "2.3.2",
+    "@yume-chan/adb-scrcpy": "2.3.2",
+    "@yume-chan/scrcpy": "2.3.0",
+    "@yume-chan/scrcpy-decoder-webcodecs": "2.5.3"
   },
   "devDependencies": {
-    "@capacitor/cli": "8.0.0"
+    "@capacitor/cli": "8.0.0",
+    "@yume-chan/fetch-scrcpy-server": "1.0.0",
+    "esbuild": "0.25.12"
   }
 }
