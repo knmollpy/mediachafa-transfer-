@@ -160,21 +160,7 @@ export default {
       if (!user) return json({ error: "Conectá la cuenta dueña de MediaChafa para administrar integraciones." }, 403, origin);
       if (url.pathname === "/integrations/status" && request.method === "GET") return json({ integrations: await integrationStatus(env, user.id), resources: await integrationContext(env, user.id) }, 200, origin);
       if (url.pathname === "/integrations/connect" && request.method === "POST") {
-        let payload;
-        try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
-        const provider = String(payload.provider || "").toLowerCase();
-        const token = String(payload.token || "").trim();
-        if (!PROVIDERS.includes(provider) || token.length < 12 || token.length > 4096) return json({ error: "Seleccioná un servicio e ingresá un token válido." }, 400, origin);
-        try {
-          const verified = await verifyProvider(provider, token);
-          if (!verified.ok) return json({ error: verified.error }, 400, origin);
-          const encrypted = await encryptToken(env, token);
-          const meta = { detail: verified.detail, connectedAt: new Date().toISOString(), capabilities: verified.capabilities || {} };
-          await env.BETA_LIMITS.put(`integration:${user.id}:${provider}`, JSON.stringify({ ...JSON.parse(encrypted), meta }));
-          return json({ provider, connected: true, meta }, 200, origin);
-        } catch {
-          return json({ error: "No se pudo validar o guardar la conexión. Revisá la configuración e intentá de nuevo." }, 502, origin);
-        }
+        return json({ error: "Las conexiones pegando API tokens están deshabilitadas. Usá la autorización oficial de OAuth cuando esté configurada." }, 410, origin);
       }
       if (url.pathname === "/integrations/disconnect" && request.method === "POST") {
         let payload;
@@ -185,6 +171,16 @@ export default {
         return json({ provider, connected: false }, 200, origin);
       }
       return json({ error: "Ruta de integraciones no encontrada." }, 404, origin);
+    }
+    if (url.pathname === "/oauth/start" && request.method === "POST") {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "Conectá la cuenta dueña de MediaChafa para administrar integraciones." }, 403, origin);
+      let payload;
+      try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+      const provider = String(payload.provider || "").toLowerCase();
+      if (!PROVIDERS.includes(provider)) return json({ error: "Proveedor OAuth desconocido." }, 400, origin);
+      const callback = `${new URL(request.url).origin}/oauth/callback`;
+      return json({ error: `Falta terminar la configuración OAuth de ${provider}. Primero hay que registrar su aplicación y su URL de retorno ${callback}; Google no puede autorizar esa cuenta por ${provider}.` }, 503, origin);
     }
     if (url.pathname !== "/chat" || request.method !== "POST") return json({ error: "Ruta no encontrada." }, 404, origin);
 
@@ -218,7 +214,7 @@ export default {
       ? payload.history.slice(-8).filter((item) => ["user", "assistant"].includes(item?.role)).map((item) => ({ role: item.role, content: String(item.content || "").slice(0, 3000) }))
       : [];
     const quota = await reserveRequest(env, user.id);
-    if (!quota.allowed) return json({ error: "Llegaste al límite gratuito de 10 mensajes por día. Vuelve a intentarlo mañana.", remaining: 0, resetsAt: quota.resetsAt }, 429, origin);
+    if (!quota.allowed) return json({ error: `Llegaste al límite de ${DAILY_REQUEST_LIMIT} consultas por día. Vuelve a intentarlo mañana.`, remaining: 0, resetsAt: quota.resetsAt }, 429, origin);
 
     try {
       if (payload.audio) {
