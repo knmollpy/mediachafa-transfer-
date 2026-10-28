@@ -20,6 +20,29 @@
   const activityList = $('#beta-activity-list');
   let activityItems = [];
 
+  // Keep the conversation and the live work view together on desktop, like an
+  // assistant workspace. On phones the panes stack vertically to avoid a
+  // miniature, horizontally scrolling layout.
+  const workspaceStyle = document.createElement('style');
+  workspaceStyle.textContent = `
+    #app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.92fr);grid-template-rows:auto minmax(0,1fr);gap:0 18px;height:calc(100svh - 86px);min-height:620px;overflow:hidden}
+    #app.beta-mode #beta-panel .beta-split-mode>.beta-header{grid-column:1/-1;min-width:0}
+    #app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view,#app.beta-mode #beta-panel .beta-split-mode>#beta-browser-view{display:flex;min-width:0;min-height:0;overflow:hidden}
+    #app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view{border-right:1px solid #351717;padding-right:18px}
+    #app.beta-mode #beta-panel .beta-split-mode .beta-chat-stage{width:100%;min-height:0;height:100%;margin:0;padding:22px 0 10px;justify-content:flex-end}
+    #app.beta-mode #beta-panel .beta-split-mode .beta-chat-stage:not(.has-messages){justify-content:center}
+    #app.beta-mode #beta-panel .beta-split-mode .beta-messages{flex:1;min-height:0;max-height:none;overflow:auto;padding:12px 8px}
+    #app.beta-mode #beta-panel .beta-split-mode .beta-browser{display:flex;flex-direction:column;width:100%;height:100%;min-height:0;margin:0;padding:16px 0 8px}
+    #app.beta-mode #beta-panel .beta-split-mode .beta-browser-toolbar{flex:none}
+    #app.beta-mode #beta-panel .beta-split-mode .beta-activity{flex:none;max-height:180px;overflow:auto}
+    #app.beta-mode #beta-panel .beta-split-mode .beta-browser-frame{flex:1;min-height:220px;height:auto}
+    #app.beta-mode #beta-panel .beta-split-mode .beta-note{flex:none;margin:8px 0}
+    #app.beta-mode #beta-panel .beta-split-mode .beta-count{text-align:left}
+    #app.beta-mode #beta-panel .beta-split-mode .beta-status-row{justify-content:flex-start}
+    @media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:flex;height:auto;min-height:0;overflow:visible;flex-direction:column;gap:0}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view,#app.beta-mode #beta-panel .beta-split-mode>#beta-browser-view{overflow:visible}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view{border-right:0;border-bottom:1px solid #351717;padding:0 0 16px}#app.beta-mode #beta-panel .beta-split-mode .beta-chat-stage{min-height:58svh;height:auto;padding:20px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-messages{max-height:52svh;flex:1}#app.beta-mode #beta-panel .beta-split-mode .beta-browser{height:auto;padding:16px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-browser-frame{flex:none;height:55svh}}
+  `;
+  document.head.append(workspaceStyle);
+
   function activity(message, state = 'active') {
     if (!activityList) return;
     if (state === 'active') activityItems = activityItems.map(item => item.state === 'active' ? { ...item, state: 'done' } : item);
@@ -34,8 +57,13 @@
   }
 
   function selectBetaView(view) {
+    const split = view === 'chat';
+    $('#beta-panel .beta-workspace')?.classList.toggle('beta-split-mode', split);
     document.querySelectorAll('[data-beta-view]').forEach(button => button.classList.toggle('active', button.dataset.betaView === view));
-    document.querySelectorAll('.beta-view').forEach(panel => panel.classList.toggle('active', panel.id === `beta-${view}-view`));
+    document.querySelectorAll('.beta-view').forEach(panel => {
+      const panelView = panel.id.replace(/^beta-/, '').replace(/-view$/, '');
+      panel.classList.toggle('active', panelView === view || (split && panelView === 'browser'));
+    });
   }
 
   function setStatus(message, kind = 'idle') {
@@ -107,7 +135,7 @@
         approve.disabled = reject.disabled = true;
         result.textContent = 'Enviando al proveedor…';
         activity(`Preparando aprobación de ${proposal.provider}: ${proposal.summary}`);
-        selectBetaView('browser');
+        selectBetaView('chat');
         try {
           const data = await api(`/actions/${encodeURIComponent(proposal.id)}/approve`, { method: 'POST', body: '{}' });
           result.textContent = data.message || 'Cambio aplicado.';
@@ -361,5 +389,6 @@
     try { url = new URL($('#beta-browser-url').value.trim()); } catch { return; }
     if (['https:', 'http:'].includes(url.protocol)) window.open(url.href, '_blank', 'noopener,noreferrer');
   });
+  selectBetaView('chat');
   void refreshQuota();
 })();
