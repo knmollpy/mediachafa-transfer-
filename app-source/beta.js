@@ -156,7 +156,10 @@
       if (!Array.isArray(saved)) return;
       history = saved.filter(item => ['user', 'assistant'].includes(item?.role) && typeof item?.content === 'string').slice(-30);
       messagesNode.replaceChildren();
-      for (const item of history) addMessage(item.role, item.content);
+      for (const item of history) {
+        const message = addMessage(item.role, item.content);
+        if (item.role === 'assistant' && Array.isArray(item.proposals)) renderProposals(message, item.proposals);
+      }
       if (!history.length) stage.classList.remove('has-messages');
     } catch { history = []; }
   }
@@ -250,7 +253,7 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || `Beta respondió ${response.status}.`);
       const answer = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
-      history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer });
+      history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds });
       history = history.slice(-30);
       saveHistory();
       progressMessage.remove();
@@ -262,7 +265,7 @@
       }
       remaining = data.remaining;
       $('#beta-count').textContent = `Te quedan ${remaining} de ${dailyLimit} consultas hoy · reinicio 00:00 UTC`;
-      setStatus('Respuesta recibida.');
+      if (!data.proposals?.length) setStatus('Respuesta recibida.');
       activity('Respuesta recibida y mostrada en el chat.', 'done');
       pendingImage = pendingAudio = undefined;
       imageInput.value = audioInput.value = '';
