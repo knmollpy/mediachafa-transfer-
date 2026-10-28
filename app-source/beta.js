@@ -19,12 +19,111 @@
   let ownerId = '';
   const activityList = $('#beta-activity-list');
   let activityItems = [];
+  let modelCatalog = [];
+  const modelSelect = document.createElement('select');
+  modelSelect.id = 'beta-model-select';
+  modelSelect.setAttribute('aria-label', 'Modelo de inteligencia artificial');
+  const modelCount = document.createElement('small');
+  modelCount.id = 'beta-model-count';
+  modelCount.className = 'beta-model-count';
+  const modelControl = document.createElement('label');
+  modelControl.className = 'beta-model-control';
+  const modelLabel = document.createElement('span');
+  modelLabel.textContent = 'Modelo de IA';
+  modelControl.append(modelLabel, modelSelect, modelCount);
+  const betaHeader = $('#beta-panel .beta-header');
+  betaHeader.insertBefore(modelControl, betaHeader.querySelector('.beta-nav'));
+
+  const browserFrame = $('#beta-browser-frame');
+  const workPreview = document.createElement('section');
+  workPreview.className = 'beta-work-preview';
+  const workPreviewTitle = document.createElement('strong');
+  workPreviewTitle.textContent = 'Qué está haciendo Beta';
+  const workPreviewState = document.createElement('span');
+  workPreviewState.className = 'beta-work-state';
+  const workPreviewText = document.createElement('p');
+  workPreviewText.textContent = 'El progreso de cada consulta y el resultado de las acciones aparecerán acá.';
+  const workPreviewLink = document.createElement('a');
+  workPreviewLink.className = 'beta-provider-link hidden';
+  workPreviewLink.target = '_blank';
+  workPreviewLink.rel = 'noopener noreferrer';
+  workPreviewLink.textContent = 'Abrir el destino en otra pestaña';
+  workPreview.append(workPreviewTitle, workPreviewState, workPreviewText, workPreviewLink);
+  browserFrame.parentElement.insertBefore(workPreview, browserFrame);
+  browserFrame.hidden = true;
+  const browserNote = $('#beta-browser-view .beta-note');
+  if (browserNote) browserNote.textContent = 'GitHub, Supabase y Cloudflare bloquean la vista dentro de iframes. Beta muestra acá los pasos reales de la operación y su respuesta; abrí el destino en otra pestaña para ver el sitio del proveedor.';
+
+  function showWorkPreview(message, state = 'active', title = 'Qué está haciendo Beta', url = '') {
+    workPreview.hidden = false;
+    browserFrame.hidden = true;
+    workPreviewTitle.textContent = title;
+    workPreviewText.textContent = message;
+    workPreviewState.textContent = state === 'done' ? 'Completado' : state === 'error' ? 'Necesita atención' : 'En curso';
+    workPreviewState.dataset.state = state;
+    workPreviewLink.classList.toggle('hidden', !url);
+    if (url) workPreviewLink.href = url;
+  }
+
+  function updateModelUsage(modelId, usage = {}) {
+    const model = modelCatalog.find(item => item.id === modelId);
+    if (model) Object.assign(model, usage);
+    renderModelOptions();
+  }
+
+  function renderModelOptions() {
+    if (!modelCatalog.length) return;
+    let prior = modelSelect.value;
+    if (!prior) { try { prior = localStorage.getItem(`mediachafa-beta-model:${ownerId}`); } catch {} }
+    modelSelect.replaceChildren(...modelCatalog.map(model => {
+      const option = document.createElement('option');
+      option.value = model.id;
+      option.textContent = `${model.name} · ${model.usedToday}/${model.dailyLimit} usadas hoy`;
+      return option;
+    }));
+    modelSelect.value = modelCatalog.some(model => model.id === prior) ? prior : modelCatalog[0].id;
+    const model = modelCatalog.find(item => item.id === modelSelect.value);
+    remaining = model?.remaining ?? 0;
+    dailyLimit = model?.dailyLimit ?? 1000;
+    modelCount.textContent = model ? `${model.usedToday} usadas · ${remaining} disponibles / ${model.dailyLimit}` : '';
+    $('#beta-count').textContent = `Este modelo: ${model?.usedToday ?? 0} usadas hoy · ${remaining} disponibles · reinicio 00:00 UTC`;
+    const imageLabel = document.querySelector('label[for="beta-image"]');
+    const imageAllowed = Boolean(model?.vision);
+    imageInput.disabled = !imageAllowed;
+    imageLabel?.classList.toggle('beta-disabled', !imageAllowed);
+    imageLabel?.setAttribute('title', imageAllowed ? 'Adjuntar imagen' : 'Este modelo no admite imágenes. Elegí Gemma 4, Llama 4 Scout o Mistral Small 3.1.');
+  }
+
+  const usageNote = document.createElement('p');
+  usageNote.className = 'beta-model-note';
+  usageNote.textContent = 'Hasta 1.000 consultas de Beta por modelo al día. El cupo de neuronas de Cloudflare se comparte entre modelos y puede agotarse antes; en plan pago, el uso que exceda el cupo gratuito puede generar cargos.';
+  modelControl.append(usageNote);
+  modelSelect.addEventListener('change', () => {
+    try { if (ownerId) localStorage.setItem(`mediachafa-beta-model:${ownerId}`, modelSelect.value); } catch {}
+    renderModelOptions();
+    const model = modelCatalog.find(item => item.id === modelSelect.value);
+    setStatus(model?.vision ? `${model.name} seleccionado; acepta imágenes y audio.` : `${model?.name || 'Modelo'} seleccionado; acepta texto y audio. Para imágenes, elegí un modelo con visión.`);
+  });
 
   // Keep the conversation and the live work view together on desktop, like an
   // assistant workspace. On phones the panes stack vertically to avoid a
   // miniature, horizontally scrolling layout.
   const workspaceStyle = document.createElement('style');
   workspaceStyle.textContent = `
+    #beta-panel .beta-model-control{display:flex;flex-direction:column;gap:4px;min-width:220px;max-width:310px;color:#e9dddd;font-size:11px;font-weight:700}
+    #beta-panel #beta-model-select{width:100%;min-width:0;padding:8px 10px;border:1px solid #6c2929;border-radius:9px;background:#161010;color:#fff;font-size:12px}
+    #beta-panel .beta-model-count{color:#ffadad;font-size:10px;font-weight:500}
+    #beta-panel .beta-model-note{max-width:330px;margin:1px 0 0;color:#bdaaaa;font-size:9px;line-height:1.35;font-weight:400}
+    #beta-panel .beta-disabled{opacity:.45;cursor:not-allowed}
+    #beta-panel .beta-message-model{display:block;margin-top:7px;color:#d18a8a;font-size:10px}
+    #beta-panel .beta-work-preview{flex:1;min-height:220px;overflow:auto;padding:20px;border:1px solid #512121;border-radius:14px;background:radial-gradient(ellipse at top right,#271010,#101010 55%);color:#f5eaea}
+    #beta-panel .beta-work-preview>strong{display:block;margin-bottom:14px;color:#ffb4b4;font-size:15px}
+    #beta-panel .beta-work-preview p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.6}
+    #beta-panel .beta-work-state{display:inline-block;padding:5px 9px;border:1px solid #623030;border-radius:999px;color:#ffb0b0;font-size:10px}
+    #beta-panel .beta-work-state[data-state="done"]{color:#a7f0bd;border-color:#245b36}
+    #beta-panel .beta-work-state[data-state="error"]{color:#ff8989;border-color:#713333}
+    #beta-panel .beta-work-preview a{display:inline-block;margin-top:8px;color:#ffaaaa}
+    #beta-panel #beta-browser-frame[hidden],#beta-panel .beta-work-preview[hidden]{display:none!important}
     #app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.92fr);grid-template-rows:auto minmax(0,1fr);gap:0 18px;height:calc(100svh - 86px);min-height:620px;overflow:hidden}
     #app.beta-mode #beta-panel .beta-split-mode>.beta-header{grid-column:1/-1;min-width:0}
     #app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view,#app.beta-mode #beta-panel .beta-split-mode>#beta-browser-view{display:flex;min-width:0;min-height:0;overflow:hidden}
@@ -39,7 +138,7 @@
     #app.beta-mode #beta-panel .beta-split-mode .beta-note{flex:none;margin:8px 0}
     #app.beta-mode #beta-panel .beta-split-mode .beta-count{text-align:left}
     #app.beta-mode #beta-panel .beta-split-mode .beta-status-row{justify-content:flex-start}
-    @media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:flex;height:auto;min-height:0;overflow:visible;flex-direction:column;gap:0}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view,#app.beta-mode #beta-panel .beta-split-mode>#beta-browser-view{overflow:visible}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view{border-right:0;border-bottom:1px solid #351717;padding:0 0 16px}#app.beta-mode #beta-panel .beta-split-mode .beta-chat-stage{min-height:58svh;height:auto;padding:20px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-messages{max-height:52svh;flex:1}#app.beta-mode #beta-panel .beta-split-mode .beta-browser{height:auto;padding:16px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-browser-frame{flex:none;height:55svh}}
+    @media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:flex;height:auto;min-height:0;overflow:visible;flex-direction:column;gap:0}#app.beta-mode #beta-panel .beta-split-mode>.beta-header{flex-wrap:wrap}#app.beta-mode #beta-panel .beta-split-mode .beta-brand{margin-right:0}#app.beta-mode #beta-panel .beta-model-control{order:2;max-width:none;width:100%}#app.beta-mode #beta-panel .beta-split-mode .beta-nav{order:3;width:100%;overflow:auto}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view,#app.beta-mode #beta-panel .beta-split-mode>#beta-browser-view{overflow:visible}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view{border-right:0;border-bottom:1px solid #351717;padding:0 0 16px}#app.beta-mode #beta-panel .beta-split-mode .beta-chat-stage{min-height:58svh;height:auto;padding:20px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-messages{max-height:52svh;flex:1}#app.beta-mode #beta-panel .beta-split-mode .beta-browser{height:auto;padding:16px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-browser-frame{flex:none;height:55svh}#app.beta-mode #beta-panel .beta-split-mode .beta-work-preview{min-height:160px}}
   `;
   document.head.append(workspaceStyle);
 
@@ -54,6 +153,7 @@
       row.textContent = `${item.at} · ${item.message}`;
       return row;
     }));
+    showWorkPreview(message, state);
   }
 
   function selectBetaView(view) {
@@ -78,7 +178,7 @@
     try { localStorage.setItem(storageKey(), JSON.stringify(history.slice(-30))); } catch {}
   }
 
-  function addMessage(role, content) {
+  function addMessage(role, content, modelName = '') {
     const article = document.createElement('article');
     article.className = `beta-message ${role}`;
     const heading = document.createElement('strong');
@@ -86,6 +186,12 @@
     const body = document.createElement('p');
     body.textContent = content;
     article.append(heading, body);
+    if (role === 'assistant' && modelName) {
+      const modelBadge = document.createElement('small');
+      modelBadge.className = 'beta-message-model';
+      modelBadge.textContent = `Modelo: ${modelName}`;
+      article.append(modelBadge);
+    }
     messagesNode.append(article);
     messagesNode.scrollTop = messagesNode.scrollHeight;
     stage.classList.add('has-messages');
@@ -142,7 +248,6 @@
           result.dataset.state = 'done';
           if (data.url) {
             $('#beta-browser-url').value = data.url;
-            $('#beta-browser-frame').src = data.url;
           }
           const link = document.createElement('a');
           link.href = data.url || '#';
@@ -152,12 +257,14 @@
           link.textContent = 'Ver en el servicio';
           if (data.url) result.append(' ', link);
           activity(`${proposal.provider}: ${data.message || 'Cambio aplicado.'}`, 'done');
+          showWorkPreview(data.message || 'Cambio aplicado.', 'done', `${proposal.provider} · ${proposal.type.replaceAll('_', ' ')}`, data.url || '');
           addMessage('assistant', `${data.message || 'Cambio aplicado.'}${data.url ? `\n${data.url}` : ''}`);
         } catch (error) {
           result.textContent = error.message;
           result.dataset.state = 'error';
           approve.disabled = false;
           activity(`La acción en ${proposal.provider} no se completó: ${error.message}`, 'error');
+          showWorkPreview(error.message, 'error', `${proposal.provider} · ${proposal.type.replaceAll('_', ' ')}`);
         }
       });
       reject.addEventListener('click', async () => {
@@ -185,7 +292,7 @@
       history = saved.filter(item => ['user', 'assistant'].includes(item?.role) && typeof item?.content === 'string').slice(-30);
       messagesNode.replaceChildren();
       for (const item of history) {
-        const message = addMessage(item.role, item.content);
+        const message = addMessage(item.role, item.content, item.modelName);
         if (item.role === 'assistant' && Array.isArray(item.proposals)) renderProposals(message, item.proposals);
       }
       if (!history.length) stage.classList.remove('has-messages');
@@ -215,9 +322,8 @@
     try {
       await currentSession();
       const data = await api('/status');
-      remaining = data.remaining;
-      dailyLimit = data.dailyLimit;
-      $('#beta-count').textContent = `Te quedan ${remaining} de ${dailyLimit} consultas hoy · reinicio 00:00 UTC · puede aplicar la cuota del proveedor`;
+      modelCatalog = Array.isArray(data.models) ? data.models : [];
+      renderModelOptions();
       setStatus('Sesión conectada. El chat se guarda en este dispositivo.');
       restoreHistory();
       await loadIntegrations();
@@ -255,6 +361,8 @@
     const prompt = input.value.trim();
     if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
     if (remaining <= 0) { setStatus('Llegaste al límite de consultas de hoy.', 'error'); return; }
+    const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
+    if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí Gemma 4, Llama 4 Scout o Mistral Small 3.1.', 'error'); return; }
     input.value = '';
     sendButton.disabled = true;
     setStatus('Validando sesión…');
@@ -272,27 +380,27 @@
       const image = pendingImage ? { data: await fileToBase64(pendingImage) } : undefined;
       const audio = pendingAudio ? { data: (await fileToBase64(pendingAudio)).split(',')[1], mime: pendingAudio.type || 'audio/mpeg' } : undefined;
       updateProgress('Enviando la consulta a Beta…');
-      const response = await fetch(`${API}/chat`, {
+    const response = await fetch(`${API}/chat`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userText, history: previousHistory, image, audio }),
+        body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value }),
       });
       updateProgress('Consulta recibida; esperando la respuesta del modelo…');
       const data = await response.json().catch(() => ({}));
+      if (data.modelId) updateModelUsage(data.modelId, data);
       if (!response.ok) throw new Error(data.error || `Beta respondió ${response.status}.`);
       const answer = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
-      history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds });
+      history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer, modelName: data.modelName, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds });
       history = history.slice(-30);
       saveHistory();
       progressMessage.remove();
-      const answerNode = addMessage('assistant', answer);
+      const answerNode = addMessage('assistant', answer, data.modelName);
       renderProposals(answerNode, data.proposals, data.expiresInSeconds);
       if (data.proposals?.length) {
         activity(`${data.proposals.length} propuesta(s) preparadas. Todavía no se aplicó ningún cambio.`, 'done');
         setStatus('Beta preparó cambios; revisalos y aprobá cada uno por separado.');
       }
-      remaining = data.remaining;
-      $('#beta-count').textContent = `Te quedan ${remaining} de ${dailyLimit} consultas hoy · reinicio 00:00 UTC`;
+      renderModelOptions();
       if (!data.proposals?.length) setStatus('Respuesta recibida.');
       activity('Respuesta recibida y mostrada en el chat.', 'done');
       pendingImage = pendingAudio = undefined;
@@ -380,6 +488,8 @@
     let url;
     try { url = new URL($('#beta-browser-url').value.trim()); } catch { setStatus('Escribí una dirección web completa, por ejemplo https://example.com', 'error'); return; }
     if (!['https:', 'http:'].includes(url.protocol)) { setStatus('El navegador solo abre direcciones HTTP o HTTPS.', 'error'); return; }
+    workPreview.hidden = true;
+    browserFrame.hidden = false;
     $('#beta-browser-frame').src = url.href;
   }
   $('#beta-browser-go').addEventListener('click', loadBrowserPage);
