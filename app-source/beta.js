@@ -64,6 +64,91 @@
     return article;
   }
 
+  function renderProposals(messageNode, proposals, expiresInSeconds = 600) {
+    for (const proposal of proposals || []) {
+      const card = document.createElement('section');
+      card.className = 'beta-proposal';
+      card.dataset.actionId = proposal.id;
+      const title = document.createElement('strong');
+      title.textContent = `${proposal.provider} · ${proposal.type.replaceAll('_', ' ')}`;
+      const summary = document.createElement('p');
+      summary.textContent = proposal.summary;
+      card.append(title, summary);
+      if (proposal.path || proposal.name) {
+        const target = document.createElement('p');
+        target.className = 'beta-proposal-target';
+        target.textContent = proposal.path ? `Ruta: ${proposal.path}` : `Nombre: ${proposal.name}`;
+        card.append(target);
+      }
+      const detail = proposal.query ?? proposal.content;
+      if (detail !== undefined) {
+        const pre = document.createElement('pre');
+        pre.textContent = detail;
+        card.append(pre);
+      }
+      const warning = document.createElement('small');
+      warning.textContent = `Vista previa exacta · vence en ${Math.ceil(expiresInSeconds / 60)} min · se ejecutará solo si aprobás esta vez.`;
+      card.append(warning);
+      const controls = document.createElement('div');
+      controls.className = 'beta-proposal-controls';
+      const approve = document.createElement('button');
+      approve.type = 'button';
+      approve.className = 'add-btn beta-action-approve';
+      approve.textContent = 'Aprobar una vez';
+      const reject = document.createElement('button');
+      reject.type = 'button';
+      reject.className = 'secondary beta-action-reject';
+      reject.textContent = 'Denegar';
+      const result = document.createElement('span');
+      result.className = 'beta-action-result';
+      controls.append(approve, reject);
+      card.append(controls, result);
+      approve.addEventListener('click', async () => {
+        approve.disabled = reject.disabled = true;
+        result.textContent = 'Enviando al proveedor…';
+        activity(`Preparando aprobación de ${proposal.provider}: ${proposal.summary}`);
+        selectBetaView('browser');
+        try {
+          const data = await api(`/actions/${encodeURIComponent(proposal.id)}/approve`, { method: 'POST', body: '{}' });
+          result.textContent = data.message || 'Cambio aplicado.';
+          result.dataset.state = 'done';
+          if (data.url) {
+            $('#beta-browser-url').value = data.url;
+            $('#beta-browser-frame').src = data.url;
+          }
+          const link = document.createElement('a');
+          link.href = data.url || '#';
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.className = 'beta-provider-link';
+          link.textContent = 'Ver en el servicio';
+          if (data.url) result.append(' ', link);
+          activity(`${proposal.provider}: ${data.message || 'Cambio aplicado.'}`, 'done');
+          addMessage('assistant', `${data.message || 'Cambio aplicado.'}${data.url ? `\n${data.url}` : ''}`);
+        } catch (error) {
+          result.textContent = error.message;
+          result.dataset.state = 'error';
+          approve.disabled = false;
+          activity(`La acción en ${proposal.provider} no se completó: ${error.message}`, 'error');
+        }
+      });
+      reject.addEventListener('click', async () => {
+        approve.disabled = reject.disabled = true;
+        try {
+          const data = await api(`/actions/${encodeURIComponent(proposal.id)}/reject`, { method: 'POST', body: '{}' });
+          result.textContent = data.message || 'Cambio denegado.';
+          activity(`${proposal.provider}: propuesta denegada.`, 'done');
+        } catch (error) {
+          result.textContent = error.message;
+          result.dataset.state = 'error';
+          reject.disabled = false;
+        }
+      });
+      messageNode.append(card);
+    }
+    messagesNode.scrollTop = messagesNode.scrollHeight;
+  }
+
   function restoreHistory() {
     if (!ownerId) return;
     try {
@@ -101,7 +186,7 @@
       const data = await api('/status');
       remaining = data.remaining;
       dailyLimit = data.dailyLimit;
-      $('#beta-count').textContent = `Te quedan ${remaining} de ${dailyLimit} consultas hoy · reinicio 00:00 UTC`;
+      $('#beta-count').textContent = `Te quedan ${remaining} de ${dailyLimit} consultas hoy · reinicio 00:00 UTC · puede aplicar la cuota del proveedor`;
       setStatus('Sesión conectada. El chat se guarda en este dispositivo.');
       restoreHistory();
       await loadIntegrations();
@@ -169,7 +254,12 @@
       history = history.slice(-30);
       saveHistory();
       progressMessage.remove();
-      addMessage('assistant', answer);
+      const answerNode = addMessage('assistant', answer);
+      renderProposals(answerNode, data.proposals, data.expiresInSeconds);
+      if (data.proposals?.length) {
+        activity(`${data.proposals.length} propuesta(s) preparadas. Todavía no se aplicó ningún cambio.`, 'done');
+        setStatus('Beta preparó cambios; revisalos y aprobá cada uno por separado.');
+      }
       remaining = data.remaining;
       $('#beta-count').textContent = `Te quedan ${remaining} de ${dailyLimit} consultas hoy · reinicio 00:00 UTC`;
       setStatus('Respuesta recibida.');
