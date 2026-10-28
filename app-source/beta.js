@@ -1,111 +1,237 @@
-const $ = (selector) => document.querySelector(selector);
-const API = 'https://mediachafa-beta-ai.nxmollpy.workers.dev';
-const messagesNode = $('#beta-messages');
-const form = $('#beta-form');
-const input = $('#beta-input');
-const sendButton = $('#beta-send');
-const status = $('#beta-status');
-const imageInput = $('#beta-image');
-const audioInput = $('#beta-audio');
-let pendingImage;
-let pendingAudio;
-let history = [];
-let remaining = 4;
+(() => {
+  if (window.MEDIA_NATIVE_APP === true || window.Capacitor?.isNativePlatform?.()) return;
 
-function setStatus(message, kind = 'idle') {
-  status.textContent = message;
-  status.dataset.state = kind;
-}
+  const $ = (selector) => document.querySelector(selector);
+  const API = 'https://mediachafa-beta-ai.nxmollpy.workers.dev';
+  const messagesNode = $('#beta-messages');
+  const stage = $('#beta-chat-stage');
+  const form = $('#beta-form');
+  const input = $('#beta-input');
+  const sendButton = $('#beta-send');
+  const status = $('#beta-status');
+  const imageInput = $('#beta-image');
+  const audioInput = $('#beta-audio');
+  let pendingImage;
+  let pendingAudio;
+  let history = [];
+  let remaining = 100;
+  let dailyLimit = 100;
+  let ownerId = '';
 
-function addMessage(role, content) {
-  messagesNode.querySelector('.beta-empty')?.remove();
-  const article = document.createElement('article');
-  article.className = `beta-message ${role}`;
-  const heading = document.createElement('strong');
-  heading.textContent = role === 'user' ? 'Vos' : 'Beta';
-  const body = document.createElement('p');
-  body.textContent = content;
-  article.append(heading, body);
-  messagesNode.append(article);
-  messagesNode.scrollTop = messagesNode.scrollHeight;
-}
+  function setStatus(message, kind = 'idle') {
+    status.textContent = message;
+    status.dataset.state = kind;
+  }
 
-async function currentSession() {
-  if (typeof window.mediaChafaBetaAuth !== 'function') throw new Error('No se pudo validar la sesión de MediaChafa. Recargá la página.');
-  const auth = await window.mediaChafaBetaAuth();
-  if (!auth?.owner || !auth?.token || auth?.anonymous) throw new Error('Beta está disponible solo cuando iniciaste sesión con la cuenta dueña.');
-  return auth;
-}
+  function storageKey() { return `mediachafa-beta-chat:${ownerId}`; }
 
-async function refreshQuota() {
-  try {
+  function saveHistory() {
+    if (!ownerId) return;
+    try { localStorage.setItem(storageKey(), JSON.stringify(history.slice(-30))); } catch {}
+  }
+
+  function addMessage(role, content) {
+    const article = document.createElement('article');
+    article.className = `beta-message ${role}`;
+    const heading = document.createElement('strong');
+    heading.textContent = role === 'user' ? 'Vos' : 'Beta';
+    const body = document.createElement('p');
+    body.textContent = content;
+    article.append(heading, body);
+    messagesNode.append(article);
+    messagesNode.scrollTop = messagesNode.scrollHeight;
+    stage.classList.add('has-messages');
+    return article;
+  }
+
+  function restoreHistory() {
+    if (!ownerId) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey()) || '[]');
+      if (!Array.isArray(saved)) return;
+      history = saved.filter(item => ['user', 'assistant'].includes(item?.role) && typeof item?.content === 'string').slice(-30);
+      messagesNode.replaceChildren();
+      for (const item of history) addMessage(item.role, item.content);
+      if (!history.length) stage.classList.remove('has-messages');
+    } catch { history = []; }
+  }
+
+  async function currentSession() {
+    if (typeof window.mediaChafaBetaAuth !== 'function') throw new Error('No se pudo validar la sesión. Recargá la página.');
+    const auth = await window.mediaChafaBetaAuth();
+    if (!auth?.owner || !auth?.token || auth?.anonymous) throw new Error('Iniciá sesión con nxmollpy para usar Beta.');
+    ownerId = auth.userId || 'owner';
+    return auth;
+  }
+
+  async function api(path, options = {}) {
     const auth = await currentSession();
-    const response = await fetch(`${API}/status`, { headers: { Authorization: `Bearer ${auth.token}` } });
-    const data = await response.json();
-    if (response.ok) { remaining = data.remaining; setStatus(`Quedan ${remaining} de ${data.dailyLimit} consultas de hoy. Usa la cuota diaria sin cargo de Workers AI.`); }
-  } catch (error) { setStatus(error.message || 'No se pudo revisar la cuota.', 'error'); }
-}
-window.addEventListener('mediachafa:session-ready', () => { void refreshQuota(); });
-
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
-    reader.readAsDataURL(file);
-  });
-}
-
-function showAttachment(file, type) {
-  const node = type === 'image' ? $('#beta-image-name') : $('#beta-audio-name');
-  node.textContent = file ? `Adjunto: ${file.name}` : '';
-}
-
-imageInput.addEventListener('change', () => {
-  pendingImage = imageInput.files?.[0];
-  if (pendingImage && pendingImage.size > 5 * 1024 * 1024) { pendingImage = undefined; imageInput.value = ''; setStatus('La imagen supera el límite de 5 MB.', 'error'); }
-  showAttachment(pendingImage, 'image');
-});
-audioInput.addEventListener('change', () => {
-  pendingAudio = audioInput.files?.[0];
-  if (pendingAudio && pendingAudio.size > 5 * 1024 * 1024) { pendingAudio = undefined; audioInput.value = ''; setStatus('El audio supera el límite de 5 MB.', 'error'); }
-  showAttachment(pendingAudio, 'audio');
-});
-
-form.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const prompt = input.value.trim();
-  if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí un mensaje o adjuntá una imagen o audio.', 'error'); return; }
-  if (remaining <= 0) { setStatus('Llegaste al límite gratuito de hoy.', 'error'); return; }
-  sendButton.disabled = true;
-  setStatus('La Beta está analizando tu mensaje…');
-  try {
-    const auth = await currentSession();
-    const image = pendingImage ? { data: await fileToBase64(pendingImage) } : undefined;
-    const audio = pendingAudio ? { data: (await fileToBase64(pendingAudio)).split(',')[1], mime: pendingAudio.type || 'audio/mpeg' } : undefined;
-    const userText = prompt || (image ? 'Analizá la imagen adjunta.' : 'Transcribí y analizá el audio adjunto.');
-    addMessage('user', `${userText}${pendingImage ? `\n[Imagen: ${pendingImage.name}]` : ''}${pendingAudio ? `\n[Audio: ${pendingAudio.name}]` : ''}`);
-    const response = await fetch(`${API}/chat`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: userText, history, image, audio }),
+    const response = await fetch(`${API}${path}`, {
+      ...options,
+      headers: { Authorization: `Bearer ${auth.token}`, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `La IA respondió ${response.status}.`);
-    const answer = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
-    history.push({ role: 'user', content: userText }, { role: 'assistant', content: data.answer });
-    history = history.slice(-8);
-    addMessage('assistant', answer);
-    remaining = data.remaining;
-    setStatus(`Quedan ${remaining} de 4 consultas de hoy. La cuota diaria se reinicia a las 00:00 UTC.`);
-    input.value = '';
-    pendingImage = pendingAudio = undefined;
-    imageInput.value = audioInput.value = '';
-    showAttachment(undefined, 'image'); showAttachment(undefined, 'audio');
-  } catch (error) {
-    setStatus(error?.message || 'No se pudo enviar el mensaje.', 'error');
-  } finally { sendButton.disabled = false; }
-});
+    if (!response.ok) throw new Error(data.error || `El servicio respondió ${response.status}.`);
+    return data;
+  }
 
-$('#beta-clear').addEventListener('click', () => { history = []; messagesNode.replaceChildren(); setStatus('Chat borrado de esta pestaña.'); });
-void refreshQuota();
+  async function refreshQuota() {
+    try {
+      await currentSession();
+      const data = await api('/status');
+      remaining = data.remaining;
+      dailyLimit = data.dailyLimit;
+      $('#beta-count').textContent = `Te quedan ${remaining} de ${dailyLimit} consultas hoy · reinicio 00:00 UTC`;
+      setStatus('Sesión conectada. El chat se guarda en este dispositivo.');
+      restoreHistory();
+      await loadIntegrations();
+    } catch (error) {
+      setStatus(error.message || 'No se pudo comprobar la sesión.', 'error');
+    }
+  }
+  window.addEventListener('mediachafa:session-ready', () => { void refreshQuota(); });
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function attachmentLabel(file, selector) { $(selector).textContent = file ? `Adjunto: ${file.name}` : ''; }
+
+  imageInput.addEventListener('change', () => {
+    pendingImage = imageInput.files?.[0];
+    if (pendingImage && pendingImage.size > 5 * 1024 * 1024) { pendingImage = undefined; imageInput.value = ''; setStatus('La imagen supera el límite de 5 MB.', 'error'); }
+    attachmentLabel(pendingImage, '#beta-image-name');
+  });
+  audioInput.addEventListener('change', () => {
+    pendingAudio = audioInput.files?.[0];
+    if (pendingAudio && pendingAudio.size > 5 * 1024 * 1024) { pendingAudio = undefined; audioInput.value = ''; setStatus('El audio supera el límite de 5 MB.', 'error'); }
+    attachmentLabel(pendingAudio, '#beta-audio-name');
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const prompt = input.value.trim();
+    if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
+    if (remaining <= 0) { setStatus('Llegaste al límite de consultas de hoy.', 'error'); return; }
+    sendButton.disabled = true;
+    setStatus('Beta está preparando la respuesta…');
+    const userText = prompt || (pendingImage ? 'Analizá la imagen adjunta.' : 'Transcribí y analizá el audio adjunto.');
+    const displayText = `${userText}${pendingImage ? `\n[Imagen: ${pendingImage.name}]` : ''}${pendingAudio ? `\n[Audio: ${pendingAudio.name}]` : ''}`;
+    const previousHistory = history.slice(-8);
+    const userMessage = addMessage('user', displayText);
+    try {
+      const auth = await currentSession();
+      const image = pendingImage ? { data: await fileToBase64(pendingImage) } : undefined;
+      const audio = pendingAudio ? { data: (await fileToBase64(pendingAudio)).split(',')[1], mime: pendingAudio.type || 'audio/mpeg' } : undefined;
+      const response = await fetch(`${API}/chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userText, history: previousHistory, image, audio }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `Beta respondió ${response.status}.`);
+      const answer = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
+      history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer });
+      history = history.slice(-30);
+      saveHistory();
+      addMessage('assistant', answer);
+      remaining = data.remaining;
+      $('#beta-count').textContent = `Te quedan ${remaining} de ${dailyLimit} consultas hoy · reinicio 00:00 UTC`;
+      setStatus('Respuesta recibida.');
+      input.value = '';
+      pendingImage = pendingAudio = undefined;
+      imageInput.value = audioInput.value = '';
+      attachmentLabel(undefined, '#beta-image-name');
+      attachmentLabel(undefined, '#beta-audio-name');
+    } catch (error) {
+      userMessage.classList.add('failed');
+      history.push({ role: 'user', content: displayText });
+      history = history.slice(-30);
+      saveHistory();
+      setStatus(error?.message || 'No se pudo enviar el mensaje. El texto sigue en el chat; podés reintentar.', 'error');
+    } finally { sendButton.disabled = false; }
+  });
+
+  $('#beta-clear').addEventListener('click', () => {
+    history = [];
+    messagesNode.replaceChildren();
+    stage.classList.remove('has-messages');
+    if (ownerId) localStorage.removeItem(storageKey());
+    setStatus('Chat borrado de este dispositivo.');
+  });
+
+  async function loadIntegrations() {
+    try {
+      const data = await api('/integrations/status');
+      for (const provider of ['github', 'supabase', 'cloudflare']) {
+        const record = data.integrations?.[provider] || {};
+        const node = $(`#beta-connection-${provider}`);
+        const disconnect = $(`[data-beta-disconnect="${provider}"]`);
+        node.textContent = record.connected ? `Conectado · ${record.detail || 'verificado'}` : 'Sin conectar';
+        node.dataset.state = record.connected ? 'connected' : 'idle';
+        disconnect.classList.toggle('hidden', !record.connected);
+        const input = $(`#beta-token-${provider}`);
+        input.placeholder = record.connected ? 'Conectado. Pegá otro token para reemplazarlo.' : 'Pegá aquí el token';
+      }
+      const resources = data.resources || {};
+      const details = [];
+      if (resources.github) details.push(`GitHub: ${resources.github.repository}${resources.github.defaultBranch ? ` (${resources.github.defaultBranch})` : ''}`);
+      if (resources.supabase) details.push(`Supabase: ${resources.supabase.length} proyectos disponibles`);
+      if (resources.cloudflare) details.push(`Cloudflare: ${resources.cloudflare.length} Workers disponibles`);
+      $('#beta-resource-summary').textContent = details.join(' · ') || 'Conectá un servicio para que Beta pueda consultar sus recursos.';
+    } catch (error) {
+      for (const provider of ['github', 'supabase', 'cloudflare']) $(`#beta-connection-${provider}`).textContent = error.message;
+    }
+  }
+
+  document.querySelectorAll('[data-beta-connect]').forEach(button => button.addEventListener('click', async () => {
+    const provider = button.dataset.betaConnect;
+    const field = $(`#beta-token-${provider}`);
+    const token = field.value.trim();
+    if (!token) { $(`#beta-connection-${provider}`).textContent = 'Ingresá un token primero.'; return; }
+    button.disabled = true;
+    $(`#beta-connection-${provider}`).textContent = 'Validando y guardando cifrado…';
+    try {
+      await api('/integrations/connect', { method: 'POST', body: JSON.stringify({ provider, token }) });
+      field.value = '';
+      await loadIntegrations();
+    } catch (error) {
+      $(`#beta-connection-${provider}`).textContent = error.message;
+    } finally { button.disabled = false; }
+  }));
+
+  document.querySelectorAll('[data-beta-disconnect]').forEach(button => button.addEventListener('click', async () => {
+    const provider = button.dataset.betaDisconnect;
+    if (!window.confirm(`¿Desconectar ${provider}? Beta dejará de usar el token guardado. No se revoca en el servicio.`)) return;
+    button.disabled = true;
+    try { await api('/integrations/disconnect', { method: 'POST', body: JSON.stringify({ provider }) }); await loadIntegrations(); }
+    catch (error) { $(`#beta-connection-${provider}`).textContent = error.message; }
+    finally { button.disabled = false; }
+  }));
+
+  document.querySelectorAll('[data-beta-view]').forEach(button => button.addEventListener('click', () => {
+    document.querySelectorAll('[data-beta-view]').forEach(item => item.classList.toggle('active', item === button));
+    document.querySelectorAll('.beta-view').forEach(panel => panel.classList.toggle('active', panel.id === `beta-${button.dataset.betaView}-view`));
+  }));
+
+  function loadBrowserPage() {
+    let url;
+    try { url = new URL($('#beta-browser-url').value.trim()); } catch { setStatus('Escribí una dirección web completa, por ejemplo https://example.com', 'error'); return; }
+    if (!['https:', 'http:'].includes(url.protocol)) { setStatus('El navegador solo abre direcciones HTTP o HTTPS.', 'error'); return; }
+    $('#beta-browser-frame').src = url.href;
+  }
+  $('#beta-browser-go').addEventListener('click', loadBrowserPage);
+  $('#beta-browser-url').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadBrowserPage(); } });
+  $('#beta-browser-open').addEventListener('click', () => {
+    let url;
+    try { url = new URL($('#beta-browser-url').value.trim()); } catch { return; }
+    if (['https:', 'http:'].includes(url.protocol)) window.open(url.href, '_blank', 'noopener,noreferrer');
+  });
+  void refreshQuota();
+})();
