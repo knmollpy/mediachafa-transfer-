@@ -4,9 +4,12 @@ const SUPABASE_KEY = "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
 const OWNER_EMAIL = "nxmollpy@gmail.com";
 const CHAT_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const AUDIO_MODEL = "@cf/openai/whisper-large-v3-turbo";
-const DAILY_REQUEST_LIMIT = 4;
+const DAILY_REQUEST_LIMIT = 100;
 const MAX_BODY_BYTES = 14 * 1024 * 1024;
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
+const PROVIDERS = ["github", "supabase", "cloudflare"];
+const GITHUB_REPO = "knmollpy/mediachafa-transfer-";
+const CLOUDFLARE_ACCOUNT = "3ed811eed85e393b5d97f052e812cfaf";
 
 function corsHeaders(origin) {
   return {
@@ -23,6 +26,97 @@ function json(data, status, origin) {
     status,
     headers: { ...corsHeaders(origin), "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
   });
+}
+
+function base64(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+async function encryptionKey(env) {
+  const raw = Uint8Array.from(atob(env.TOKEN_ENCRYPTION_KEY || ""), (c) => c.charCodeAt(0));
+  if (raw.byteLength !== 32) throw new Error("La clave de cifrado de integraciones no está configurada.");
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function encryptToken(env, token) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await encryptionKey(env), new TextEncoder().encode(token));
+  return JSON.stringify({ iv: base64(iv), ciphertext: base64(new Uint8Array(ciphertext)), version: 1 });
+}
+
+async function decryptToken(env, stored) {
+  const record = JSON.parse(stored || "{}");
+  const from64 = (value) => Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
+  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: from64(record.iv) }, await encryptionKey(env), from64(record.ciphertext));
+  return new TextDecoder().decode(plaintext);
+}
+
+async function storedToken(env, userId, provider) {
+  if (!PROVIDERS.includes(provider)) return null;
+  const value = await env.BETA_LIMITS.get(`integration:${userId}:${provider}`);
+  if (!value) return null;
+  return decryptToken(env, value);
+}
+
+async function verifyProvider(provider, token) {
+  const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+  if (provider === "github") {
+    headers["X-GitHub-Api-Version"] = "2022-11-28";
+    const [userResponse, repoResponse] = await Promise.all([
+      fetch("https://api.github.com/user", { headers }),
+      fetch(`https://api.github.com/repos/${GITHUB_REPO}`, { headers }),
+    ]);
+    if (!userResponse.ok || !repoResponse.ok) return { ok: false, error: "El token no tiene acceso al repositorio privado knmollpy/mediachafa-transfer-. Comprobá el token y su acceso a ese repositorio." };
+    const repo = await repoResponse.json();
+    return { ok: true, detail: `Repositorio ${GITHUB_REPO}`, capabilities: { read: true, write: Boolean(repo.permissions?.push) } };
+  }
+  if (provider === "supabase") {
+    const response = await fetch("https://api.supabase.com/v1/projects", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (!response.ok) return { ok: false, error: "Supabase rechazó el token. Revisá que sea un Personal Access Token vigente." };
+    return { ok: true, detail: "Cuenta de Supabase validada" };
+  }
+  const verify = await fetch("https://api.cloudflare.com/client/v4/user/tokens/verify", { headers: { Authorization: `Bearer ${token}` } });
+  if (!verify.ok || !(await verify.json()).success) return { ok: false, error: "Cloudflare rechazó el token. Revisá que esté vigente." };
+  const account = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT}/workers/scripts`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!account.ok) return { ok: false, error: "El token es válido, pero no puede leer Workers en la cuenta de MediaChafa." };
+  return { ok: true, detail: "Cuenta de Cloudflare validada" };
+}
+
+async function integrationStatus(env, userId) {
+  const result = {};
+  for (const provider of PROVIDERS) {
+    const exists = await env.BETA_LIMITS.get(`integration:${userId}:${provider}`);
+    result[provider] = { connected: Boolean(exists), ...(exists ? JSON.parse(exists).meta : {}) };
+  }
+  return result;
+}
+
+async function integrationContext(env, userId) {
+  const context = {};
+  const github = await storedToken(env, userId, "github");
+  const supabase = await storedToken(env, userId, "supabase");
+  const cloudflare = await storedToken(env, userId, "cloudflare");
+  if (github) {
+    try {
+      const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}`, { headers: { Authorization: `Bearer ${github}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } });
+      if (response.ok) { const repo = await response.json(); context.github = { repository: repo.full_name, defaultBranch: repo.default_branch, description: repo.description, canWrite: Boolean(repo.permissions?.push) }; }
+    } catch {}
+  }
+  if (supabase) {
+    try {
+      const response = await fetch("https://api.supabase.com/v1/projects", { headers: { Authorization: `Bearer ${supabase}`, Accept: "application/json" } });
+      if (response.ok) { const projects = await response.json(); context.supabase = (Array.isArray(projects) ? projects : []).slice(0, 40).map(({ name, id, ref, status, region }) => ({ name, id: ref || id, status, region })); }
+    } catch {}
+  }
+  if (cloudflare) {
+    try {
+      const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT}/workers/scripts`, { headers: { Authorization: `Bearer ${cloudflare}` } });
+      if (response.ok) { const payload = await response.json(); context.cloudflare = (payload.result || []).slice(0, 100).map(({ id, handlers, modified_on }) => ({ script: id, handlers, modified: modified_on })); }
+    } catch {}
+  }
+  return context;
 }
 
 async function requireOwner(request) {
@@ -61,7 +155,39 @@ export default {
       if (!user) return json({ error: "La Beta está disponible solo para la cuenta dueña." }, 403, origin);
       const date = new Date().toISOString().slice(0, 10);
       const used = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${user.id}:${date}`) || 0);
-      return json({ ok: true, remaining: Math.max(0, DAILY_REQUEST_LIMIT - used), dailyLimit: DAILY_REQUEST_LIMIT }, 200, origin);
+      return json({ ok: true, remaining: Math.max(0, DAILY_REQUEST_LIMIT - used), dailyLimit: DAILY_REQUEST_LIMIT, resetsAt: `${date}T24:00:00Z` }, 200, origin);
+    }
+    if (url.pathname.startsWith("/integrations/") && request.method !== "GET" && request.method !== "POST") return json({ error: "Método no permitido." }, 405, origin);
+    if (url.pathname.startsWith("/integrations/")) {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "Conectá la cuenta dueña de MediaChafa para administrar integraciones." }, 403, origin);
+      if (url.pathname === "/integrations/status" && request.method === "GET") return json({ integrations: await integrationStatus(env, user.id), resources: await integrationContext(env, user.id) }, 200, origin);
+      if (url.pathname === "/integrations/connect" && request.method === "POST") {
+        let payload;
+        try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+        const provider = String(payload.provider || "").toLowerCase();
+        const token = String(payload.token || "").trim();
+        if (!PROVIDERS.includes(provider) || token.length < 12 || token.length > 4096) return json({ error: "Seleccioná un servicio e ingresá un token válido." }, 400, origin);
+        try {
+          const verified = await verifyProvider(provider, token);
+          if (!verified.ok) return json({ error: verified.error }, 400, origin);
+          const encrypted = await encryptToken(env, token);
+          const meta = { detail: verified.detail, connectedAt: new Date().toISOString(), capabilities: verified.capabilities || {} };
+          await env.BETA_LIMITS.put(`integration:${user.id}:${provider}`, JSON.stringify({ ...JSON.parse(encrypted), meta }));
+          return json({ provider, connected: true, meta }, 200, origin);
+        } catch {
+          return json({ error: "No se pudo validar o guardar la conexión. Revisá la configuración e intentá de nuevo." }, 502, origin);
+        }
+      }
+      if (url.pathname === "/integrations/disconnect" && request.method === "POST") {
+        let payload;
+        try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+        const provider = String(payload.provider || "").toLowerCase();
+        if (!PROVIDERS.includes(provider)) return json({ error: "Servicio desconocido." }, 400, origin);
+        await env.BETA_LIMITS.delete(`integration:${user.id}:${provider}`);
+        return json({ provider, connected: false }, 200, origin);
+      }
+      return json({ error: "Ruta de integraciones no encontrada." }, 404, origin);
     }
     if (url.pathname !== "/chat" || request.method !== "POST") return json({ error: "Ruta no encontrada." }, 404, origin);
 
@@ -104,8 +230,11 @@ export default {
         transcript = String(result?.text || "").trim();
       }
       const context = [prompt, transcript ? `\n\nTranscripción del audio adjunto:\n${transcript}` : ""].join("").trim() || "Describe la imagen adjunta.";
+      const integrations = await integrationStatus(env, user.id);
+      const connectedContext = await integrationContext(env, user.id);
+      const available = Object.entries(integrations).filter(([, value]) => value.connected).map(([provider, value]) => `${provider}: ${value.detail || "conectado"}`).join("; ") || "ninguna";
       const messages = [
-        { role: "system", content: "Sos la asistente Beta privada de MediaChafa. Respondé en español claro. Podés analizar imágenes y texto; si recibís una transcripción, tratala como contenido del usuario. No afirmes que conectaste cuentas ni que cambiaste archivos. En esta versión solo conversás; las acciones sobre cuentas requieren autorización explícita en la interfaz." },
+        { role: "system", content: `Sos Beta, la asistente privada de MediaChafa. Respondé en español claro. Podés analizar imágenes y texto; si recibís una transcripción, tratala como contenido del usuario. Integraciones conectadas: ${available}. Contexto de recursos, obtenido desde las cuentas conectadas: ${JSON.stringify(connectedContext).slice(0, 12000)}. No afirmes que ejecutaste una acción a menos que el sistema la haya confirmado. Nunca solicites que peguen tokens en el chat; las conexiones se gestionan en la pestaña Integraciones. Esta versión puede consultar metadatos básicos, pero no ejecutar cambios en GitHub, Supabase o Cloudflare. Antes de habilitar escrituras, hay que mostrar el cambio y pedir confirmación en la interfaz.` },
         ...history,
         { role: "user", content: image ? [ { type: "text", text: context }, { type: "image_url", image_url: { url: image } } ] : context },
       ];
