@@ -430,6 +430,7 @@
     const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
     if (!selectedModel) { setStatus('Conectá OpenRouter y elegí un modelo gratuito disponible.', 'error'); return; }
     if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
+    if (pendingAudio && !selectedModel?.audio) { setStatus('Este modelo no admite audio. Elegí uno que indique audio.', 'error'); return; }
     input.value = '';
     sendButton.disabled = true;
     setStatus('Validando sesión…');
