@@ -64,11 +64,8 @@ async function verifyProvider(provider, token) {
   const headers = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
   if (provider === "github") {
     headers["X-GitHub-Api-Version"] = "2022-11-28";
-    const [userResponse, repoResponse] = await Promise.all([
-      fetch("https://api.github.com/user", { headers }),
-      fetch(`https://api.github.com/repos/${GITHUB_REPO}`, { headers }),
-    ]);
-    if (!userResponse.ok || !repoResponse.ok) return { ok: false, error: "El token no tiene acceso al repositorio privado knmollpy/mediachafa-transfer-. Comprobá el token y su acceso a ese repositorio." };
+    const repoResponse = await fetch(`https://api.github.com/repos/${GITHUB_REPO}`, { headers });
+    if (!repoResponse.ok) return { ok: false, error: "El token no tiene acceso al repositorio privado knmollpy/mediachafa-transfer-. Comprobá el token y su acceso a ese repositorio." };
     const repo = await repoResponse.json();
     return { ok: true, detail: `Repositorio ${GITHUB_REPO}`, capabilities: { read: true, write: Boolean(repo.permissions?.push) } };
   }
