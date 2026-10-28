@@ -1,4 +1,4 @@
-import { Adb, AdbDaemonTransport } from '@yume-chan/adb';
+import { Adb, AdbDaemonTransport, AdbServerClient } from '@yume-chan/adb';
 import AdbWebCredentialStore from '@yume-chan/adb-credential-web';
 import { AdbDaemonWebUsbDeviceManager } from '@yume-chan/adb-daemon-webusb';
 import { AdbScrcpyClient, AdbScrcpyOptionsLatest } from '@yume-chan/adb-scrcpy';
@@ -24,6 +24,37 @@ let activeVideoStream;
 let activeVideoStats;
 let disconnectListener;
 let isConnecting = false;
+let wirelessSocket;
+const wifiStatus = $('#phone-wifi-status');
+const setWifiStatus = (message, state = 'idle') => { if (wifiStatus) { wifiStatus.textContent = message; wifiStatus.dataset.state = state; } };
+
+function helperRequest(path, token, payload) {
+  return fetch(`http://127.0.0.1:27831${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(payload) }).then(async (response) => {
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `El auxiliar respondió ${response.status}.`);
+    return result;
+  });
+}
+
+function createWirelessConnector(token) {
+  return {
+    async connect() {
+      const socket = new WebSocket(`ws://127.0.0.1:27831/adb?token=${encodeURIComponent(token)}`);
+      socket.binaryType = 'arraybuffer';
+      await new Promise((resolve, reject) => {
+        socket.addEventListener('open', resolve, { once: true });
+        socket.addEventListener('error', () => reject(new Error('No se pudo abrir el puente ADB local. Revisá que el auxiliar siga abierto y que el token sea correcto.')), { once: true });
+      });
+      wirelessSocket = socket;
+      const closed = new Promise((resolve) => socket.addEventListener('close', () => resolve(), { once: true }));
+      const readable = new ReadableStream({ start(controller) { socket.addEventListener('message', (event) => { if (event.data instanceof ArrayBuffer) controller.enqueue(new Uint8Array(event.data)); else if (event.data instanceof Blob) void event.data.arrayBuffer().then((buffer) => controller.enqueue(new Uint8Array(buffer))); }); socket.addEventListener('close', () => { try { controller.close(); } catch {} }, { once: true }); } });
+      const writable = new WritableStream({ async write(data) { if (socket.readyState !== WebSocket.OPEN) throw new Error('El puente ADB local no está conectado.'); socket.send(data instanceof Uint8Array ? data : new Uint8Array(data)); }, close() { socket.close(); }, abort() { socket.close(); } });
+      return { readable, writable, close() { socket.close(); }, closed };
+    },
+    addReverseTunnel() { throw new Error('ADB inverso no está disponible en este modo.'); },
+    removeReverseTunnel() {}, clearReverseTunnels() {},
+  };
+}
 
 function setStatus(message, state = 'idle') {
   if (!status) return;
@@ -71,11 +102,70 @@ async function stopMirror({ message = 'Teléfono desconectado.', state = 'idle' 
   disconnectListener = undefined;
   try { await client?.close(); } catch { /* ya se cerró al quitar el cable */ }
   try { await adb?.close(); } catch { /* la conexión USB ya no responde */ }
+  try { wirelessSocket?.close(); } catch {}
+  wirelessSocket = undefined;
   try { decoder?.dispose(); } catch { /* el decodificador ya terminó */ }
+  if ($('#phone-wifi-mode')?.getAttribute('aria-pressed') === 'true') setWifiStatus('Auxiliar desconectado.', state === 'error' ? 'error' : 'idle');
   setControlsEnabled(false);
+  $('#phone-wifi-disconnect')?.classList.add('hidden');
   deviceName.textContent = 'Sin teléfono conectado';
   showPlaceholder('La pantalla aparecerá acá', 'Conectá el Android por USB y autorizá esta computadora para empezar.');
   setStatus(message, state);
+}
+
+async function connectWirelessMirror() {
+  if (isConnecting || activeClient) return;
+  const token = $('#phone-helper-token').value.trim();
+  const host = $('#phone-wifi-host').value.trim();
+  const connectPort = Number($('#phone-connect-port').value);
+  if (!token || !host || !Number.isInteger(connectPort) || connectPort < 1 || connectPort > 65535) {
+    setWifiStatus('Completá el token, la IP y el puerto de conexión.', 'error'); return;
+  }
+  if (!WebCodecsVideoDecoder.isSupported) { setWifiStatus('Este navegador no ofrece WebCodecs. Actualizá el navegador.', 'error'); return; }
+  isConnecting = true;
+  $('#phone-wifi-connect').disabled = true;
+  setWifiStatus('Conectando con el auxiliar local…');
+  let adb; let client; let decoder;
+  try {
+    await helperRequest('/api/connect', token, { host, port: connectPort });
+    const server = new AdbServerClient(createWirelessConnector(token));
+    const serial = `${host}:${connectPort}`;
+    const devices = await server.getDevices();
+    if (!devices.some((device) => device.serial === serial && device.state === 'device')) throw new Error('ADB no encontró el teléfono autorizado. Verificá la IP, el puerto de conexión y que la depuración inalámbrica siga activa.');
+    adb = await server.createAdb({ serial }); activeAdb = adb;
+    setWifiStatus('Preparando la transmisión por Wi‑Fi…');
+    const serverResponse = await fetch('/app-source/scrcpy-server.bin', { cache: 'force-cache' });
+    if (!serverResponse.ok) throw new Error('No se pudo cargar el componente de transmisión. Recargá MediaChafa.');
+    await AdbScrcpyClient.pushServer(adb, serverResponse.body);
+    client = await AdbScrcpyClient.start(adb, '/data/local/tmp/scrcpy-server.jar', new AdbScrcpyOptionsLatest({ video: true, videoCodec: 'h264', audio: false, control: true, maxSize: 1440, maxFps: 30, videoBitRate: 8000000, sendFrameMeta: true, sendCodecMeta: true, sendDeviceMeta: true }));
+    activeClient = client; void drainOutput(client);
+    if (!client.videoStream) throw new Error('El teléfono no inició la transmisión de pantalla.');
+    const videoStream = await client.videoStream; activeVideoStream = videoStream;
+    const canvas = document.createElement('canvas');
+    const renderer = WebGLVideoFrameRenderer.isSupported ? new WebGLVideoFrameRenderer(canvas) : new BitmapVideoFrameRenderer(canvas);
+    decoder = new WebCodecsVideoDecoder({ codec: videoStream.metadata.codec, renderer }); activeDecoder = decoder;
+    const stats = { packets: 0, frames: 0, configurations: 0, startedAt: performance.now() }; activeVideoStats = stats;
+    decoder.sizeChanged(({ width, height }) => { if (activeDecoder === decoder) deviceName.textContent = `${videoStream.metadata.deviceName || 'Teléfono Android'} · ${width} × ${height}`; });
+    stage.replaceChildren(decoder.renderer.canvas);
+    const measured = videoStream.stream.pipeThrough(new TransformStream({ transform(packet, controller) { stats.packets++; if (packet.type === 'configuration') stats.configurations++; else if (packet.type === 'data') stats.frames++; controller.enqueue(packet); } }));
+    void measured.pipeTo(decoder.writable).catch((error) => { if (activeClient === client) void stopMirror({ message: error?.message || 'La transmisión se interrumpió.', state: 'error' }); });
+    deviceName.textContent = videoStream.metadata.deviceName || 'Teléfono Android'; setControlsEnabled(true);
+    $('#phone-wifi-disconnect').classList.remove('hidden');
+    setStatus('Conectado por Wi‑Fi. Esperando la primera imagen…', 'connected'); setWifiStatus('Conectado. Esperando imagen…', 'connected');
+    const check = () => {
+      if (activeClient !== client || activeDecoder !== decoder) return;
+      if (decoder.framesRendered > 0) { const size = `${decoder.width} × ${decoder.height}`; setStatus(`Imagen en vivo (${size}). Hacé clic o tocá para controlarlo.`, 'connected'); setWifiStatus(`Imagen en vivo (${size}).`, 'connected'); return; }
+      if (performance.now() - stats.startedAt >= 15000) { setWifiStatus(stats.packets ? 'Llegó video, pero el navegador no pudo dibujarlo. Desbloqueá el teléfono y volvé a conectar.' : 'ADB conectó, pero el teléfono no envió video. Desbloqueá la pantalla y volvé a conectar.', 'error'); return; }
+      setTimeout(check, 750);
+    }; setTimeout(check, 750);
+    void client.exited.then(() => { if (activeClient === client) void stopMirror({ message: 'La transmisión terminó.', state: 'error' }); }).catch(() => {});
+  } catch (error) {
+    try { await client?.close(); } catch {} try { await adb?.close(); } catch {} try { decoder?.dispose(); } catch {}
+    activeAdb = activeClient = activeDecoder = activeVideoStream = activeVideoStats = undefined;
+    wirelessSocket?.close(); wirelessSocket = undefined; setControlsEnabled(false);
+    setWifiStatus(error?.message || 'No se pudo conectar por Wi‑Fi.', 'error');
+    setStatus(error?.message || 'No se pudo conectar por Wi‑Fi.', 'error');
+  } finally { isConnecting = false; $('#phone-wifi-connect').disabled = false; }
 }
 
 async function connectMirror() {
@@ -273,6 +363,21 @@ stage.addEventListener('lostpointercapture', (event) => releasePointer(event, An
 
 connectButton.addEventListener('click', () => void connectMirror());
 disconnectButton.addEventListener('click', () => void stopMirror());
+$('#phone-pair').addEventListener('click', async () => {
+  const token = $('#phone-helper-token').value.trim();
+  const host = $('#phone-wifi-host').value.trim();
+  const port = Number($('#phone-pair-port').value);
+  const code = $('#phone-pair-code').value.trim();
+  if (!token || !host || !Number.isInteger(port) || port < 1 || port > 65535 || !/^\d{6}$/.test(code)) { setWifiStatus('Ingresá el token, IP, puerto de emparejamiento y el código de seis dígitos.', 'error'); return; }
+  const button = $('#phone-pair'); button.disabled = true; setWifiStatus('Emparejando en esta computadora…');
+  try { const result = await helperRequest('/api/pair', token, { host, port, code }); setWifiStatus(result.message || 'Teléfono emparejado. Ahora tocá Conectar por Wi‑Fi.', 'connected'); $('#phone-pair-code').value = ''; }
+  catch (error) { setWifiStatus(error?.message || 'No se pudo emparejar.', 'error'); }
+  finally { button.disabled = false; }
+});
+$('#phone-wifi-connect').addEventListener('click', () => void connectWirelessMirror());
+$('#phone-wifi-disconnect').addEventListener('click', () => void stopMirror({ message: 'Conexión Wi‑Fi cerrada.' }));
+$('#phone-usb-mode').addEventListener('click', () => { $('#phone-usb-setup').classList.remove('hidden'); $('#phone-wifi-setup').classList.add('hidden'); $('#phone-usb-mode').setAttribute('aria-pressed', 'true'); $('#phone-wifi-mode').setAttribute('aria-pressed', 'false'); });
+$('#phone-wifi-mode').addEventListener('click', () => { $('#phone-usb-setup').classList.add('hidden'); $('#phone-wifi-setup').classList.remove('hidden'); $('#phone-usb-mode').setAttribute('aria-pressed', 'false'); $('#phone-wifi-mode').setAttribute('aria-pressed', 'true'); });
 backButton.addEventListener('click', async () => {
   if (!activeClient?.controller) return;
   await activeClient.controller.backOrScreenOn(AndroidKeyEventAction.Down);
