@@ -14,8 +14,9 @@
   let pendingImage;
   let pendingAudio;
   let history = [];
-  let remaining = 100;
-  let dailyLimit = 100;
+  let remaining = 50;
+  let dailyLimit = 50;
+  let usedToday = 0;
   let ownerId = '';
   const activityList = $('#beta-activity-list');
   let activityItems = [];
@@ -72,37 +73,49 @@
   }
 
   function renderModelOptions() {
-    if (!modelCatalog.length) return;
+    if (!modelCatalog.length) {
+      modelSelect.replaceChildren(new Option('Conectá OpenRouter para cargar modelos', ''));
+      modelSelect.disabled = true;
+      modelCount.textContent = 'Catálogo gratuito no conectado';
+      $('#beta-count').textContent = `${usedToday} de ${dailyLimit} consultas gratuitas usadas hoy · ${remaining} disponibles · reinicio 00:00 UTC`;
+      imageInput.disabled = true;
+      audioInput.disabled = true;
+      return;
+    }
+    modelSelect.disabled = false;
     let prior = modelSelect.value;
     if (!prior) { try { prior = localStorage.getItem(`mediachafa-beta-model:${ownerId}`); } catch {} }
     modelSelect.replaceChildren(...modelCatalog.map(model => {
       const option = document.createElement('option');
       option.value = model.id;
-      option.textContent = `${model.name} · ${model.usedToday}/${model.dailyLimit} usadas hoy`;
+      option.textContent = `${model.name} · ${model.thinkingLevel || 'medio'} · ${[model.vision && 'imagen', model.audio && 'audio'].filter(Boolean).join('+') || 'texto'}`;
       return option;
     }));
     modelSelect.value = modelCatalog.some(model => model.id === prior) ? prior : modelCatalog[0].id;
     const model = modelCatalog.find(item => item.id === modelSelect.value);
-    remaining = model?.remaining ?? 0;
-    dailyLimit = model?.dailyLimit ?? 1000;
-    modelCount.textContent = model ? `${model.usedToday} usadas · ${remaining} disponibles / ${model.dailyLimit}` : '';
-    $('#beta-count').textContent = `Este modelo: ${model?.usedToday ?? 0} usadas hoy · ${remaining} disponibles · reinicio 00:00 UTC`;
+    modelCount.textContent = model ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider}` : 'Conectá OpenRouter para ver modelos gratuitos';
+    $('#beta-count').textContent = `${usedToday} de ${dailyLimit} consultas gratuitas usadas hoy · ${remaining} disponibles en todos los modelos · reinicio 00:00 UTC`;
     const imageLabel = document.querySelector('label[for="beta-image"]');
+    const audioLabel = document.querySelector('label[for="beta-audio"]');
     const imageAllowed = Boolean(model?.vision);
+    const audioAllowed = Boolean(model?.audio);
     imageInput.disabled = !imageAllowed;
+    audioInput.disabled = !audioAllowed;
     imageLabel?.classList.toggle('beta-disabled', !imageAllowed);
-    imageLabel?.setAttribute('title', imageAllowed ? 'Adjuntar imagen' : 'Este modelo no admite imágenes. Elegí Gemma 4, Llama 4 Scout o Mistral Small 3.1.');
+    imageLabel?.setAttribute('title', imageAllowed ? 'Adjuntar imagen' : 'Este modelo no admite imágenes. Elegí un modelo que indique visión.');
+    audioLabel?.classList.toggle('beta-disabled', !audioAllowed);
+    audioLabel?.setAttribute('title', audioAllowed ? 'Adjuntar audio' : 'Este modelo no admite audio. Elegí un modelo que indique audio.');
   }
 
   const usageNote = document.createElement('p');
   usageNote.className = 'beta-model-note';
-  usageNote.textContent = 'Hasta 1.000 consultas de Beta por modelo al día. El cupo de neuronas de Cloudflare se comparte entre modelos y puede agotarse antes; en plan pago, el uso que exceda el cupo gratuito puede generar cargos.';
+  usageNote.textContent = 'Modelos gratuitos de varios laboratorios. Límite duro de 50 consultas al día compartidas: cambiar de modelo no lo reinicia. Solo se muestran variantes :free con entrada y salida a $0; si el precio no se puede confirmar, Beta se detiene. Sin fallback a modelos pagos.';
   modelControl.append(usageNote);
   modelSelect.addEventListener('change', () => {
     try { if (ownerId) localStorage.setItem(`mediachafa-beta-model:${ownerId}`, modelSelect.value); } catch {}
     renderModelOptions();
     const model = modelCatalog.find(item => item.id === modelSelect.value);
-    setStatus(model?.vision ? `${model.name} seleccionado; acepta imágenes y audio.` : `${model?.name || 'Modelo'} seleccionado; acepta texto y audio. Para imágenes, elegí un modelo con visión.`);
+    setStatus(`${model?.name || 'Modelo'} seleccionado · pensamiento ${model?.thinkingLevel || 'medio'}${model?.vision ? ' · imagen' : ''}${model?.audio ? ' · audio' : ''}.`);
   });
 
   // Keep the conversation and the live work view together on desktop, like an
@@ -323,8 +336,13 @@
       await currentSession();
       const data = await api('/status');
       modelCatalog = Array.isArray(data.models) ? data.models : [];
+      usedToday = Number(data.usedToday || 0);
+      dailyLimit = Number(data.dailyLimit || 50);
+      remaining = Number(data.remaining ?? Math.max(0, dailyLimit - usedToday));
       renderModelOptions();
-      setStatus('Sesión conectada. El chat se guarda en este dispositivo.');
+      if (!data.providerConnected) setStatus('Conectá una clave gratuita de OpenRouter en Integraciones para cargar el catálogo.', 'error');
+      else if (data.catalogError) setStatus(data.catalogError, 'error');
+      else setStatus('Sesión conectada. El chat se guarda en este dispositivo.');
       restoreHistory();
       await loadIntegrations();
     } catch (error) {
@@ -360,9 +378,10 @@
     event.stopPropagation();
     const prompt = input.value.trim();
     if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
-    if (remaining <= 0) { setStatus('Llegaste al límite de consultas de hoy.', 'error'); return; }
+    if (remaining <= 0) { setStatus(`Llegaste al límite compartido de ${dailyLimit} consultas gratuitas de hoy. Cambiar de modelo no lo reinicia.`, 'error'); return; }
     const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
-    if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí Gemma 4, Llama 4 Scout o Mistral Small 3.1.', 'error'); return; }
+    if (!selectedModel) { setStatus('Conectá OpenRouter y elegí un modelo gratuito disponible.', 'error'); return; }
+    if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
     input.value = '';
     sendButton.disabled = true;
     setStatus('Validando sesión…');
@@ -387,7 +406,11 @@
       });
       updateProgress('Consulta recibida; esperando la respuesta del modelo…');
       const data = await response.json().catch(() => ({}));
-      if (data.modelId) updateModelUsage(data.modelId, data);
+      if (data.modelId) {
+        usedToday = Number(data.usedToday ?? usedToday);
+        remaining = Number(data.remaining ?? Math.max(0, dailyLimit - usedToday));
+        updateModelUsage(data.modelId, data);
+      }
       if (!response.ok) throw new Error(data.error || `Beta respondió ${response.status}.`);
       const answer = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
       history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer, modelName: data.modelName, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds });
@@ -435,7 +458,7 @@
   async function loadIntegrations() {
     try {
       const data = await api('/integrations/status');
-      for (const provider of ['github', 'supabase', 'cloudflare']) {
+      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter']) {
         const record = data.integrations?.[provider] || {};
         const node = $(`#beta-connection-${provider}`);
         const disconnect = $(`[data-beta-disconnect="${provider}"]`);
@@ -450,7 +473,7 @@
       if (resources.cloudflare) details.push(`Cloudflare: ${resources.cloudflare.length} Workers disponibles`);
       $('#beta-resource-summary').textContent = details.join(' · ') || 'Conectá un servicio para que Beta pueda consultar sus recursos.';
     } catch (error) {
-      for (const provider of ['github', 'supabase', 'cloudflare']) $(`#beta-connection-${provider}`).textContent = error.message;
+      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter']) $(`#beta-connection-${provider}`).textContent = error.message;
     }
   }
 
@@ -465,6 +488,7 @@
       await api('/integrations/connect', { method: 'POST', body: JSON.stringify({ provider, token }) });
       input.value = '';
       await loadIntegrations();
+      if (provider === 'openrouter') await refreshQuota();
     } catch (error) {
       $(`#beta-connection-${provider}`).textContent = error.message;
     } finally { button.disabled = false; }
@@ -474,7 +498,7 @@
     const provider = button.dataset.betaDisconnect;
     if (!window.confirm(`¿Desconectar ${provider}? Beta dejará de acceder a esta integración.`)) return;
     button.disabled = true;
-    try { await api('/integrations/disconnect', { method: 'POST', body: JSON.stringify({ provider }) }); await loadIntegrations(); }
+    try { await api('/integrations/disconnect', { method: 'POST', body: JSON.stringify({ provider }) }); await loadIntegrations(); if (provider === 'openrouter') { modelCatalog = []; renderModelOptions(); } }
     catch (error) { $(`#beta-connection-${provider}`).textContent = error.message; }
     finally { button.disabled = false; }
   }));
