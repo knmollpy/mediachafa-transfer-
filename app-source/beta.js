@@ -183,6 +183,9 @@
     @media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:flex;height:auto;min-height:0;overflow:visible;flex-direction:column;gap:0}#app.beta-mode #beta-panel .beta-split-mode>.beta-header{flex-wrap:wrap}#app.beta-mode #beta-panel .beta-split-mode .beta-brand{margin-right:0}#app.beta-mode #beta-panel .beta-model-control{order:2;max-width:none;width:100%}#app.beta-mode #beta-panel .beta-split-mode .beta-nav{order:3;width:100%;overflow:auto}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view,#app.beta-mode #beta-panel .beta-split-mode>#beta-browser-view{overflow:visible}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view{border-right:0;border-bottom:1px solid #351717;padding:0 0 16px}#app.beta-mode #beta-panel .beta-split-mode .beta-chat-stage{min-height:58svh;height:auto;padding:20px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-messages{max-height:52svh;flex:1}#app.beta-mode #beta-panel .beta-split-mode .beta-browser{height:auto;padding:16px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-browser-frame{flex:none;height:55svh}#app.beta-mode #beta-panel .beta-split-mode .beta-work-preview{min-height:160px}}
   `;
   document.head.append(workspaceStyle);
+  const projectMapStyle = document.createElement('style');
+  projectMapStyle.textContent = `#beta-panel .beta-private-map{width:min(1040px,100%);margin:0 auto 18px;background:linear-gradient(135deg,#1a1111,#101010);border-color:#562626}#beta-panel .beta-map-details{margin-top:12px;border-top:1px solid #3b2424;padding-top:10px;color:#f5eaea}#beta-panel .beta-map-details summary{cursor:pointer;color:#ffb4b4;font-size:12px}#beta-panel .beta-map-details pre{max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border:1px solid #382323;border-radius:10px;background:#0b0b0b;color:#ddd;font:11px/1.5 ui-monospace,monospace}`;
+  document.head.append(projectMapStyle);
 
   function activity(message, state = 'active') {
     if (!activityList) return;
@@ -522,10 +525,52 @@
       if (resources.supabase) details.push(`Supabase: ${resources.supabase.length} proyectos disponibles`);
       if (resources.cloudflare) details.push(`Cloudflare: ${resources.cloudflare.length} Workers disponibles`);
       $('#beta-resource-summary').textContent = details.join(' · ') || 'Conectá un servicio para que Beta pueda consultar sus recursos.';
+      await loadPrivateProjectMap(false);
     } catch (error) {
       for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter', 'groq', 'cohere', 'gemini']) { const node = $(`#beta-connection-${provider}`); if (node) node.textContent = error.message; }
     }
   }
+
+  async function loadPrivateProjectMap(refresh = false) {
+    const statusNode = $('#beta-map-status');
+    const detailsNode = $('#beta-map-details');
+    const contentNode = $('#beta-map-content');
+    if (!statusNode || !contentNode) return;
+    statusNode.textContent = refresh ? 'Actualizando el inventario privado…' : 'Cargando mapa privado…';
+    try {
+      const data = await api(`/project-map${refresh ? '?refresh=1' : ''}`);
+      const map = data.projectMap || {};
+      const lines = [
+        `Proyecto: ${map.name || 'MediaChafa'} · acceso: solo cuenta dueña y Beta`,
+        `Repositorio: ${(map.repositories || []).join(', ') || 'no configurado'} · rama: ${map.defaultBranch || '—'}`,
+        `Estado del inventario: ${map.inventoryNote || 'sin detalle'}`,
+        `Archivos registrados por GitHub: ${map.totalGithubFiles ?? map.githubFiles?.length ?? 0}${map.inventoryTruncated ? ' (lista parcial)' : ''}`,
+        '', 'Puntos de entrada:',
+        ...Object.entries(map.entryPoints || {}).map(([name, path]) => `• ${name}: ${path}`),
+        '', 'Áreas y rutas relacionadas:',
+        ...(map.appAreas || []).map((area) => `• ${area.name}: ${area.paths.join(', ')}`),
+        '', 'Rutas de la API privada de Beta:',
+        ...(map.betaApiRoutes || []).map((route) => `• ${route.method} ${route.path} — ${route.purpose}`),
+        '', 'Rutas del servicio de almacenamiento:',
+        ...(map.storageApiRoutes || []).map((route) => `• ${route.method} ${route.path} — ${route.purpose}`),
+        '', 'Funciones y zonas de base de datos:',
+        ...(map.supabaseFunctions || []).map((item) => `• ${item.path} — ${item.purpose}`),
+        ...(map.databaseAreas || []).map((item) => `• ${item.area}: ${item.path}`),
+        '', 'Nombres que usa el dueño y dónde buscarlos:',
+        ...Object.entries(map.terminology || {}).map(([term, path]) => `• ${term} → ${path}`),
+        '', 'Inventario actual de archivos GitHub:',
+        ...(map.githubFiles || []).map((path) => `• ${path}`),
+      ];
+      contentNode.textContent = lines.join('\n');
+      detailsNode.hidden = false;
+      statusNode.textContent = `Privado · ${map.totalGithubFiles ?? map.githubFiles?.length ?? 0} rutas${map.inventoryTruncated ? ' (inventario parcial)' : ''} · actualizado desde GitHub`;
+      statusNode.dataset.state = 'connected';
+    } catch (error) {
+      statusNode.textContent = `Mapa privado no disponible: ${error.message}`;
+      statusNode.dataset.state = 'error';
+    }
+  }
+  $('#beta-map-refresh')?.addEventListener('click', () => loadPrivateProjectMap(true));
 
   document.querySelectorAll('[data-beta-connect]').forEach(button => button.addEventListener('click', async () => {
     const provider = button.dataset.betaConnect;
