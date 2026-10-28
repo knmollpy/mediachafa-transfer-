@@ -227,12 +227,15 @@
 
   document.querySelectorAll('[data-beta-connect]').forEach(button => button.addEventListener('click', async () => {
     const provider = button.dataset.betaConnect;
+    const input = $(`#beta-token-${provider}`);
+    const token = input?.value.trim();
+    if (!token) { input?.focus(); $(`#beta-connection-${provider}`).textContent = 'Pegá el token de acceso para conectarlo.'; return; }
     button.disabled = true;
-    $(`#beta-connection-${provider}`).textContent = 'Comprobando la configuración OAuth…';
+    $(`#beta-connection-${provider}`).textContent = 'Validando y guardando cifrado…';
     try {
-      const data = await api('/oauth/start', { method: 'POST', body: JSON.stringify({ provider }) });
-      if (!data.authorizationUrl) throw new Error('El proveedor no devolvió una dirección de autorización.');
-      window.location.assign(data.authorizationUrl);
+      await api('/integrations/connect', { method: 'POST', body: JSON.stringify({ provider, token }) });
+      input.value = '';
+      await loadIntegrations();
     } catch (error) {
       $(`#beta-connection-${provider}`).textContent = error.message;
     } finally { button.disabled = false; }
