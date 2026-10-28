@@ -480,7 +480,7 @@ async function loadGoogleDriveStatus() {
     }
 
     async function enterLibrary(isOwner, user = null, isUploader = false, guestOnly = false, account = null) {
-      ownerMode = isOwner; uploaderMode = isUploader; memberMode = Boolean(account?.role === 'member'); canUploadMode = Boolean(isOwner || isUploader || account?.can_upload); guestPs4Mode = guestOnly; accountPermissions = account || {}; currentUser = user;
+      ownerMode = isOwner; uploaderMode = isUploader; memberMode = Boolean(account?.role === 'member'); canUploadMode = Boolean(isOwner || isUploader || account?.can_upload); guestPs4Mode = guestOnly; accountPermissions = account || {}; currentUser = user; window.dispatchEvent(new Event('mediachafa:session-ready'));
       currentLinkFilter = 'all'; $('#all-links').classList.add('active'); $('#own-links').classList.remove('active');
       $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); document.body.classList.toggle('guest-games-only',guestPs4Mode);
       $('#role-chip').textContent = ownerMode ? 'Dueño' : (uploaderMode ? 'Colaborador' : (memberMode?'Usuario':'Invitado'));
