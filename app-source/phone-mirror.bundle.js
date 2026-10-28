@@ -1483,6 +1483,9 @@ function setUint32(buffer2, offset, value, littleEndian) {
 }
 
 // node_modules/.pnpm/@yume-chan+no-data-view@2.0.0/node_modules/@yume-chan/no-data-view/esm/uint64.js
+function getUint64LittleEndian(buffer2, offset) {
+  return BigInt(buffer2[offset]) | BigInt(buffer2[offset + 1]) << 8n | BigInt(buffer2[offset + 2]) << 16n | BigInt(buffer2[offset + 3]) << 24n | BigInt(buffer2[offset + 4]) << 32n | BigInt(buffer2[offset + 5]) << 40n | BigInt(buffer2[offset + 6]) << 48n | BigInt(buffer2[offset + 7]) << 56n;
+}
 function getUint64BigEndian(buffer2, offset) {
   return BigInt(buffer2[offset]) << 56n | BigInt(buffer2[offset + 1]) << 48n | BigInt(buffer2[offset + 2]) << 40n | BigInt(buffer2[offset + 3]) << 32n | BigInt(buffer2[offset + 4]) << 24n | BigInt(buffer2[offset + 5]) << 16n | BigInt(buffer2[offset + 6]) << 8n | BigInt(buffer2[offset + 7]);
 }
@@ -1617,7 +1620,7 @@ var ReadableStream2 = /* @__PURE__ */ (() => {
   }
   return ReadableStream3;
 })();
-var { WritableStream, TransformStream: TransformStream2 } = globalThis;
+var { WritableStream: WritableStream2, TransformStream: TransformStream2 } = globalThis;
 
 // node_modules/.pnpm/@yume-chan+stream-extra@2.6.1/node_modules/@yume-chan/stream-extra/esm/task-queue.js
 var TaskQueue = class {
@@ -2048,7 +2051,7 @@ var BufferedTransformStream = class {
         return writableStreamController.error(reason);
       }
     });
-    this.#writable = new WritableStream({
+    this.#writable = new WritableStream2({
       start(controller) {
         writableStreamController = controller;
       },
@@ -2070,7 +2073,7 @@ var ConcatStringStream = class {
   // PERF: rope (concat strings) is faster than `[].join('')`
   #result = "";
   #resolver = new PromiseResolver();
-  #writable = new WritableStream({
+  #writable = new WritableStream2({
     write: (chunk) => {
       this.#result += chunk;
     },
@@ -2113,7 +2116,7 @@ var ConcatStringStream = class {
 var ConcatBufferStream = class {
   #segments = [];
   #resolver = new PromiseResolver();
-  #writable = new WritableStream({
+  #writable = new WritableStream2({
     write: (chunk) => {
       this.#segments.push(chunk);
     },
@@ -2240,7 +2243,7 @@ var ConsumableWrapByteReadableStream = class extends ReadableStream2 {
 };
 
 // node_modules/.pnpm/@yume-chan+stream-extra@2.6.1/node_modules/@yume-chan/stream-extra/esm/consumable/wrap-writable.js
-var ConsumableWrapWritableStream = class extends WritableStream {
+var ConsumableWrapWritableStream = class extends WritableStream2 {
   constructor(stream) {
     const writer = stream.getWriter();
     super({
@@ -2258,7 +2261,7 @@ var ConsumableWrapWritableStream = class extends WritableStream {
 };
 
 // node_modules/.pnpm/@yume-chan+stream-extra@2.6.1/node_modules/@yume-chan/stream-extra/esm/consumable/writable.js
-var ConsumableWritableStream = class extends WritableStream {
+var ConsumableWritableStream = class extends WritableStream2 {
   static async write(writer, value) {
     const consumable = new Consumable(value);
     await writer.write(consumable);
@@ -2368,7 +2371,7 @@ function tryConsume(value, callback) {
 }
 
 // node_modules/.pnpm/@yume-chan+stream-extra@2.6.1/node_modules/@yume-chan/stream-extra/esm/maybe-consumable/wrap-writable.js
-var MaybeConsumableWrapWritableStream = class extends WritableStream {
+var MaybeConsumableWrapWritableStream = class extends WritableStream2 {
   constructor(stream) {
     const writer = stream.getWriter();
     super({
@@ -2386,7 +2389,7 @@ var MaybeConsumableWrapWritableStream = class extends WritableStream {
 };
 
 // node_modules/.pnpm/@yume-chan+stream-extra@2.6.1/node_modules/@yume-chan/stream-extra/esm/maybe-consumable/writable.js
-var MaybeConsumableWritableStream = class extends WritableStream {
+var MaybeConsumableWritableStream = class extends WritableStream2 {
   constructor(sink, strategy) {
     let wrappedStrategy;
     if (strategy) {
@@ -2594,7 +2597,7 @@ var DuplexStreamFactory = class {
   createWritable(stream) {
     const writer = stream.getWriter();
     this.#writers.push(writer);
-    return new WritableStream({
+    return new WritableStream2({
       write: async (chunk) => {
         await writer.write(chunk);
       },
@@ -2651,7 +2654,7 @@ var InspectStream = class extends TransformStream2 {
 function pipeFrom(writable, pair) {
   const writer = pair.writable.getWriter();
   const pipe = pair.readable.pipeTo(writable);
-  return new WritableStream({
+  return new WritableStream2({
     async write(chunk) {
       await writer.write(chunk);
     },
@@ -3105,6 +3108,24 @@ function hexToNumber(data) {
   }
   return result;
 }
+function write4HexDigits(buffer2, index, value) {
+  const start = index;
+  index += 3;
+  while (index >= start && value > 0) {
+    const digit = value & 15;
+    value >>= 4;
+    if (digit < 10) {
+      buffer2[index] = digit + 48;
+    } else {
+      buffer2[index] = digit + 87;
+    }
+    index -= 1;
+  }
+  while (index >= start) {
+    buffer2[index] = 48;
+    index -= 1;
+  }
+}
 
 // node_modules/.pnpm/@yume-chan+adb@2.6.4/node_modules/@yume-chan/adb/esm/utils/no-op.js
 var NOOP2 = /* @__NO_SIDE_EFFECTS__ */ () => {
@@ -3112,6 +3133,27 @@ var NOOP2 = /* @__NO_SIDE_EFFECTS__ */ () => {
 function unreachable(...args) {
   throw new Error("Unreachable. Arguments:\n" + args.join("\n"));
 }
+
+// node_modules/.pnpm/@yume-chan+adb@2.6.4/node_modules/@yume-chan/adb/esm/utils/ref.js
+var { setInterval, clearInterval } = globalThis;
+var Ref = class {
+  #intervalId;
+  constructor(options) {
+    if (!options?.unref) {
+      this.ref();
+    }
+  }
+  ref() {
+    this.#intervalId = setInterval(() => {
+    }, 60 * 1e3);
+  }
+  unref() {
+    if (this.#intervalId) {
+      clearInterval(this.#intervalId);
+      this.#intervalId = void 0;
+    }
+  }
+};
 
 // node_modules/.pnpm/@yume-chan+adb@2.6.4/node_modules/@yume-chan/adb/esm/utils/sequence-equal.js
 function sequenceEqual(a, b) {
@@ -3476,7 +3518,7 @@ var AdbShellProtocolProcessImpl = class {
     });
     const exited = new PromiseResolver();
     this.#exited = exited.promise;
-    socket.readable.pipeThrough(new StructDeserializeStream(AdbShellProtocolPacket)).pipeTo(new WritableStream({
+    socket.readable.pipeThrough(new StructDeserializeStream(AdbShellProtocolPacket)).pipeTo(new WritableStream2({
       write: async (chunk) => {
         switch (chunk.id) {
           case AdbShellProtocolId.Exit:
@@ -3551,7 +3593,7 @@ var AdbShellProtocolPtyProcess = class {
     this.#stdout = new PushReadableStream((controller) => {
       stdoutController = controller;
     });
-    socket.readable.pipeThrough(new StructDeserializeStream(AdbShellProtocolPacket)).pipeTo(new WritableStream({
+    socket.readable.pipeThrough(new StructDeserializeStream(AdbShellProtocolPacket)).pipeTo(new WritableStream2({
       write: async (chunk) => {
         switch (chunk.id) {
           case AdbShellProtocolId.Exit:
@@ -4921,7 +4963,7 @@ var AdbPacketDispatcher = class {
     if (this.options.initialDelayedAckBytes < 0) {
       this.options.initialDelayedAckBytes = 0;
     }
-    connection.readable.pipeTo(new WritableStream({
+    connection.readable.pipeTo(new WritableStream2({
       write: async (packet, controller) => {
         switch (packet.command) {
           case AdbCommand.Close:
@@ -5161,7 +5203,7 @@ var AdbDaemonTransport = class _AdbDaemonTransport {
     const resolver = new PromiseResolver();
     const authProcessor = new AdbAuthenticationProcessor(authenticators, credentialStore);
     const abortController = new AbortController();
-    const pipe = connection.readable.pipeTo(new WritableStream({
+    const pipe = connection.readable.pipeTo(new WritableStream2({
       async write(packet) {
         switch (packet.command) {
           case AdbCommand.Connect:
@@ -5308,6 +5350,184 @@ var AdbDaemonTransport = class _AdbDaemonTransport {
   }
 };
 
+// node_modules/.pnpm/@yume-chan+adb@2.6.4/node_modules/@yume-chan/adb/esm/server/commands/m-dns.js
+var MDnsCommands = class {
+  #client;
+  constructor(client) {
+    this.#client = client;
+  }
+  async check() {
+    const connection = await this.#client.createConnection("host:mdns:check");
+    try {
+      const response = await connection.readString();
+      return !response.startsWith("ERROR:");
+    } finally {
+      await connection.dispose();
+    }
+  }
+  async getServices() {
+    const connection = await this.#client.createConnection("host:mdns:services");
+    try {
+      const response = await connection.readString();
+      return response.split("\n").filter(Boolean).map((line) => {
+        const parts = line.split("	");
+        return {
+          name: parts[0],
+          service: parts[1],
+          address: parts[2]
+        };
+      });
+    } finally {
+      await connection.dispose();
+    }
+  }
+};
+
+// node_modules/.pnpm/@yume-chan+adb@2.6.4/node_modules/@yume-chan/adb/esm/server/stream.js
+var OKAY2 = encodeUtf8("OKAY");
+var FAIL = encodeUtf8("FAIL");
+var AdbServerStream = class {
+  #connection;
+  #buffered;
+  #writer;
+  constructor(connection) {
+    this.#connection = connection;
+    this.#buffered = new BufferedReadableStream(connection.readable);
+    this.#writer = connection.writable.getWriter();
+  }
+  readExactly(length) {
+    return this.#buffered.readExactly(length);
+  }
+  readString = bipedal(function* (then) {
+    const data = yield* then(this.readExactly(4));
+    const length = hexToNumber(data);
+    if (length === 0) {
+      return "";
+    } else {
+      const decoder = new TextDecoder();
+      let result = "";
+      const iterator = this.#buffered.iterateExactly(length);
+      while (true) {
+        const { done, value } = iterator.next();
+        if (done) {
+          break;
+        }
+        result += decoder.decode(yield* then(value), { stream: true });
+      }
+      result += decoder.decode();
+      return result;
+    }
+  });
+  async readOkay() {
+    const response = await this.readExactly(4);
+    if (sequenceEqual(response, OKAY2)) {
+      return;
+    }
+    if (sequenceEqual(response, FAIL)) {
+      const reason = await this.readString();
+      throw new Error(reason);
+    }
+    throw new Error(`Unexpected response: ${decodeUtf8(response)}`);
+  }
+  async writeString(value) {
+    const encoded = encodeUtf8(value);
+    const buffer2 = new Uint8Array(4 + encoded.length);
+    write4HexDigits(buffer2, 0, encoded.length);
+    buffer2.set(encoded, 4);
+    await this.#writer.write(buffer2);
+  }
+  release() {
+    this.#writer.releaseLock();
+    return {
+      readable: this.#buffered.release(),
+      writable: this.#connection.writable,
+      closed: this.#connection.closed,
+      close: () => this.#connection.close()
+    };
+  }
+  async dispose() {
+    void tryCancel(this.#buffered);
+    void tryClose(this.#writer);
+    await this.#connection.close();
+  }
+};
+
+// node_modules/.pnpm/@yume-chan+adb@2.6.4/node_modules/@yume-chan/adb/esm/server/commands/wireless.js
+var NetworkError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "NetworkError";
+  }
+};
+var UnauthorizedError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "UnauthorizedError";
+  }
+};
+var AlreadyConnectedError = class extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "AlreadyConnectedError";
+  }
+};
+var WirelessCommands = class {
+  #client;
+  constructor(client) {
+    this.#client = client;
+  }
+  /**
+   * `adb pair <password> <address>`
+   */
+  async pair(address, password) {
+    const connection = await this.#client.createConnection(`host:pair:${password}:${address}`);
+    try {
+      const response = await connection.readExactly(4);
+      if (sequenceEqual(response, FAIL)) {
+        throw new Error(await connection.readString());
+      }
+      const length = hexToNumber(response);
+      await connection.readExactly(length);
+    } finally {
+      await connection.dispose();
+    }
+  }
+  /**
+   * `adb connect <address>`
+   */
+  async connect(address) {
+    const connection = await this.#client.createConnection(`host:connect:${address}`);
+    try {
+      const response = await connection.readString();
+      switch (response) {
+        case `already connected to ${address}`:
+          throw new AlreadyConnectedError(response);
+        case `failed to connect to ${address}`:
+        // `adb pair` mode not authorized
+        case `failed to authenticate to ${address}`:
+          throw new UnauthorizedError(response);
+        case `connected to ${address}`:
+          return;
+        default:
+          throw new NetworkError(response);
+      }
+    } finally {
+      await connection.dispose();
+    }
+  }
+  /**
+   * `adb disconnect <address>`
+   */
+  async disconnect(address) {
+    const connection = await this.#client.createConnection(`host:disconnect:${address}`);
+    try {
+      await connection.readString();
+    } finally {
+      await connection.dispose();
+    }
+  }
+};
+
 // node_modules/.pnpm/@yume-chan+adb@2.6.4/node_modules/@yume-chan/adb/esm/server/observer.js
 function unorderedRemove(array, index) {
   if (index < 0 || index >= array.length) {
@@ -5315,6 +5535,559 @@ function unorderedRemove(array, index) {
   }
   array[index] = array[array.length - 1];
   array.length -= 1;
+}
+function filterDeviceStates(devices, states) {
+  return devices.filter((device) => states.includes(device.state));
+}
+var AdbServerDeviceObserverOwner = class {
+  current = [];
+  #client;
+  #stream;
+  #observers = [];
+  constructor(client) {
+    this.#client = client;
+  }
+  async #receive(stream) {
+    const response = await stream.readString();
+    const next = AdbServerClient.parseDeviceList(response);
+    const removed = this.current.slice();
+    const added = [];
+    for (const nextDevice of next) {
+      const index = removed.findIndex((device) => device.transportId === nextDevice.transportId);
+      if (index === -1) {
+        added.push(nextDevice);
+        continue;
+      }
+      unorderedRemove(removed, index);
+    }
+    this.current = next;
+    if (added.length) {
+      for (const observer of this.#observers) {
+        const filtered = filterDeviceStates(added, observer.includeStates);
+        if (filtered.length) {
+          observer.onDeviceAdd.fire(filtered);
+        }
+      }
+    }
+    if (removed.length) {
+      for (const observer of this.#observers) {
+        const filtered = filterDeviceStates(removed, observer.includeStates);
+        if (filtered.length) {
+          observer.onDeviceRemove.fire(removed);
+        }
+      }
+    }
+    for (const observer of this.#observers) {
+      const filtered = filterDeviceStates(this.current, observer.includeStates);
+      observer.onListChange.fire(filtered);
+    }
+  }
+  async #receiveLoop(stream) {
+    try {
+      while (true) {
+        await this.#receive(stream);
+      }
+    } catch (e) {
+      this.#stream = void 0;
+      for (const observer of this.#observers) {
+        observer.onError.fire(e);
+      }
+    }
+  }
+  async #connect() {
+    const stream = await this.#client.createConnection(
+      "host:track-devices-l",
+      // Each individual observer will ref depending on their options
+      { unref: true }
+    );
+    await this.#receive(stream);
+    void this.#receiveLoop(stream);
+    return stream;
+  }
+  async #handleObserverStop(stream) {
+    if (this.#observers.length === 0) {
+      this.#stream = void 0;
+      await stream.dispose();
+    }
+  }
+  async createObserver(options) {
+    options?.signal?.throwIfAborted();
+    let current = [];
+    const onDeviceAdd = new EventEmitter();
+    const onDeviceRemove = new EventEmitter();
+    const onListChange = new StickyEventEmitter();
+    const onError = new StickyEventEmitter();
+    const includeStates = options?.includeStates ?? [
+      "device",
+      "unauthorized"
+    ];
+    const observer = {
+      includeStates,
+      onDeviceAdd,
+      onDeviceRemove,
+      onListChange,
+      onError
+    };
+    this.#observers.push(observer);
+    onListChange.event((value) => current = value);
+    let stream;
+    if (!this.#stream) {
+      this.#stream = this.#connect();
+      try {
+        stream = await this.#stream;
+      } catch (e) {
+        this.#stream = void 0;
+        throw e;
+      }
+    } else {
+      stream = await this.#stream;
+      onListChange.fire(filterDeviceStates(this.current, includeStates));
+    }
+    const ref = new Ref(options);
+    const stop = async () => {
+      unorderedRemove(this.#observers, this.#observers.indexOf(observer));
+      await this.#handleObserverStop(stream);
+      ref.unref();
+    };
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        await stop();
+        throw options.signal.reason;
+      }
+      options.signal.addEventListener("abort", () => void stop());
+    }
+    return {
+      onDeviceAdd: onDeviceAdd.event,
+      onDeviceRemove: onDeviceRemove.event,
+      onListChange: onListChange.event,
+      onError: onError.event,
+      get current() {
+        return current;
+      },
+      stop
+    };
+  }
+};
+
+// node_modules/.pnpm/@yume-chan+adb@2.6.4/node_modules/@yume-chan/adb/esm/server/transport.js
+var ADB_SERVER_DEFAULT_FEATURES = /* @__PURE__ */ (() => [
+  AdbFeature.ShellV2,
+  AdbFeature.Cmd,
+  AdbFeature.StatV2,
+  AdbFeature.ListV2,
+  AdbFeature.FixedPushMkdir,
+  "apex",
+  AdbFeature.Abb,
+  // only tells the client the symlink timestamp issue in `adb push --sync` has been fixed.
+  // No special handling required.
+  "fixed_push_symlink_timestamp",
+  AdbFeature.AbbExec,
+  "remount_shell",
+  "track_app",
+  AdbFeature.SendReceiveV2,
+  "sendrecv_v2_brotli",
+  "sendrecv_v2_lz4",
+  "sendrecv_v2_zstd",
+  "sendrecv_v2_dry_run_send"
+])();
+var AdbServerTransport = class {
+  #client;
+  serial;
+  transportId;
+  maxPayloadSize = 1 * 1024 * 1024;
+  banner;
+  #sockets = [];
+  #closed = new PromiseResolver();
+  #disconnected;
+  get disconnected() {
+    return this.#disconnected;
+  }
+  get clientFeatures() {
+    return ADB_SERVER_DEFAULT_FEATURES;
+  }
+  // eslint-disable-next-line @typescript-eslint/max-params
+  constructor(client, serial, banner, transportId, disconnected) {
+    this.#client = client;
+    this.serial = serial;
+    this.banner = banner;
+    this.transportId = transportId;
+    this.#disconnected = Promise.race([this.#closed.promise, disconnected]);
+  }
+  async connect(service) {
+    const socket = await this.#client.createDeviceConnection({ transportId: this.transportId }, service);
+    this.#sockets.push(socket);
+    return socket;
+  }
+  async addReverseTunnel(handler, address) {
+    return await this.#client.connector.addReverseTunnel(handler, address);
+  }
+  async removeReverseTunnel(address) {
+    await this.#client.connector.removeReverseTunnel(address);
+  }
+  async clearReverseTunnels() {
+    await this.#client.connector.clearReverseTunnels();
+  }
+  async close() {
+    for (const socket of this.#sockets) {
+      await socket.close();
+    }
+    this.#sockets.length = 0;
+    this.#closed.resolve();
+  }
+};
+
+// node_modules/.pnpm/@yume-chan+adb@2.6.4/node_modules/@yume-chan/adb/esm/server/client.js
+var AdbServerClient = class _AdbServerClient {
+  static NetworkError = NetworkError;
+  static UnauthorizedError = UnauthorizedError;
+  static AlreadyConnectedError = AlreadyConnectedError;
+  static parseDeviceList(value, includeStates = [
+    "device",
+    "unauthorized"
+  ]) {
+    const devices = [];
+    for (const line of value.split("\n")) {
+      if (!line) {
+        continue;
+      }
+      const parts = line.split(" ").filter(Boolean);
+      const serial = parts[0];
+      const state = parts[1];
+      if (!includeStates.includes(state)) {
+        continue;
+      }
+      let product;
+      let model;
+      let device;
+      let transportId;
+      for (let i = 2; i < parts.length; i += 1) {
+        const [key, value2] = parts[i].split(":");
+        switch (key) {
+          case "product":
+            product = value2;
+            break;
+          case "model":
+            model = value2;
+            break;
+          case "device":
+            device = value2;
+            break;
+          case "transport_id":
+            transportId = BigInt(value2);
+            break;
+        }
+      }
+      if (!transportId) {
+        throw new Error(`No transport id for device ${serial}`);
+      }
+      devices.push({
+        serial,
+        state,
+        authenticating: state === "unauthorized",
+        product,
+        model,
+        device,
+        transportId
+      });
+    }
+    return devices;
+  }
+  static formatDeviceService(device, command) {
+    if (!device) {
+      return `host:${command}`;
+    }
+    if ("transportId" in device) {
+      return `host-transport-id:${device.transportId}:${command}`;
+    }
+    if ("serial" in device) {
+      return `host-serial:${device.serial}:${command}`;
+    }
+    if ("usb" in device) {
+      return `host-usb:${command}`;
+    }
+    if ("tcp" in device) {
+      return `host-local:${command}`;
+    }
+    throw new TypeError("Invalid device selector");
+  }
+  connector;
+  wireless = new WirelessCommands(this);
+  mDns = new MDnsCommands(this);
+  #observerOwner = new AdbServerDeviceObserverOwner(this);
+  constructor(connector) {
+    this.connector = connector;
+  }
+  async createConnection(request, options) {
+    const connection = await this.connector.connect(options);
+    const stream = new AdbServerStream(connection);
+    try {
+      await stream.writeString(request);
+    } catch (e) {
+      await stream.dispose();
+      throw e;
+    }
+    try {
+      await raceSignal(() => stream.readOkay(), options?.signal);
+      return stream;
+    } catch (e) {
+      await stream.dispose();
+      throw e;
+    }
+  }
+  /**
+   * `adb version`
+   */
+  async getVersion() {
+    const connection = await this.createConnection("host:version");
+    try {
+      const length = hexToNumber(await connection.readExactly(4));
+      const version = hexToNumber(await connection.readExactly(length));
+      return version;
+    } finally {
+      await connection.dispose();
+    }
+  }
+  async validateVersion(minimalVersion) {
+    const version = await this.getVersion();
+    if (version < minimalVersion) {
+      throw new Error(`adb server version (${version}) doesn't match this client (${minimalVersion})`);
+    }
+  }
+  /**
+   * `adb kill-server`
+   */
+  async killServer() {
+    const connection = await this.createConnection("host:kill");
+    await connection.dispose();
+  }
+  /**
+   * `adb host-features`
+   */
+  async getServerFeatures() {
+    const connection = await this.createConnection("host:host-features");
+    try {
+      const response = await connection.readString();
+      return response.split(",");
+    } finally {
+      await connection.dispose();
+    }
+  }
+  /**
+   * Get a list of connected devices from ADB Server.
+   *
+   * Equivalent ADB Command: `adb devices -l`
+   */
+  async getDevices(includeStates = [
+    "device",
+    "unauthorized"
+  ]) {
+    const connection = await this.createConnection("host:devices-l");
+    try {
+      const response = await connection.readString();
+      return _AdbServerClient.parseDeviceList(response, includeStates);
+    } finally {
+      await connection.dispose();
+    }
+  }
+  /**
+   * Monitors device list changes.
+   */
+  async trackDevices(options) {
+    return this.#observerOwner.createObserver(options);
+  }
+  /**
+   * `adb -s <device> reconnect` or `adb reconnect offline`
+   */
+  async reconnectDevice(device) {
+    const connection = await this.createConnection(device === "offline" ? "host:reconnect-offline" : _AdbServerClient.formatDeviceService(device, "reconnect"));
+    try {
+      await connection.readString();
+    } finally {
+      await connection.dispose();
+    }
+  }
+  /**
+   * Gets the features supported by the device.
+   * The transport ID of the selected device is also returned,
+   * so the caller can execute other commands against the same device.
+   * @param device The device selector
+   * @returns The transport ID of the selected device, and the features supported by the device.
+   */
+  async getDeviceFeatures(device) {
+    const connection = await this.createDeviceConnection(device, "host:features");
+    const stream = new AdbServerStream(connection);
+    try {
+      const featuresString = await stream.readString();
+      const features = featuresString.split(",");
+      return { transportId: connection.transportId, features };
+    } finally {
+      await stream.dispose();
+    }
+  }
+  /**
+   * Creates a connection that will forward the service to device.
+   * @param device The device selector
+   * @param service The service to forward
+   * @returns An `AdbServerClient.Socket` that can be used to communicate with the service
+   */
+  async createDeviceConnection(device, service) {
+    let switchService;
+    let transportId;
+    if (!device) {
+      await this.validateVersion(41);
+      switchService = `host:tport:any`;
+    } else if ("transportId" in device) {
+      switchService = `host:transport-id:${device.transportId}`;
+      transportId = device.transportId;
+    } else if ("serial" in device) {
+      await this.validateVersion(41);
+      switchService = `host:tport:serial:${device.serial}`;
+    } else if ("usb" in device) {
+      await this.validateVersion(41);
+      switchService = `host:tport:usb`;
+    } else if ("tcp" in device) {
+      await this.validateVersion(41);
+      switchService = `host:tport:local`;
+    } else {
+      throw new TypeError("Invalid device selector");
+    }
+    const connection = await this.createConnection(switchService);
+    try {
+      await connection.writeString(service);
+    } catch (e) {
+      await connection.dispose();
+      throw e;
+    }
+    try {
+      if (transportId === void 0) {
+        const array = await connection.readExactly(8);
+        transportId = getUint64LittleEndian(array, 0);
+      }
+      await connection.readOkay();
+      const socket = connection.release();
+      return {
+        transportId,
+        service,
+        readable: socket.readable,
+        writable: socket.writable,
+        get closed() {
+          return socket.closed;
+        },
+        async close() {
+          await socket.close();
+        }
+      };
+    } catch (e) {
+      await connection.dispose();
+      throw e;
+    }
+  }
+  async #waitForUnchecked(device, state, options) {
+    let type;
+    if (!device) {
+      type = "any";
+    } else if ("transportId" in device) {
+      type = "any";
+    } else if ("serial" in device) {
+      type = "any";
+    } else if ("usb" in device) {
+      type = "usb";
+    } else if ("tcp" in device) {
+      type = "local";
+    } else {
+      throw new TypeError("Invalid device selector");
+    }
+    const service = _AdbServerClient.formatDeviceService(device, `wait-for-${type}-${state}`);
+    const connection = await this.createConnection(service, options);
+    try {
+      await connection.readOkay();
+    } finally {
+      await connection.dispose();
+    }
+  }
+  /**
+   * Wait for a device to be connected or disconnected.
+   *
+   * `adb wait-for-<state>`
+   *
+   * @param device The device selector
+   * @param state The state to wait for
+   * @param options The options
+   * @returns A promise that resolves when the condition is met.
+   */
+  async waitFor(device, state, options) {
+    if (state === "disconnect") {
+      await this.validateVersion(41);
+    }
+    return this.#waitForUnchecked(device, state, options);
+  }
+  async waitForDisconnect(transportId, options) {
+    const serverVersion = await this.getVersion();
+    if (serverVersion >= 41) {
+      return this.#waitForUnchecked({ transportId }, "disconnect", options);
+    } else {
+      const observer = await this.trackDevices(options);
+      return new Promise((resolve, reject) => {
+        observer.onDeviceRemove((devices) => {
+          if (devices.some((device) => device.transportId === transportId)) {
+            observer.stop();
+            resolve();
+          }
+        });
+        observer.onError((e) => {
+          observer.stop();
+          reject(e);
+        });
+      });
+    }
+  }
+  /**
+   * Creates an ADB Transport for the specified device.
+   */
+  async createTransport(device) {
+    const { transportId, features } = await this.getDeviceFeatures(device);
+    const devices = await this.getDevices();
+    const info = devices.find((device2) => device2.transportId === transportId);
+    const banner = new AdbBanner(info?.state, info?.product, info?.model, info?.device, features);
+    const waitAbortController = new AbortController();
+    const disconnected = this.waitForDisconnect(transportId, {
+      unref: true,
+      signal: waitAbortController.signal
+    });
+    const transport = new AdbServerTransport(this, info?.serial ?? "", banner, transportId, disconnected);
+    const abortDisconnectWait = () => waitAbortController.abort();
+    void transport.disconnected.then(abortDisconnectWait, abortDisconnectWait);
+    return transport;
+  }
+  async createAdb(device) {
+    const transport = await this.createTransport(device);
+    return new Adb(transport);
+  }
+};
+async function raceSignal(callback, ...signals) {
+  const abortPromise = new PromiseResolver();
+  function abort() {
+    abortPromise.reject(this.reason);
+  }
+  try {
+    for (const signal of signals) {
+      if (!signal) {
+        continue;
+      }
+      if (signal.aborted) {
+        throw signal.reason;
+      }
+      signal.addEventListener("abort", abort);
+    }
+    return await Promise.race([callback(), abortPromise.promise]);
+  } finally {
+    for (const signal of signals) {
+      if (!signal) {
+        continue;
+      }
+      signal.removeEventListener("abort", abort);
+    }
+  }
 }
 
 // node_modules/.pnpm/@yume-chan+adb-credential-web@2.1.0/node_modules/@yume-chan/adb-credential-web/esm/index.js
@@ -10465,7 +11238,7 @@ var AdbScrcpyClient = class _AdbScrcpyClient {
       const output = process.output.pipeThrough(new TextDecoderStream()).pipeThrough(new SplitStringStream("\n"));
       const lines = [];
       const abortController = new AbortController();
-      const pipe = output.pipeTo(new WritableStream({
+      const pipe = output.pipeTo(new WritableStream2({
         write(chunk) {
           lines.push(chunk);
         }
@@ -11086,7 +11859,7 @@ var WebCodecsVideoDecoder = class {
       default:
         throw new Error(`Unsupported codec: ${this.#codec}`);
     }
-    this.#writable = new WritableStream({
+    this.#writable = new WritableStream2({
       start: (controller) => {
         if (this.#error) {
           controller.error(this.#error);
@@ -11296,7 +12069,7 @@ var TinyH264Decoder = class {
     } else {
       this.#renderer = createCanvas();
     }
-    this.#writable = new WritableStream({
+    this.#writable = new WritableStream2({
       write: async (packet) => {
         switch (packet.type) {
           case "configuration":
@@ -11520,6 +12293,65 @@ var activeVideoStream;
 var activeVideoStats;
 var disconnectListener;
 var isConnecting = false;
+var wirelessSocket;
+var wifiStatus = $("#phone-wifi-status");
+var setWifiStatus = (message, state = "idle") => {
+  if (wifiStatus) {
+    wifiStatus.textContent = message;
+    wifiStatus.dataset.state = state;
+  }
+};
+function helperRequest(path, token, payload) {
+  return fetch(`http://127.0.0.1:27831${path}`, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` }, body: JSON.stringify(payload) }).then(async (response) => {
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `El auxiliar respondi\xF3 ${response.status}.`);
+    return result;
+  });
+}
+function createWirelessConnector(token) {
+  return {
+    async connect() {
+      const socket = new WebSocket(`ws://127.0.0.1:27831/adb?token=${encodeURIComponent(token)}`);
+      socket.binaryType = "arraybuffer";
+      await new Promise((resolve, reject) => {
+        socket.addEventListener("open", resolve, { once: true });
+        socket.addEventListener("error", () => reject(new Error("No se pudo abrir el puente ADB local. Revis\xE1 que el auxiliar siga abierto y que el token sea correcto.")), { once: true });
+      });
+      wirelessSocket = socket;
+      const closed2 = new Promise((resolve) => socket.addEventListener("close", () => resolve(), { once: true }));
+      const readable = new ReadableStream({ start(controller) {
+        socket.addEventListener("message", (event) => {
+          if (event.data instanceof ArrayBuffer) controller.enqueue(new Uint8Array(event.data));
+          else if (event.data instanceof Blob) void event.data.arrayBuffer().then((buffer2) => controller.enqueue(new Uint8Array(buffer2)));
+        });
+        socket.addEventListener("close", () => {
+          try {
+            controller.close();
+          } catch {
+          }
+        }, { once: true });
+      } });
+      const writable = new WritableStream({ async write(data) {
+        if (socket.readyState !== WebSocket.OPEN) throw new Error("El puente ADB local no est\xE1 conectado.");
+        socket.send(data instanceof Uint8Array ? data : new Uint8Array(data));
+      }, close() {
+        socket.close();
+      }, abort() {
+        socket.close();
+      } });
+      return { readable, writable, close() {
+        socket.close();
+      }, closed: closed2 };
+    },
+    addReverseTunnel() {
+      throw new Error("ADB inverso no est\xE1 disponible en este modo.");
+    },
+    removeReverseTunnel() {
+    },
+    clearReverseTunnels() {
+    }
+  };
+}
 function setStatus(message, state = "idle") {
   if (!status) return;
   status.textContent = message;
@@ -11568,13 +12400,124 @@ async function stopMirror({ message = "Tel\xE9fono desconectado.", state = "idle
   } catch {
   }
   try {
+    wirelessSocket?.close();
+  } catch {
+  }
+  wirelessSocket = void 0;
+  try {
     decoder?.dispose();
   } catch {
   }
+  if ($("#phone-wifi-mode")?.getAttribute("aria-pressed") === "true") setWifiStatus("Auxiliar desconectado.", state === "error" ? "error" : "idle");
   setControlsEnabled(false);
+  $("#phone-wifi-disconnect")?.classList.add("hidden");
   deviceName.textContent = "Sin tel\xE9fono conectado";
   showPlaceholder("La pantalla aparecer\xE1 ac\xE1", "Conect\xE1 el Android por USB y autoriz\xE1 esta computadora para empezar.");
   setStatus(message, state);
+}
+async function connectWirelessMirror() {
+  if (isConnecting || activeClient) return;
+  const token = $("#phone-helper-token").value.trim();
+  const host = $("#phone-wifi-host").value.trim();
+  const connectPort = Number($("#phone-connect-port").value);
+  if (!token || !host || !Number.isInteger(connectPort) || connectPort < 1 || connectPort > 65535) {
+    setWifiStatus("Complet\xE1 el token, la IP y el puerto de conexi\xF3n.", "error");
+    return;
+  }
+  if (!WebCodecsVideoDecoder.isSupported) {
+    setWifiStatus("Este navegador no ofrece WebCodecs. Actualiz\xE1 el navegador.", "error");
+    return;
+  }
+  isConnecting = true;
+  $("#phone-wifi-connect").disabled = true;
+  setWifiStatus("Conectando con el auxiliar local\u2026");
+  let adb;
+  let client;
+  let decoder;
+  try {
+    await helperRequest("/api/connect", token, { host, port: connectPort });
+    const server = new AdbServerClient(createWirelessConnector(token));
+    const serial = `${host}:${connectPort}`;
+    const devices = await server.getDevices();
+    if (!devices.some((device) => device.serial === serial && device.state === "device")) throw new Error("ADB no encontr\xF3 el tel\xE9fono autorizado. Verific\xE1 la IP, el puerto de conexi\xF3n y que la depuraci\xF3n inal\xE1mbrica siga activa.");
+    adb = await server.createAdb({ serial });
+    activeAdb = adb;
+    setWifiStatus("Preparando la transmisi\xF3n por Wi\u2011Fi\u2026");
+    const serverResponse = await fetch("/app-source/scrcpy-server.bin", { cache: "force-cache" });
+    if (!serverResponse.ok) throw new Error("No se pudo cargar el componente de transmisi\xF3n. Recarg\xE1 MediaChafa.");
+    await AdbScrcpyClient.pushServer(adb, serverResponse.body);
+    client = await AdbScrcpyClient.start(adb, "/data/local/tmp/scrcpy-server.jar", new AdbScrcpyOptionsLatest({ video: true, videoCodec: "h264", audio: false, control: true, maxSize: 1440, maxFps: 30, videoBitRate: 8e6, sendFrameMeta: true, sendCodecMeta: true, sendDeviceMeta: true }));
+    activeClient = client;
+    void drainOutput(client);
+    if (!client.videoStream) throw new Error("El tel\xE9fono no inici\xF3 la transmisi\xF3n de pantalla.");
+    const videoStream = await client.videoStream;
+    activeVideoStream = videoStream;
+    const canvas = document.createElement("canvas");
+    const renderer = WebGLVideoFrameRenderer.isSupported ? new WebGLVideoFrameRenderer(canvas) : new BitmapVideoFrameRenderer(canvas);
+    decoder = new WebCodecsVideoDecoder({ codec: videoStream.metadata.codec, renderer });
+    activeDecoder = decoder;
+    const stats = { packets: 0, frames: 0, configurations: 0, startedAt: performance.now() };
+    activeVideoStats = stats;
+    decoder.sizeChanged(({ width, height }) => {
+      if (activeDecoder === decoder) deviceName.textContent = `${videoStream.metadata.deviceName || "Tel\xE9fono Android"} \xB7 ${width} \xD7 ${height}`;
+    });
+    stage.replaceChildren(decoder.renderer.canvas);
+    const measured = videoStream.stream.pipeThrough(new TransformStream({ transform(packet, controller) {
+      stats.packets++;
+      if (packet.type === "configuration") stats.configurations++;
+      else if (packet.type === "data") stats.frames++;
+      controller.enqueue(packet);
+    } }));
+    void measured.pipeTo(decoder.writable).catch((error) => {
+      if (activeClient === client) void stopMirror({ message: error?.message || "La transmisi\xF3n se interrumpi\xF3.", state: "error" });
+    });
+    deviceName.textContent = videoStream.metadata.deviceName || "Tel\xE9fono Android";
+    setControlsEnabled(true);
+    $("#phone-wifi-disconnect").classList.remove("hidden");
+    setStatus("Conectado por Wi\u2011Fi. Esperando la primera imagen\u2026", "connected");
+    setWifiStatus("Conectado. Esperando imagen\u2026", "connected");
+    const check = () => {
+      if (activeClient !== client || activeDecoder !== decoder) return;
+      if (decoder.framesRendered > 0) {
+        const size = `${decoder.width} \xD7 ${decoder.height}`;
+        setStatus(`Imagen en vivo (${size}). Hac\xE9 clic o toc\xE1 para controlarlo.`, "connected");
+        setWifiStatus(`Imagen en vivo (${size}).`, "connected");
+        return;
+      }
+      if (performance.now() - stats.startedAt >= 15e3) {
+        setWifiStatus(stats.packets ? "Lleg\xF3 video, pero el navegador no pudo dibujarlo. Desbloque\xE1 el tel\xE9fono y volv\xE9 a conectar." : "ADB conect\xF3, pero el tel\xE9fono no envi\xF3 video. Desbloque\xE1 la pantalla y volv\xE9 a conectar.", "error");
+        return;
+      }
+      setTimeout(check, 750);
+    };
+    setTimeout(check, 750);
+    void client.exited.then(() => {
+      if (activeClient === client) void stopMirror({ message: "La transmisi\xF3n termin\xF3.", state: "error" });
+    }).catch(() => {
+    });
+  } catch (error) {
+    try {
+      await client?.close();
+    } catch {
+    }
+    try {
+      await adb?.close();
+    } catch {
+    }
+    try {
+      decoder?.dispose();
+    } catch {
+    }
+    activeAdb = activeClient = activeDecoder = activeVideoStream = activeVideoStats = void 0;
+    wirelessSocket?.close();
+    wirelessSocket = void 0;
+    setControlsEnabled(false);
+    setWifiStatus(error?.message || "No se pudo conectar por Wi\u2011Fi.", "error");
+    setStatus(error?.message || "No se pudo conectar por Wi\u2011Fi.", "error");
+  } finally {
+    isConnecting = false;
+    $("#phone-wifi-connect").disabled = false;
+  }
 }
 async function connectMirror() {
   if (isConnecting || activeClient) return;
@@ -11768,6 +12711,42 @@ stage.addEventListener("pointercancel", (event) => releasePointer(event, Android
 stage.addEventListener("lostpointercapture", (event) => releasePointer(event, AndroidMotionEventAction.Cancel));
 connectButton.addEventListener("click", () => void connectMirror());
 disconnectButton.addEventListener("click", () => void stopMirror());
+$("#phone-pair").addEventListener("click", async () => {
+  const token = $("#phone-helper-token").value.trim();
+  const host = $("#phone-wifi-host").value.trim();
+  const port = Number($("#phone-pair-port").value);
+  const code = $("#phone-pair-code").value.trim();
+  if (!token || !host || !Number.isInteger(port) || port < 1 || port > 65535 || !/^\d{6}$/.test(code)) {
+    setWifiStatus("Ingres\xE1 el token, IP, puerto de emparejamiento y el c\xF3digo de seis d\xEDgitos.", "error");
+    return;
+  }
+  const button = $("#phone-pair");
+  button.disabled = true;
+  setWifiStatus("Emparejando en esta computadora\u2026");
+  try {
+    const result = await helperRequest("/api/pair", token, { host, port, code });
+    setWifiStatus(result.message || "Tel\xE9fono emparejado. Ahora toc\xE1 Conectar por Wi\u2011Fi.", "connected");
+    $("#phone-pair-code").value = "";
+  } catch (error) {
+    setWifiStatus(error?.message || "No se pudo emparejar.", "error");
+  } finally {
+    button.disabled = false;
+  }
+});
+$("#phone-wifi-connect").addEventListener("click", () => void connectWirelessMirror());
+$("#phone-wifi-disconnect").addEventListener("click", () => void stopMirror({ message: "Conexi\xF3n Wi\u2011Fi cerrada." }));
+$("#phone-usb-mode").addEventListener("click", () => {
+  $("#phone-usb-setup").classList.remove("hidden");
+  $("#phone-wifi-setup").classList.add("hidden");
+  $("#phone-usb-mode").setAttribute("aria-pressed", "true");
+  $("#phone-wifi-mode").setAttribute("aria-pressed", "false");
+});
+$("#phone-wifi-mode").addEventListener("click", () => {
+  $("#phone-usb-setup").classList.add("hidden");
+  $("#phone-wifi-setup").classList.remove("hidden");
+  $("#phone-usb-mode").setAttribute("aria-pressed", "false");
+  $("#phone-wifi-mode").setAttribute("aria-pressed", "true");
+});
 backButton.addEventListener("click", async () => {
   if (!activeClient?.controller) return;
   await activeClient.controller.backOrScreenOn(AndroidKeyEventAction.Down);
