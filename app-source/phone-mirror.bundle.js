@@ -1617,7 +1617,7 @@ var ReadableStream2 = /* @__PURE__ */ (() => {
   }
   return ReadableStream3;
 })();
-var { WritableStream, TransformStream } = globalThis;
+var { WritableStream, TransformStream: TransformStream2 } = globalThis;
 
 // node_modules/.pnpm/@yume-chan+stream-extra@2.6.1/node_modules/@yume-chan/stream-extra/esm/task-queue.js
 var TaskQueue = class {
@@ -2479,7 +2479,7 @@ var BufferCombiner = class {
     return output;
   }
 };
-var DistributionStream = class extends TransformStream {
+var DistributionStream = class extends TransformStream2 {
   constructor(size, combine = false) {
     const combiner = combine ? new BufferCombiner(size) : void 0;
     super({
@@ -2636,7 +2636,7 @@ var TextDecoderStream = Global.TextDecoderStream;
 var TextEncoderStream = Global.TextEncoderStream;
 
 // node_modules/.pnpm/@yume-chan+stream-extra@2.6.1/node_modules/@yume-chan/stream-extra/esm/inspect.js
-var InspectStream = class extends TransformStream {
+var InspectStream = class extends TransformStream2 {
   constructor(callback) {
     super({
       transform(chunk, controller) {
@@ -2663,7 +2663,7 @@ function pipeFrom(writable, pair) {
 }
 
 // node_modules/.pnpm/@yume-chan+stream-extra@2.6.1/node_modules/@yume-chan/stream-extra/esm/split-string.js
-var SplitStringStream = class extends TransformStream {
+var SplitStringStream = class extends TransformStream2 {
   constructor(separator) {
     let remaining = void 0;
     super({
@@ -4657,7 +4657,7 @@ var AdbPacket = extend(AdbPacketHeader, {
 function calculateChecksum(payload) {
   return payload.reduce((result, item) => result + item, 0);
 }
-var AdbPacketSerializeStream = class extends TransformStream {
+var AdbPacketSerializeStream = class extends TransformStream2 {
   constructor() {
     const headerBuffer = new Uint8Array(AdbPacketHeader.size);
     super({
@@ -6600,7 +6600,7 @@ var MediaStreamRawPacket = struct({ pts: u64, data: buffer(u32) }, { littleEndia
 var PtsConfig = 1n << 63n;
 function createMediaStreamTransformer(options) {
   if (!options.sendFrameMeta) {
-    return new TransformStream({
+    return new TransformStream2({
       transform(chunk, controller) {
         controller.enqueue({
           type: "data",
@@ -6612,7 +6612,7 @@ function createMediaStreamTransformer(options) {
   const deserializeStream = new StructDeserializeStream(MediaStreamRawPacket);
   return {
     writable: deserializeStream.writable,
-    readable: deserializeStream.readable.pipeThrough(new TransformStream({
+    readable: deserializeStream.readable.pipeThrough(new TransformStream2({
       transform(packet, controller) {
         if (packet.pts === PtsConfig) {
           controller.enqueue({
@@ -7130,7 +7130,7 @@ var Defaults6 = /* @__PURE__ */ (() => ({
 var PtsKeyframe = 1n << 62n;
 function createMediaStreamTransformer2(options) {
   if (!options.sendFrameMeta) {
-    return new TransformStream({
+    return new TransformStream2({
       transform(chunk, controller) {
         controller.enqueue({
           type: "data",
@@ -7142,7 +7142,7 @@ function createMediaStreamTransformer2(options) {
   const deserializeStream = new StructDeserializeStream(impl_exports5.MediaStreamRawPacket);
   return {
     writable: deserializeStream.writable,
-    readable: deserializeStream.readable.pipeThrough(new TransformStream({
+    readable: deserializeStream.readable.pipeThrough(new TransformStream2({
       transform(packet, controller) {
         if (packet.pts === impl_exports5.PtsConfig) {
           controller.enqueue({
@@ -11517,6 +11517,7 @@ var activeAdb;
 var activeClient;
 var activeDecoder;
 var activeVideoStream;
+var activeVideoStats;
 var disconnectListener;
 var isConnecting = false;
 function setStatus(message, state = "idle") {
@@ -11555,7 +11556,7 @@ async function stopMirror({ message = "Tel\xE9fono desconectado.", state = "idle
   const adb = activeAdb;
   const client = activeClient;
   const decoder = activeDecoder;
-  activeDevice = activeAdb = activeClient = activeDecoder = activeVideoStream = void 0;
+  activeDevice = activeAdb = activeClient = activeDecoder = activeVideoStream = activeVideoStats = void 0;
   if (device && disconnectListener) device.raw.removeEventListener("disconnect", disconnectListener);
   disconnectListener = void 0;
   try {
@@ -11622,11 +11623,15 @@ async function connectMirror() {
     await AdbScrcpyClient.pushServer(adb, serverResponse.body);
     client = await AdbScrcpyClient.start(adb, "/data/local/tmp/scrcpy-server.jar", new AdbScrcpyOptionsLatest({
       video: true,
+      videoCodec: "h264",
       audio: false,
       control: true,
       maxSize: 1440,
       maxFps: 30,
-      videoBitRate: 8e6
+      videoBitRate: 8e6,
+      sendFrameMeta: true,
+      sendCodecMeta: true,
+      sendDeviceMeta: true
     }));
     activeClient = client;
     void drainOutput(client);
@@ -11637,13 +11642,44 @@ async function connectMirror() {
     const renderer = WebGLVideoFrameRenderer.isSupported ? new WebGLVideoFrameRenderer(canvas) : new BitmapVideoFrameRenderer(canvas);
     decoder = new WebCodecsVideoDecoder({ codec: videoStream.metadata.codec, renderer });
     activeDecoder = decoder;
+    const videoStats = { packets: 0, frames: 0, configurations: 0, startedAt: performance.now() };
+    activeVideoStats = videoStats;
+    decoder.sizeChanged(({ width, height }) => {
+      if (activeDecoder === decoder) {
+        deviceName.textContent = `${videoStream.metadata.deviceName || device.name || device.raw.productName || "Tel\xE9fono Android"} \xB7 ${width} \xD7 ${height}`;
+      }
+    });
     stage.replaceChildren(decoder.renderer.canvas);
-    void videoStream.stream.pipeTo(decoder.writable).catch((error) => {
+    const measuredVideoStream = videoStream.stream.pipeThrough(new TransformStream({
+      transform(packet, controller) {
+        videoStats.packets += 1;
+        if (packet.type === "configuration") videoStats.configurations += 1;
+        else if (packet.type === "data") videoStats.frames += 1;
+        controller.enqueue(packet);
+      }
+    }));
+    void measuredVideoStream.pipeTo(decoder.writable).catch((error) => {
       if (activeClient === client) void stopMirror({ message: error?.message || "La transmisi\xF3n se interrumpi\xF3.", state: "error" });
     });
     deviceName.textContent = videoStream.metadata.deviceName || device.name || device.raw.productName || "Tel\xE9fono Android";
     setControlsEnabled(true);
-    setStatus("Tel\xE9fono conectado. Hac\xE9 clic o toc\xE1 la pantalla para controlarlo.", "connected");
+    setStatus("Tel\xE9fono conectado. Esperando la primera imagen\u2026", "connected");
+    const checkFirstFrame = () => {
+      if (activeClient !== client || activeDecoder !== decoder) return;
+      const width = decoder.width;
+      const height = decoder.height;
+      if (decoder.framesRendered > 0) {
+        setStatus(`Imagen en vivo (${width} \xD7 ${height}). Hac\xE9 clic o toc\xE1 la pantalla para controlarlo.`, "connected");
+        return;
+      }
+      if (performance.now() - videoStats.startedAt >= 15e3) {
+        const detail = videoStats.frames > 0 ? `Llegaron ${videoStats.frames} cuadros (${videoStats.configurations} de configuraci\xF3n), pero no se dibujaron. C\xF3dec: ${videoStream.metadata.codec}; cuadros dibujados: ${decoder.framesRendered}.` : videoStats.packets > 0 ? `Lleg\xF3 la configuraci\xF3n del video, pero ning\xFAn cuadro (${videoStats.configurations} paquetes de configuraci\xF3n). C\xF3dec: ${videoStream.metadata.codec}.` : `ADB conect\xF3, pero Scrcpy no envi\xF3 paquetes de video (c\xF3dec: ${videoStream.metadata.codec}).`;
+        setStatus(`${detail} Desbloque\xE1 la pantalla del tel\xE9fono y volv\xE9 a conectar.`, "error");
+        return;
+      }
+      setTimeout(checkFirstFrame, 750);
+    };
+    setTimeout(checkFirstFrame, 750);
     void client.exited.then(() => {
       if (activeClient === client) void stopMirror({ message: "La transmisi\xF3n termin\xF3. Pod\xE9s volver a conectar el tel\xE9fono.", state: "error" });
     }).catch(() => {
