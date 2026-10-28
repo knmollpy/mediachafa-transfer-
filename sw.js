@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mediachafa-shell-phone-v4';
+const CACHE_NAME = 'mediachafa-shell-phone-v5';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/app.svg', '/app-source/phone-mirror.bundle.js', '/app-source/scrcpy-server.bin'];
 
 self.addEventListener('install', event => {
