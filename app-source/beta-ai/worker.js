@@ -4,7 +4,7 @@ const SUPABASE_KEY = "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
 const OWNER_EMAIL = "nxmollpy@gmail.com";
 const CHAT_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const AUDIO_MODEL = "@cf/openai/whisper-large-v3-turbo";
-const DAILY_REQUEST_LIMIT = 100;
+const DAILY_REQUEST_LIMIT = 1000;
 const MAX_BODY_BYTES = 14 * 1024 * 1024;
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
 const PROVIDERS = ["github", "supabase", "cloudflare"];
@@ -160,7 +160,21 @@ export default {
       if (!user) return json({ error: "Conectá la cuenta dueña de MediaChafa para administrar integraciones." }, 403, origin);
       if (url.pathname === "/integrations/status" && request.method === "GET") return json({ integrations: await integrationStatus(env, user.id), resources: await integrationContext(env, user.id) }, 200, origin);
       if (url.pathname === "/integrations/connect" && request.method === "POST") {
-        return json({ error: "Las conexiones pegando API tokens están deshabilitadas. Usá la autorización oficial de OAuth cuando esté configurada." }, 410, origin);
+        let payload;
+        try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+        const provider = String(payload.provider || "").toLowerCase();
+        const token = String(payload.token || "").trim();
+        if (!PROVIDERS.includes(provider) || token.length < 12 || token.length > 4096) return json({ error: "Proveedor o token inválido." }, 400, origin);
+        try {
+          const verified = await verifyProvider(provider, token);
+          if (!verified.ok) return json({ error: verified.error }, 400, origin);
+          const encrypted = JSON.parse(await encryptToken(env, token));
+          const meta = { detail: verified.detail, connectedAt: new Date().toISOString(), capabilities: verified.capabilities || {} };
+          await env.BETA_LIMITS.put(`integration:${user.id}:${provider}`, JSON.stringify({ ...encrypted, meta }));
+          return json({ provider, connected: true, detail: verified.detail, capabilities: meta.capabilities }, 200, origin);
+        } catch (error) {
+          return json({ error: error?.message || "No se pudo validar o guardar la integración." }, 502, origin);
+        }
       }
       if (url.pathname === "/integrations/disconnect" && request.method === "POST") {
         let payload;
@@ -213,7 +227,7 @@ export default {
       ? payload.history.slice(-8).filter((item) => ["user", "assistant"].includes(item?.role)).map((item) => ({ role: item.role, content: String(item.content || "").slice(0, 3000) }))
       : [];
     const quota = await reserveRequest(env, user.id);
-    if (!quota.allowed) return json({ error: `Llegaste al límite de ${DAILY_REQUEST_LIMIT} consultas por día. Vuelve a intentarlo mañana.`, remaining: 0, resetsAt: quota.resetsAt }, 429, origin);
+    if (!quota.allowed) return json({ error: `Llegaste al límite de ${DAILY_REQUEST_LIMIT} consultas por día. Vuelve a intentarlo mañana. También puede aplicar antes el límite del proveedor de IA.`, remaining: 0, resetsAt: quota.resetsAt }, 429, origin);
 
     try {
       if (payload.audio) {
