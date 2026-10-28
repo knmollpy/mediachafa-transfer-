@@ -1,5 +1,5 @@
-const CACHE_NAME = 'mediachafa-shell-v4';
-const SHELL = ['/', '/manifest.webmanifest', '/icons/app.svg', '/phone-mirror.bundle.js', '/scrcpy-server.bin'];
+const CACHE_NAME = 'mediachafa-shell-beta-v1';
+const SHELL = ['/', '/manifest.webmanifest', '/icons/app.svg', '/app-source/beta.js'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
