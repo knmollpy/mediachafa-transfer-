@@ -1373,7 +1373,7 @@ async function loadGoogleDriveStatus() {
     window.mediaChafaBetaAuth=async()=>{const {data}=await client.auth.getSession();return {token:data.session?.access_token||'',owner:Boolean(ownerMode),anonymous:Boolean(currentUser?.is_anonymous),userId:currentUser?.id||data.session?.user?.id||''};};
     if ('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
   </script>
-  <script src="/app-source/beta.js?v=20261028-beta-workspace-fix" defer></script>
+  <script src="/app-source/beta.js?v=20261028-codex-layout" defer></script>
 </body>
 </html>
 
