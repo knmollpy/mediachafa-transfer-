@@ -242,6 +242,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 #app.beta-mode #beta-panel .beta-header{grid-column:1;grid-row:2;justify-content:flex-start;padding:7px 0}
 #app.beta-mode #beta-panel .beta-model-control{width:100%;max-width:none;min-width:0}
 #app.beta-mode #beta-panel .beta-view.active{grid-column:1!important;grid-row:3;min-height:0}
+#app.beta-mode #beta-panel .beta-workspace.beta-split-mode #beta-browser-view{display:none!important}
 #app.beta-mode #beta-panel #beta-chat-view.active{border:0;padding:0}
 #app.beta-mode #beta-panel #beta-browser-view.active,#app.beta-mode #beta-panel #beta-integrations-view.active{overflow:auto}
 #app.beta-mode #beta-panel .beta-chat-stage{padding:8px 0 4px}
