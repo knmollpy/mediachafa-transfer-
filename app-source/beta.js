@@ -535,7 +535,7 @@
     const statusNode = $('#beta-map-status');
     const detailsNode = $('#beta-map-details');
     const contentNode = $('#beta-map-content');
-    if (!statusNode || !contentNode) return;
+    const card = statusNode?.closest('.beta-private-map'); if (!statusNode || !contentNode || !card) return; const auth = await window.mediaChafaBetaAuth?.(); if (!auth?.owner || auth.anonymous) { card.hidden = true; return; } card.hidden = false;
     statusNode.textContent = refresh ? 'Actualizando el inventario privado…' : 'Cargando mapa privado…';
     try {
       const data = await api(`/project-map${refresh ? '?refresh=1' : ''}`);
