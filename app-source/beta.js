@@ -147,6 +147,19 @@
     setStatus(`${model?.name || 'Modelo'} seleccionado · pensamiento ${model?.thinkingLevel || 'medio'}${model?.vision ? ' · imagen' : ''}${model?.audio ? ' · audio' : ''}.`);
   });
 
+  const betaWorkspace = $('#beta-panel .beta-workspace');
+  const betaSidebar = document.createElement('aside');
+  betaSidebar.className = 'beta-sidebar';
+  betaSidebar.setAttribute('aria-label', 'Navegación de Beta');
+  const betaSidebarSection = document.createElement('span');
+  betaSidebarSection.className = 'beta-sidebar-section';
+  betaSidebarSection.textContent = 'Recientes';
+  const betaSidebarRecent = document.createElement('div');
+  betaSidebarRecent.className = 'beta-sidebar-recent';
+  betaSidebarRecent.textContent = 'Conversación actual';
+  betaSidebar.append(betaHeader.querySelector('.beta-brand'), $('#beta-clear'), betaHeader.querySelector('.beta-nav'), betaSidebarSection, betaSidebarRecent);
+  betaWorkspace.insertBefore(betaSidebar, betaHeader);
+
   // Keep the conversation and the live work view together on desktop, like an
   // assistant workspace. On phones the panes stack vertically to avoid a
   // miniature, horizontally scrolling layout.
@@ -183,7 +196,61 @@
     @media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:flex;height:auto;min-height:0;overflow:visible;flex-direction:column;gap:0}#app.beta-mode #beta-panel .beta-split-mode>.beta-header{flex-wrap:wrap}#app.beta-mode #beta-panel .beta-split-mode .beta-brand{margin-right:0}#app.beta-mode #beta-panel .beta-model-control{order:2;max-width:none;width:100%}#app.beta-mode #beta-panel .beta-split-mode .beta-nav{order:3;width:100%;overflow:auto}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view,#app.beta-mode #beta-panel .beta-split-mode>#beta-browser-view{overflow:visible}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view{border-right:0;border-bottom:1px solid #351717;padding:0 0 16px}#app.beta-mode #beta-panel .beta-split-mode .beta-chat-stage{min-height:58svh;height:auto;padding:20px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-messages{max-height:52svh;flex:1}#app.beta-mode #beta-panel .beta-split-mode .beta-browser{height:auto;padding:16px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-browser-frame{flex:none;height:55svh}#app.beta-mode #beta-panel .beta-split-mode .beta-work-preview{min-height:160px}}
   `;
   
-  document.head.append(workspaceStyle); const betaViewportStyle=document.createElement('style'); betaViewportStyle.textContent=` html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!important} #app.beta-mode{display:flex;flex-direction:column;height:100svh;min-height:0;overflow:hidden} #app.beta-mode>.wrap{flex:1;min-height:0;height:auto;max-width:none;width:100%;padding:8px 18px 12px;overflow:hidden} #app.beta-mode #beta-panel{height:100%;min-height:0;overflow:hidden} #app.beta-mode #beta-panel .beta-workspace{height:100%;min-height:0;min-width:0} #app.beta-mode #beta-panel .beta-view.active{min-height:0;overflow:auto} #app.beta-mode #beta-panel .beta-workspace.beta-split-mode{grid-template-columns:minmax(0,1.55fr) minmax(320px,.8fr);height:100%;min-height:0} #app.beta-mode #beta-panel .beta-split-mode .beta-chat-stage{width:100%;min-width:0;min-height:0;height:100%;margin:0;padding:10px 0 8px} #app.beta-mode #beta-panel .beta-split-mode .beta-messages{flex:1;min-height:0;max-height:none;padding:12px 8px 18px} #app.beta-mode #beta-panel .beta-split-mode .beta-message{max-width:min(96%,860px);font-size:15px;padding:13px 16px} #app.beta-mode #beta-panel .beta-split-mode .beta-activity{max-height:clamp(105px,22vh,165px)} #app.beta-mode #beta-panel .beta-split-mode .beta-work-preview{flex:1;min-height:140px} #app.beta-mode #beta-panel .beta-split-mode .beta-browser-frame{flex:1;min-height:0;height:auto} #app.beta-mode #beta-panel .beta-split-mode .beta-note{margin:5px 0;font-size:10px} @media(max-width:820px){#app.beta-mode>.wrap{padding:6px 10px 10px} #app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:flex;height:100%;min-height:0;overflow:hidden;flex-direction:column} #app.beta-mode #beta-panel .beta-split-mode>.beta-header{flex:none;flex-wrap:wrap} #app.beta-mode #beta-panel .beta-split-mode .beta-brand{flex:0 0 auto;margin-right:auto} #app.beta-mode #beta-panel .beta-model-control{order:2;max-width:none;width:100%;min-width:0} #app.beta-mode #beta-panel .beta-model-note{display:none} #app.beta-mode #beta-panel .beta-split-mode .beta-nav{order:3;width:100%;overflow:auto} #app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view{display:flex;flex:1;min-height:0;overflow:hidden;border:0;padding:0} #app.beta-mode #beta-panel .beta-split-mode>#beta-browser-view{display:none!important} #app.beta-mode #beta-panel .beta-split-mode .beta-chat-stage{flex:1;min-height:0;height:100%;padding:8px 0} #app.beta-mode #beta-panel .beta-split-mode .beta-messages{max-height:none;flex:1} #app.beta-mode #beta-panel .beta-split-mode .beta-message{max-width:98%;font-size:14px} #app.beta-mode #beta-panel #beta-browser-view.active{display:flex!important;overflow:auto}} `; document.head.append(betaViewportStyle); const betaApp=$('#app'); if(betaApp){const syncBetaViewport=()=>{const active=betaApp.classList.contains('beta-mode');document.documentElement.classList.toggle('beta-fullscreen',active);if(active&&window.scrollY)window.scrollTo(0,0)};new MutationObserver(syncBetaViewport).observe(betaApp,{attributes:true,attributeFilter:['class']});syncBetaViewport()} const projectMapStyle = document.createElement('style'); projectMapStyle.textContent = `#beta-panel .beta-private-map{width:min(1040px,100%);margin:0 auto 18px;background:linear-gradient(135deg,#1a1111,#101010);border-color:#562626}#beta-panel .beta-map-details{margin-top:12px;border-top:1px solid #3b2424;padding-top:10px;color:#f5eaea}#beta-panel .beta-map-details summary{cursor:pointer;color:#ffb4b4;font-size:12px}#beta-panel .beta-map-details pre{max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border:1px solid #382323;border-radius:10px;background:#0b0b0b;color:#ddd;font:11px/1.5 ui-monospace,monospace}`;
+  document.head.append(workspaceStyle); const betaViewportStyle=document.createElement('style'); betaViewportStyle.textContent=`
+html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!important}
+#app.beta-mode{display:flex;flex-direction:column;height:100svh;min-height:0;overflow:hidden}
+#app.beta-mode>.topbar{flex:none}
+#app.beta-mode>.wrap{flex:1;min-height:0;height:auto;max-width:none;width:100%;padding:6px 14px 10px;overflow:hidden}
+#app.beta-mode #beta-panel{height:100%;min-height:0;overflow:hidden}
+#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:grid;grid-template-columns:220px minmax(0,1.05fr) minmax(340px,.95fr);grid-template-rows:68px minmax(0,1fr);gap:0 14px;height:100%;min-height:0;overflow:hidden}
+#app.beta-mode #beta-panel .beta-sidebar{grid-column:1;grid-row:1/3;display:flex;min-height:0;flex-direction:column;gap:12px;padding:12px 10px;border-right:1px solid rgba(255,255,255,.09);background:rgba(15,15,16,.7)}
+#app.beta-mode #beta-panel .beta-sidebar .beta-brand{flex:none;margin:0 0 8px;padding:4px 6px;font-size:15px}
+#app.beta-mode #beta-panel .beta-sidebar #beta-clear{width:100%;min-height:40px;text-align:left;padding:9px 12px;border-radius:10px;background:#222;color:#f3f3f3;border:1px solid #383838}
+#app.beta-mode #beta-panel .beta-sidebar-section{margin:12px 6px 0;color:#929292;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+#app.beta-mode #beta-panel .beta-sidebar-recent{padding:10px 12px;border-radius:9px;background:rgba(255,255,255,.08);color:#f3f3f3;font-size:12px}
+#app.beta-mode #beta-panel .beta-nav{display:flex;flex-direction:column;gap:4px;width:100%}
+#app.beta-mode #beta-panel .beta-nav button{width:100%;min-height:39px;text-align:left;padding:9px 12px;border-radius:9px;color:#bdbdbd}
+#app.beta-mode #beta-panel .beta-nav button.active,#app.beta-mode #beta-panel .beta-nav button:hover{background:#292929;color:#fff}
+#app.beta-mode #beta-panel .beta-header{grid-column:2/4;grid-row:1;display:flex;align-items:center;justify-content:flex-end;min-width:0;min-height:0;padding:4px 4px 9px;border-bottom:1px solid rgba(255,255,255,.09)}
+#app.beta-mode #beta-panel .beta-model-control{width:min(380px,100%);min-width:260px;max-width:380px}
+#app.beta-mode #beta-panel .beta-model-note{display:none}
+#app.beta-mode #beta-panel .beta-view.active{grid-row:2;min-height:0;overflow:hidden}
+#app.beta-mode #beta-panel #beta-chat-view.active{grid-column:2;display:flex;min-width:0;border-right:1px solid rgba(255,255,255,.09);padding:0 14px 0 2px}
+#app.beta-mode #beta-panel #beta-browser-view.active{grid-column:3;display:flex;min-width:0;padding:0 0 0 2px}
+#app.beta-mode #beta-panel .beta-workspace:not(.beta-split-mode) #beta-browser-view.active{grid-column:2/4}
+#app.beta-mode #beta-panel #beta-integrations-view.active{grid-column:2/4;display:flex;overflow:auto;padding:12px 6px}
+#app.beta-mode #beta-panel .beta-chat-stage{width:100%;min-width:0;min-height:0;height:100%;margin:0;padding:12px 0 5px;justify-content:center}
+#app.beta-mode #beta-panel .beta-chat-stage.has-messages{justify-content:flex-end;padding:8px 0 4px}
+#app.beta-mode #beta-panel .beta-messages{flex:1;min-height:0;max-height:none;width:100%;overflow:auto;padding:12px 4px 18px}
+#app.beta-mode #beta-panel .beta-message{max-width:min(96%,850px);font-size:15px;padding:13px 16px}
+#app.beta-mode #beta-panel .beta-composer{width:100%;padding:14px 16px}
+#app.beta-mode #beta-panel .beta-status-row,#app.beta-mode #beta-panel .beta-count{text-align:left;justify-content:flex-start}
+#app.beta-mode #beta-panel .beta-browser{display:flex;flex-direction:column;width:100%;height:100%;min-height:0;margin:0;padding:10px 0 5px}
+#app.beta-mode #beta-panel .beta-browser-toolbar{flex:none}
+#app.beta-mode #beta-panel .beta-activity{flex:none;max-height:clamp(100px,19vh,170px);overflow:auto}
+#app.beta-mode #beta-panel .beta-work-preview{flex:1;min-height:100px;margin:8px 0;overflow:auto}
+#app.beta-mode #beta-panel .beta-browser-frame{flex:1;min-height:0;height:auto}
+#app.beta-mode #beta-panel .beta-note{flex:none;margin:4px 0;font-size:10px}
+@media(max-width:900px){
+#app.beta-mode>.wrap{padding:4px 8px 8px}
+#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);gap:0;height:100%}
+#app.beta-mode #beta-panel .beta-sidebar{grid-column:1;grid-row:1;flex-direction:row;align-items:center;gap:5px;padding:5px 0;border:0;border-bottom:1px solid rgba(255,255,255,.08);overflow-x:auto}
+#app.beta-mode #beta-panel .beta-sidebar .beta-brand,#app.beta-mode #beta-panel .beta-sidebar-section,#app.beta-mode #beta-panel .beta-sidebar-recent{display:none}
+#app.beta-mode #beta-panel .beta-sidebar #beta-clear{width:auto;min-width:max-content;min-height:36px;padding:7px 10px}
+#app.beta-mode #beta-panel .beta-nav{flex-direction:row;min-width:max-content;width:auto}
+#app.beta-mode #beta-panel .beta-nav button{width:auto;min-height:36px;padding:7px 12px}
+#app.beta-mode #beta-panel .beta-header{grid-column:1;grid-row:2;justify-content:flex-start;padding:7px 0}
+#app.beta-mode #beta-panel .beta-model-control{width:100%;max-width:none;min-width:0}
+#app.beta-mode #beta-panel .beta-view.active{grid-column:1!important;grid-row:3;min-height:0}
+#app.beta-mode #beta-panel #beta-chat-view.active{border:0;padding:0}
+#app.beta-mode #beta-panel #beta-browser-view.active,#app.beta-mode #beta-panel #beta-integrations-view.active{overflow:auto}
+#app.beta-mode #beta-panel .beta-chat-stage{padding:8px 0 4px}
+#app.beta-mode #beta-panel .beta-message{max-width:98%;font-size:14px}
+#app.beta-mode #beta-panel .beta-composer{padding:11px 12px;border-radius:18px}
+#app.beta-mode #beta-panel .beta-browser{padding:8px 0}
+#app.beta-mode #beta-panel .beta-browser-frame{flex:none;height:45svh}
+}
+`; document.head.append(betaViewportStyle); const betaApp=$('#app'); if(betaApp){const syncBetaViewport=()=>{const active=betaApp.classList.contains('beta-mode');document.documentElement.classList.toggle('beta-fullscreen',active);if(active&&window.scrollY)window.scrollTo(0,0)};new MutationObserver(syncBetaViewport).observe(betaApp,{attributes:true,attributeFilter:['class']});syncBetaViewport()} const projectMapStyle = document.createElement('style'); projectMapStyle.textContent = `#beta-panel .beta-private-map{width:min(1040px,100%);margin:0 auto 18px;background:linear-gradient(135deg,#1a1111,#101010);border-color:#562626}#beta-panel .beta-map-details{margin-top:12px;border-top:1px solid #3b2424;padding-top:10px;color:#f5eaea}#beta-panel .beta-map-details summary{cursor:pointer;color:#ffb4b4;font-size:12px}#beta-panel .beta-map-details pre{max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border:1px solid #382323;border-radius:10px;background:#0b0b0b;color:#ddd;font:11px/1.5 ui-monospace,monospace}`;
   document.head.append(projectMapStyle);
 
   function activity(message, state = 'active') {
