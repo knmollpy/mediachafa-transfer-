@@ -367,6 +367,102 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 `;
   document.head.append(betaCleanStyle);
 
+  // Compact header: model chip (opens centered picker) + activity drawer toggle.
+  const betaTopStyle = document.createElement('style');
+  betaTopStyle.textContent = `
+#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{position:relative;grid-template-columns:240px minmax(0,1fr)!important;grid-template-rows:auto minmax(0,1fr)!important}
+#app.beta-mode #beta-panel .beta-header{grid-column:2!important;justify-content:flex-end!important;gap:8px;padding:8px 14px!important;min-height:0}
+#app.beta-mode #beta-panel #beta-chat-view.active{grid-column:2!important;border-right:0!important}
+#app.beta-mode #beta-panel .beta-workspace:not(.beta-split-mode) #beta-browser-view.active{grid-column:2!important;position:static}
+#app.beta-mode #beta-panel #beta-integrations-view.active{grid-column:2!important}
+#app.beta-mode #beta-panel .beta-workspace.beta-split-mode #beta-browser-view{display:none!important}
+#app.beta-mode #beta-panel .beta-workspace.beta-split-mode.beta-activity-open #beta-browser-view{display:flex!important;position:absolute;top:0;right:0;bottom:0;width:min(400px,92%);z-index:30;flex-direction:column;padding:12px 14px!important;background:#141414;border-left:1px solid rgba(255,255,255,.1);border-radius:0 16px 16px 0;box-shadow:-18px 0 40px rgba(0,0,0,.5);overflow:auto;animation:betaSlide .2s ease}
+@keyframes betaSlide{from{transform:translateX(30px);opacity:0}to{transform:none;opacity:1}}
+#app.beta-mode #beta-panel .beta-drawer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;color:#f2f2f2;font-weight:700;font-size:14px}
+#app.beta-mode #beta-panel .beta-workspace:not(.beta-split-mode) .beta-drawer-head{display:none}
+#app.beta-mode #beta-panel .beta-x{width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:#222;color:#eee;font-size:16px;cursor:pointer}
+#app.beta-mode #beta-panel .beta-chip{display:inline-flex;align-items:center;gap:6px;max-width:320px;padding:7px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:#212121;color:#e8e8e8;font-size:12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app.beta-mode #beta-panel .beta-chip:hover{background:#2b2b2b}
+#app.beta-mode #beta-panel .beta-chip span{overflow:hidden;text-overflow:ellipsis}
+#app.beta-mode #beta-panel .beta-workspace.beta-activity-open .beta-chip-activity{background:#3a1416;border-color:#7a2a2a}
+.beta-model-modal{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(3px)}
+.beta-model-modal.open{display:flex}
+.beta-model-card{width:min(640px,92vw);max-height:86vh;overflow:auto;padding:22px;border-radius:18px;background:#1b1b1b;border:1px solid rgba(255,255,255,.12);box-shadow:0 30px 80px rgba(0,0,0,.6);color:#eee}
+.beta-model-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-size:17px;font-weight:700}
+.beta-model-card .beta-model-control{display:flex!important;flex-direction:column!important;gap:10px!important;width:100%!important;max-width:none!important;min-width:0!important;font-size:12px}
+.beta-model-card #beta-model-select{width:100%;padding:10px 12px;border-radius:12px;background:#121212;color:#fff;border:1px solid rgba(255,255,255,.14);font-size:14px}
+.beta-model-card #beta-model-select[size]{height:auto;max-height:52vh}
+.beta-model-card #beta-model-select option{padding:8px 10px;border-radius:8px}
+.beta-model-card .beta-model-health,.beta-model-card .beta-model-count,.beta-model-card .beta-model-note{display:block!important;white-space:normal!important;font-size:12px}
+.beta-model-card .beta-model-probe{align-self:flex-start;padding:8px 14px;border-radius:10px;background:#262626;color:#eee;border:1px solid rgba(255,255,255,.14);cursor:pointer}
+.beta-model-card .beta-x{width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:#222;color:#eee;font-size:16px;cursor:pointer}
+@media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace.beta-split-mode.beta-activity-open #beta-browser-view{position:fixed;width:100%;border-radius:0}}
+`;
+  document.head.append(betaTopStyle);
+
+  const modelModal = document.createElement('div');
+  modelModal.className = 'beta-model-modal';
+  modelModal.setAttribute('role', 'dialog');
+  modelModal.setAttribute('aria-modal', 'true');
+  const modelCard = document.createElement('div');
+  modelCard.className = 'beta-model-card';
+  const modelCardHead = document.createElement('div');
+  modelCardHead.className = 'beta-model-card-head';
+  const modelCardTitle = document.createElement('span');
+  modelCardTitle.textContent = 'Elegir modelo de IA';
+  const modelClose = document.createElement('button');
+  modelClose.type = 'button'; modelClose.className = 'beta-x'; modelClose.textContent = '✕'; modelClose.setAttribute('aria-label', 'Cerrar');
+  modelCardHead.append(modelCardTitle, modelClose);
+  modelCard.append(modelCardHead, modelControl);
+  modelModal.append(modelCard);
+  document.body.append(modelModal);
+
+  const modelChip = document.createElement('button');
+  modelChip.type = 'button'; modelChip.className = 'beta-chip'; modelChip.title = 'Cambiar modelo de IA';
+  const modelChipText = document.createElement('span');
+  modelChip.append(modelChipText, document.createTextNode(' ▾'));
+  const activityChip = document.createElement('button');
+  activityChip.type = 'button'; activityChip.className = 'beta-chip beta-chip-activity'; activityChip.textContent = 'Actividad';
+  activityChip.title = 'Ver qué está haciendo Beta';
+  betaHeader.append(modelChip, activityChip);
+
+  const syncChip = () => {
+    const opt = modelSelect.options[modelSelect.selectedIndex];
+    modelChipText.textContent = opt ? opt.textContent.split('·').slice(0, 2).join('·').trim() : 'Modelo de IA';
+  };
+  new MutationObserver(syncChip).observe(modelSelect, { childList: true, subtree: true, attributes: true });
+  modelSelect.addEventListener('change', () => { syncChip(); closeModelModal(); });
+  syncChip();
+
+  function openModelModal() {
+    modelSelect.size = Math.min(Math.max(modelSelect.options.length, 2), 12);
+    modelModal.classList.add('open');
+    modelSelect.focus();
+  }
+  function closeModelModal() { modelModal.classList.remove('open'); }
+  modelChip.addEventListener('click', openModelModal);
+  modelProbe.addEventListener('click', closeModelModal);
+  modelClose.addEventListener('click', closeModelModal);
+  modelModal.addEventListener('click', (e) => { if (e.target === modelModal) closeModelModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModelModal(); betaWorkspace.classList.remove('beta-activity-open'); } });
+
+  const browserView = $('#beta-browser-view');
+  const drawerHead = document.createElement('div');
+  drawerHead.className = 'beta-drawer-head';
+  const drawerTitle = document.createElement('span');
+  drawerTitle.textContent = 'Qué está haciendo Beta';
+  const drawerClose = document.createElement('button');
+  drawerClose.type = 'button'; drawerClose.className = 'beta-x'; drawerClose.textContent = '✕'; drawerClose.setAttribute('aria-label', 'Cerrar actividad');
+  drawerHead.append(drawerTitle, drawerClose);
+  browserView?.prepend(drawerHead);
+  const toggleActivity = (force) => {
+    if (!betaWorkspace.classList.contains('beta-split-mode')) selectBetaView('chat');
+    betaWorkspace.classList.toggle('beta-activity-open', force);
+  };
+  activityChip.addEventListener('click', () => toggleActivity());
+  drawerClose.addEventListener('click', () => toggleActivity(false));
+  $('#beta-show-activity')?.addEventListener('click', (e) => { e.preventDefault(); e.stopImmediatePropagation(); toggleActivity(true); }, true);
+
   function activity(message, state = 'active') {
     if (!activityList) return;
     if (state === 'active') activityItems = activityItems.map(item => item.state === 'active' ? { ...item, state: 'done' } : item);
