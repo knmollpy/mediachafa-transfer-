@@ -398,6 +398,29 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 .beta-model-card .beta-x{width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:#222;color:#eee;font-size:16px;cursor:pointer}
 @media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace.beta-split-mode.beta-activity-open #beta-browser-view{position:fixed;width:100%;border-radius:0}}
 `;
+  betaTopStyle.textContent += `
+#app.beta-mode #beta-panel .beta-sidebar-recent{display:flex;flex-direction:column;gap:2px;padding:0!important;background:transparent!important;overflow:auto;min-height:0;flex:1}
+#app.beta-mode #beta-panel .beta-thread{display:flex;align-items:center;border-radius:9px}
+#app.beta-mode #beta-panel .beta-thread:hover{background:#1f1f1f}
+#app.beta-mode #beta-panel .beta-thread.active{background:#262626}
+#app.beta-mode #beta-panel .beta-thread-open{flex:1;min-width:0;text-align:left;padding:9px 10px;background:transparent;border:0;color:#d9d9d9;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#app.beta-mode #beta-panel .beta-thread.active .beta-thread-open{color:#fff}
+#app.beta-mode #beta-panel .beta-thread-del{flex:none;width:26px;height:26px;margin-right:4px;border:0;border-radius:6px;background:transparent;color:#888;font-size:11px;cursor:pointer;opacity:0}
+#app.beta-mode #beta-panel .beta-thread:hover .beta-thread-del,#app.beta-mode #beta-panel .beta-thread.active .beta-thread-del{opacity:1}
+#app.beta-mode #beta-panel .beta-thread-del:hover{background:#3a1416;color:#ff9a9a}
+#app.beta-mode #beta-panel .beta-steps{margin:0 0 10px;color:#9b9b9b;font-size:13px}
+#app.beta-mode #beta-panel .beta-steps summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
+#app.beta-mode #beta-panel .beta-steps summary::before{content:'›';display:inline-block;transition:transform .15s;font-size:15px}
+#app.beta-mode #beta-panel .beta-steps[open] summary::before{transform:rotate(90deg)}
+#app.beta-mode #beta-panel .beta-steps ul,#app.beta-mode #beta-panel .beta-live-steps{list-style:none;margin:8px 0 4px;padding:0 0 0 4px;display:flex;flex-direction:column;gap:6px;white-space:normal}
+#app.beta-mode #beta-panel .beta-steps li,#app.beta-mode #beta-panel .beta-live-steps li{position:relative;padding-left:22px;color:#a8a8a8;font-size:13px;line-height:1.45}
+#app.beta-mode #beta-panel .beta-steps li::before,#app.beta-mode #beta-panel .beta-live-steps li[data-state=done]::before{content:'✓';position:absolute;left:2px;top:0;color:#6fcf8f;font-size:12px}
+#app.beta-mode #beta-panel .beta-live-steps li[data-state=active]{color:#ececec}
+#app.beta-mode #beta-panel .beta-live-steps li[data-state=active]::before{content:'';position:absolute;left:2px;top:4px;width:10px;height:10px;border-radius:50%;border:2px solid #e0353b;border-top-color:transparent;animation:betaSpin .8s linear infinite}
+@keyframes betaSpin{to{transform:rotate(360deg)}}
+#app.beta-mode #beta-panel .beta-working>p{color:#7d7d7d;font-size:13px;animation:betaPulse 1.4s ease-in-out infinite}
+@keyframes betaPulse{50%{opacity:.45}}
+`;
   document.head.append(betaTopStyle);
 
   const modelModal = document.createElement('div');
@@ -492,11 +515,103 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     status.dataset.state = kind;
   }
 
-  function storageKey() { return `mediachafa-beta-chat:${ownerId}`; }
+  let currentThreadId = '';
+  let threads = [];
+  function threadsKey() { return `mediachafa-beta-threads:${ownerId}`; }
+  function storageKey() { return `mediachafa-beta-chat:${ownerId}:${currentThreadId}`; }
+  function newThreadId() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function saveThreads() { try { localStorage.setItem(threadsKey(), JSON.stringify(threads)); localStorage.setItem(threadsKey() + ':active', currentThreadId); } catch {} }
+  function titleFrom(text) {
+    const clean = String(text || '').replace(/\[(Imagen|Audio):[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
+    if (!clean) return 'Chat sin título';
+    const t = clean.replace(/^(hola|buenas|hey|che)[,!.\s]+/i, '') || clean;
+    return (t.charAt(0).toUpperCase() + t.slice(1)).slice(0, 42) + (t.length > 42 ? '…' : '');
+  }
+  function ensureThreads() {
+    try { threads = JSON.parse(localStorage.getItem(threadsKey()) || '[]'); } catch { threads = []; }
+    if (!Array.isArray(threads)) threads = [];
+    if (!threads.length) {
+      const id = newThreadId();
+      let legacy = null;
+      try { legacy = localStorage.getItem(`mediachafa-beta-chat:${ownerId}`); } catch {}
+      let title = 'Nuevo chat';
+      if (legacy) {
+        try { const arr = JSON.parse(legacy); const first = arr.find(m => m.role === 'user'); if (first) title = titleFrom(first.content); localStorage.setItem(`mediachafa-beta-chat:${ownerId}:${id}`, legacy); localStorage.removeItem(`mediachafa-beta-chat:${ownerId}`); } catch {}
+      }
+      threads = [{ id, title, updatedAt: Date.now() }];
+    }
+    let active = '';
+    try { active = localStorage.getItem(threadsKey() + ':active') || ''; } catch {}
+    currentThreadId = threads.some(t => t.id === active) ? active : threads[0].id;
+    saveThreads();
+  }
+  function renderThreadList() {
+    const rows = [...threads].sort((a, b) => b.updatedAt - a.updatedAt).map(thread => {
+      const row = document.createElement('div');
+      row.className = 'beta-thread' + (thread.id === currentThreadId ? ' active' : '');
+      const open = document.createElement('button');
+      open.type = 'button'; open.className = 'beta-thread-open'; open.textContent = thread.title; open.title = thread.title;
+      open.addEventListener('click', () => switchThread(thread.id));
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'beta-thread-del'; del.textContent = '✕'; del.title = 'Borrar chat'; del.setAttribute('aria-label', `Borrar ${thread.title}`);
+      del.addEventListener('click', () => deleteThread(thread.id));
+      row.append(open, del);
+      return row;
+    });
+    betaSidebarRecent.replaceChildren(...rows);
+  }
+  function switchThread(id) {
+    if (sendButton.disabled) { setStatus('Esperá a que Beta termine de responder para cambiar de chat.', 'error'); return; }
+    currentThreadId = id;
+    saveThreads();
+    restoreHistory();
+    selectBetaView('chat');
+    input.focus();
+  }
+  function createThread() {
+    if (sendButton.disabled) { setStatus('Esperá a que Beta termine de responder.', 'error'); return; }
+    const empty = threads.find(t => t.title === 'Nuevo chat');
+    if (empty) { switchThread(empty.id); return; }
+    const thread = { id: newThreadId(), title: 'Nuevo chat', updatedAt: Date.now() };
+    threads.push(thread);
+    switchThread(thread.id);
+    setStatus('Nuevo chat listo.');
+  }
+  function deleteThread(id) {
+    const thread = threads.find(t => t.id === id);
+    if (!thread || !window.confirm(`¿Borrar el chat "${thread.title}" de este dispositivo?`)) return;
+    try { localStorage.removeItem(`mediachafa-beta-chat:${ownerId}:${id}`); } catch {}
+    threads = threads.filter(t => t.id !== id);
+    if (!threads.length) threads.push({ id: newThreadId(), title: 'Nuevo chat', updatedAt: Date.now() });
+    if (currentThreadId === id) currentThreadId = [...threads].sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+    saveThreads();
+    restoreHistory();
+  }
 
   function saveHistory() {
     if (!ownerId) return;
     try { localStorage.setItem(storageKey(), JSON.stringify(history.slice(-30))); } catch {}
+    const thread = threads.find(t => t.id === currentThreadId);
+    if (thread) {
+      if (thread.title === 'Nuevo chat') { const first = history.find(m => m.role === 'user'); if (first) thread.title = titleFrom(first.content); }
+      thread.updatedAt = Date.now();
+      saveThreads();
+      renderThreadList();
+    }
+  }
+
+  function attachSteps(node, steps, open = false) {
+    if (!steps?.length) return;
+    const details = document.createElement('details');
+    details.className = 'beta-steps';
+    details.open = open;
+    const summary = document.createElement('summary');
+    summary.textContent = `Beta trabajó en ${steps.length} paso${steps.length === 1 ? '' : 's'}`;
+    const list = document.createElement('ul');
+    for (const step of steps) { const li = document.createElement('li'); li.textContent = step; list.append(li); }
+    details.append(summary, list);
+    const body = node.querySelector('p');
+    node.insertBefore(details, body);
   }
 
   function addMessage(role, content, modelName = '') {
@@ -660,6 +775,11 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 
   function restoreHistory() {
     if (!ownerId) return;
+    if (!currentThreadId) ensureThreads();
+    renderThreadList();
+    history = [];
+    messagesNode.replaceChildren();
+    stage.classList.remove('has-messages');
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey()) || '[]');
       if (!Array.isArray(saved)) return;
@@ -667,6 +787,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       messagesNode.replaceChildren();
       for (const item of history) {
         const message = addMessage(item.role, item.content, item.modelName);
+        if (item.role === 'assistant' && Array.isArray(item.steps)) attachSteps(message, item.steps);
         if (item.role === 'assistant' && Array.isArray(item.proposals)) renderProposals(message, item.proposals);
       }
       if (!history.length) stage.classList.remove('has-messages');
@@ -756,7 +877,19 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const userMessage = addMessage('user', displayText);
     const progressMessage = addMessage('assistant', 'Validando tu sesión…');
     const progressBody = progressMessage.querySelector('p');
-    const updateProgress = (message) => { progressBody.textContent = message; setStatus(message); activity(message); };
+    progressMessage.classList.add('beta-working');
+    progressMessage.querySelector('.beta-copy-btn')?.remove();
+    const steps = ['Validando tu sesión…'];
+    const liveList = document.createElement('ul');
+    liveList.className = 'beta-live-steps';
+    progressMessage.insertBefore(liveList, progressBody);
+    const paintSteps = () => {
+      liveList.replaceChildren(...steps.map((step, i) => { const li = document.createElement('li'); li.dataset.state = i === steps.length - 1 ? 'active' : 'done'; li.textContent = step; return li; }));
+      progressBody.textContent = 'Trabajando…';
+      messagesNode.scrollTop = messagesNode.scrollHeight;
+    };
+    paintSteps();
+    const updateProgress = (message) => { steps.push(message); paintSteps(); setStatus(message); activity(message); };
     try {
       const auth = await currentSession();
       updateProgress('Preparando adjuntos…');
@@ -783,11 +916,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const preparationErrors = Array.isArray(data.proposalErrors) ? data.proposalErrors : [];
       const answerBase = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
       const answer = preparationErrors.length ? `${answerBase}\n\nNo pude preparar una o más acciones:\n• ${preparationErrors.join('\n• ')}` : answerBase;
-      history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer, modelName: data.modelName, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds });
+      history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer, modelName: data.modelName, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds, steps: [...steps, 'Respuesta recibida'] });
       history = history.slice(-30);
       saveHistory();
       progressMessage.remove();
       const answerNode = addMessage('assistant', answer, data.modelName);
+      attachSteps(answerNode, [...steps, 'Respuesta recibida']);
       renderProposals(answerNode, data.proposals, data.expiresInSeconds);
       if (data.proposals?.length) {
         activity(`${data.proposals.length} propuesta(s) preparadas. Todavía no se aplicó ningún cambio.`, 'done');
@@ -818,6 +952,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (!sendButton.disabled) form.requestSubmit(sendButton);
   });
 
+  $('#beta-clear').addEventListener('click', (event) => { event.stopImmediatePropagation(); createThread(); }, true);
   $('#beta-clear').addEventListener('click', () => {
     history = [];
     messagesNode.replaceChildren();
