@@ -128,14 +128,7 @@ async function googleAccessToken(env) {
   const encrypted = await env.GOOGLE_OAUTH_STORE.get(`refresh:${env.OWNER_USER_ID}`);
   const refreshToken = await decryptGoogleToken(encrypted, env);
   if (!refreshToken) return null;
-  const body = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, refresh_token: refreshToken, grant_type: "refresh_token" });
-  const response = await fetchWithTimeout("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body }, 12000);
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const reason = result.error_description || result.error || `HTTP ${response.status}`;
-    throw new Error(`Google rechazó la sesión de Drive (${reason}). Volvé a conectar Google Drive desde la app.`);
-  }
-  return result.access_token || null;
+  return googleTokenFromRefresh(env, refreshToken);
 }
 
 async function googleQuota(env, accessToken = null) {
@@ -395,10 +388,11 @@ async function runStorageTransfer(id, record, target, session, env) {
       if (!sourceIsGoogle) throw new Error("El archivo ya está en Cloudflare R2.");
       const googleId = sourcePath.slice("gdrive://".length);
       if (!/^[A-Za-z0-9_-]{10,200}$/.test(googleId)) throw new Error("El identificador de Google Drive no es válido.");
-      const accessToken = await googleAccessToken(env);
-      if (!accessToken) throw new Error("Google Drive todavía no está conectado.");
       state.phase = "Descargando desde Google Drive"; await saveTransfer(env, id, state);
-      const source = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(googleId)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const lookup = await driveFileFetch(env, googleId, "alt=media");
+      if (!lookup.connected) throw new Error("Google Drive todavía no está conectado.");
+      const accessToken = lookup.token;
+      const source = lookup.response;
       if (!source.ok || !source.body) throw new Error("Google Drive no pudo entregar el archivo para transferirlo.");
       const contentType = source.headers.get("Content-Type") || "application/octet-stream";
       const safeName = String(record.file_name || "archivo").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 180);
@@ -412,7 +406,7 @@ async function runStorageTransfer(id, record, target, session, env) {
       state.phase = "Quitando el original de Google Drive"; await saveTransfer(env, id, state);
       let sourceRemoved = true;
       try {
-        const deleted = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(googleId)}`, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } });
+        const deleted = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(lookup.id)}`, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } });
         if (!deleted.ok && deleted.status !== 404) sourceRemoved = false;
       } catch { sourceRemoved = false; }
       state.status = "complete"; state.done = size; state.sourceRemoved = sourceRemoved;
@@ -429,11 +423,408 @@ async function runStorageTransfer(id, record, target, session, env) {
   await saveTransfer(env, id, state);
 }
 
+// ---------------------------------------------------------------------------
+// Cambio de cuenta de Google Drive y mudanza de archivos.
+// Cuando el dueño conecta otra cuenta de Drive, la cuenta anterior queda
+// guardada (cifrada) como "previa". La mudanza copia cada archivo de la
+// biblioteca desde la cuenta previa a la nueva, actualiza media_files y
+// guarda un alias del id viejo al nuevo para que los enlaces ya compartidos
+// (y los juegos PS4 que apuntan al id viejo) sigan funcionando.
+// El navegador avanza la mudanza llamando a /google/migration/step.
+// ---------------------------------------------------------------------------
+const DRIVE_FILES = "https://www.googleapis.com/drive/v3/files";
+const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
+// Multiple of 256 KiB, as required by Drive resumable uploads.
+const MIGRATION_CHUNK_BYTES = 64 * 1024 * 1024;
+const MIGRATION_STEP_MS = 20000;
+const MIGRATION_STEP_FETCHES = 38;
+const MIGRATION_STEP_BYTES = MIGRATION_CHUNK_BYTES;
+
+async function googleTokenFromRefresh(env, refreshToken) {
+  if (!refreshToken) return null;
+  const body = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, refresh_token: refreshToken, grant_type: "refresh_token" });
+  const response = await fetchWithTimeout("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body }, 12000);
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const reason = result.error_description || result.error || `HTTP ${response.status}`;
+    throw new Error(`Google rechazó la sesión de Drive (${reason}). Volvé a conectar Google Drive desde la app.`);
+  }
+  return result.access_token || null;
+}
+
+async function driveAccountInfo(accessToken) {
+  if (!accessToken) return null;
+  const response = await fetchWithTimeout("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,displayName,permissionId)", { headers: { Authorization: `Bearer ${accessToken}` } }, 12000);
+  if (!response.ok) return null;
+  const user = (await response.json().catch(() => ({}))).user || {};
+  if (!user.permissionId && !user.emailAddress) return null;
+  return { email: String(user.emailAddress || ""), name: String(user.displayName || ""), permissionId: String(user.permissionId || user.emailAddress || "") };
+}
+
+function sameDriveAccount(a, b) {
+  if (!a || !b) return false;
+  if (a.permissionId && b.permissionId) return a.permissionId === b.permissionId;
+  return Boolean(a.email && b.email && a.email.toLowerCase() === b.email.toLowerCase());
+}
+
+async function currentDriveAccount(env, accessToken = null) {
+  const stored = await env.GOOGLE_OAUTH_STORE.get(`drive-account:${env.OWNER_USER_ID}`, "json").catch(() => null);
+  if (stored) return stored;
+  const token = accessToken || await googleAccessToken(env).catch(() => null);
+  const account = await driveAccountInfo(token).catch(() => null);
+  if (account) await env.GOOGLE_OAUTH_STORE.put(`drive-account:${env.OWNER_USER_ID}`, JSON.stringify(account));
+  return account;
+}
+
+async function previousDriveAccounts(env) {
+  const list = await env.GOOGLE_OAUTH_STORE.get(`drive-previous:${env.OWNER_USER_ID}`, "json").catch(() => null);
+  return Array.isArray(list) ? list : [];
+}
+
+async function savePreviousDriveAccounts(env, list) {
+  if (list.length) await env.GOOGLE_OAUTH_STORE.put(`drive-previous:${env.OWNER_USER_ID}`, JSON.stringify(list.slice(0, 5)));
+  else await env.GOOGLE_OAUTH_STORE.delete(`drive-previous:${env.OWNER_USER_ID}`);
+}
+
+async function previousAccessTokens(env) {
+  const tokens = [];
+  for (const account of await previousDriveAccounts(env)) {
+    try {
+      const token = await googleTokenFromRefresh(env, await decryptGoogleToken(account.refresh, env));
+      if (token) tokens.push({ account: { email: account.email, name: account.name, permissionId: account.permissionId }, token });
+    } catch (error) { console.warn("Previous Drive account unavailable", account.email, error instanceof Error ? error.message : "unknown"); }
+  }
+  return tokens;
+}
+
+async function driveAliases(env) {
+  const map = await env.GOOGLE_OAUTH_STORE.get(`drive-aliases:${env.OWNER_USER_ID}`, "json").catch(() => null);
+  return map && typeof map === "object" ? map : {};
+}
+
+async function resolveDriveId(env, id) {
+  const aliases = await driveAliases(env);
+  let resolved = id;
+  for (let i = 0; i < 5 && aliases[resolved]; i++) resolved = aliases[resolved];
+  return /^[A-Za-z0-9_-]{10,200}$/.test(resolved) ? resolved : id;
+}
+
+// Fetch a Drive file using the connected account. Old ids are resolved through
+// the alias map, and while a mudanza is pending the previous accounts are used
+// as a fallback so nothing stops working mid-way.
+async function driveFileFetch(env, id, query = "alt=media", init = {}) {
+  const current = await googleAccessToken(env);
+  if (!current) return { connected: false, response: null };
+  const resolved = await resolveDriveId(env, id);
+  const target = fileId => `${DRIVE_FILES}/${encodeURIComponent(fileId)}${query ? `?${query}` : ""}`;
+  const withAuth = token => ({ ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` } });
+  const response = await fetch(target(resolved), withAuth(current));
+  if (response.ok || ![403, 404].includes(response.status)) return { connected: true, response, token: current, id: resolved };
+  const previous = await previousAccessTokens(env);
+  for (const candidate of new Set([id, resolved])) {
+    for (const { token } of previous) {
+      const fallback = await fetch(target(candidate), withAuth(token));
+      if (fallback.ok) return { connected: true, response: fallback, token, id: candidate, previous: true };
+    }
+  }
+  return { connected: true, response, token: current, id: resolved };
+}
+
+function migrationKey(env) { return `drive-migration:${env.OWNER_USER_ID}`; }
+
+async function loadMigration(env) {
+  return await env.GOOGLE_OAUTH_STORE.get(migrationKey(env), "json").catch(() => null);
+}
+
+async function saveMigration(env, state) {
+  state.updatedAt = Date.now();
+  await env.GOOGLE_OAUTH_STORE.put(migrationKey(env), JSON.stringify(state));
+}
+
+function publicMigration(state) {
+  if (!state) return null;
+  const items = Array.isArray(state.items) ? state.items : [];
+  const current = state.current && items[state.index] ? items[state.index] : null;
+  const count = kind => items.filter(item => item.state === kind).length;
+  return {
+    status: state.status,
+    from: state.from || null,
+    to: state.to || null,
+    deleteOriginals: state.deleteOriginals !== false,
+    total: items.length,
+    processed: Math.min(items.length, Number(state.index || 0)),
+    moved: count("done"),
+    skipped: count("skipped"),
+    failed: count("failed"),
+    totalBytes: Number(state.totalBytes || 0),
+    movedBytes: Number(state.movedBytes || 0) + Number(state.current?.done || 0),
+    currentName: current?.name || (items[state.index]?.name ?? null),
+    currentDone: Number(state.current?.done || 0),
+    currentSize: Number(state.current?.size || current?.size || 0),
+    errors: items.filter(item => item.state === "failed").slice(-20).map(item => ({ name: item.name, error: item.error })),
+    lastError: state.lastError || null,
+    createdAt: state.createdAt || null,
+    finishedAt: state.finishedAt || null,
+  };
+}
+
+async function listDriveLibraryFiles(env, session) {
+  const items = [];
+  for (let offset = 0; offset < 100000; offset += 1000) {
+    const query = `${env.SUPABASE_URL}/rest/v1/media_files?select=id,file_name,storage_path,size_bytes&storage_path=like.${encodeURIComponent("gdrive://*")}&order=created_at.asc&limit=1000&offset=${offset}`;
+    const response = await fetchWithTimeout(query, { headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: session.authorization } }, 20000);
+    if (!response.ok) throw new Error(`No se pudo leer la biblioteca para la mudanza (Supabase ${response.status}).`);
+    const rows = await response.json();
+    for (const row of rows) {
+      const oldId = googleFileId(row.storage_path);
+      if (oldId) items.push({ id: row.id, name: String(row.file_name || "archivo"), oldId, size: Math.max(0, Number(row.size_bytes) || 0), state: "queued" });
+    }
+    if (rows.length < 1000) break;
+  }
+  return items;
+}
+
+async function startDriveMigration(env, session, options = {}) {
+  const existing = await loadMigration(env);
+  if (existing && ["running", "paused"].includes(existing.status) && !options.restart && Array.isArray(existing.items) && existing.items.length) {
+    existing.status = "running";
+    if (typeof options.deleteOriginals === "boolean") existing.deleteOriginals = options.deleteOriginals;
+    existing.lastError = null;
+    await saveMigration(env, existing);
+    return existing;
+  }
+  const previous = await previousDriveAccounts(env);
+  if (!previous.length) throw new Error("No hay una cuenta de Drive anterior de la que mover archivos. Primero cambiá de cuenta con el botón Drive conectado.");
+  const account = await currentDriveAccount(env);
+  const items = await listDriveLibraryFiles(env, session);
+  const state = {
+    status: items.length ? "running" : "complete",
+    from: previous.map(item => item.email).filter(Boolean).join(", ") || existing?.from || null,
+    to: account?.email || existing?.to || null,
+    deleteOriginals: typeof options.deleteOriginals === "boolean" ? options.deleteOriginals : existing?.deleteOriginals !== false,
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    startedAt: new Date().toISOString(),
+    items,
+    index: 0,
+    current: null,
+    movedBytes: 0,
+    totalBytes: items.reduce((sum, item) => sum + item.size, 0),
+    finishedAt: items.length ? null : new Date().toISOString(),
+  };
+  await saveMigration(env, state);
+  return state;
+}
+
+class MigrationItemError extends Error {
+  constructor(message, retryable = false) { super(message); this.retryable = retryable; }
+}
+
+async function driveMetadata(token, id, budget) {
+  budget.fetches++;
+  const response = await fetchWithTimeout(`${DRIVE_FILES}/${encodeURIComponent(id)}?fields=id,name,size,mimeType,trashed`, { headers: { Authorization: `Bearer ${token}` } }, 20000);
+  if (response.ok) return await response.json().catch(() => null);
+  if ([403, 404].includes(response.status)) return null;
+  if (response.status === 429 || response.status >= 500) throw new MigrationItemError(`Google Drive respondió ${response.status}; se reintentará.`, true);
+  return null;
+}
+
+async function finishMigratedItem(env, session, state, item, newId, ctx) {
+  ctx.budget.fetches++;
+  try { await updateMediaFile(session, env, item.id, `gdrive://${newId}`); }
+  catch (error) {
+    ctx.budget.fetches++;
+    await fetch(`${DRIVE_FILES}/${encodeURIComponent(newId)}`, { method: "DELETE", headers: { Authorization: `Bearer ${ctx.currentToken}` } }).catch(() => {});
+    throw new MigrationItemError(error instanceof Error ? error.message : "La biblioteca no aceptó el cambio.", false);
+  }
+  for (const [oldKey, value] of Object.entries(ctx.aliases)) if (value === item.oldId) ctx.aliases[oldKey] = newId;
+  ctx.aliases[item.oldId] = newId;
+  ctx.aliasesChanged = true;
+  item.newId = newId;
+  item.state = "done";
+  if (state.deleteOriginals !== false && state.current?.source) {
+    const source = ctx.previous.find(entry => entry.account.permissionId === state.current.source);
+    if (source) {
+      ctx.budget.fetches++;
+      const deleted = await fetch(`${DRIVE_FILES}/${encodeURIComponent(item.oldId)}`, { method: "DELETE", headers: { Authorization: `Bearer ${source.token}` } }).catch(() => null);
+      item.originalRemoved = Boolean(deleted && (deleted.ok || deleted.status === 404));
+    }
+  }
+  state.movedBytes = Number(state.movedBytes || 0) + Number(state.current?.size ?? item.size);
+  state.current = null;
+  state.index++;
+}
+
+async function migrateOneUnit(env, session, state, ctx) {
+  const item = state.items[state.index];
+  const { budget } = ctx;
+  if (!state.current) {
+    const alreadyThere = await driveMetadata(ctx.currentToken, item.oldId, budget);
+    if (alreadyThere && !alreadyThere.trashed) {
+      item.state = "skipped"; item.note = "Ya estaba en la cuenta nueva.";
+      state.movedBytes = Number(state.movedBytes || 0) + item.size; state.index++;
+      return;
+    }
+    let source = null, metadata = null;
+    for (const entry of ctx.previous) {
+      metadata = await driveMetadata(entry.token, item.oldId, budget);
+      if (metadata) { source = entry; break; }
+    }
+    if (!source) throw new MigrationItemError("No se encontró en ninguna cuenta de Drive conectada (quizás se borró).", false);
+    if (String(metadata.mimeType || "").startsWith("application/vnd.google-apps.")) throw new MigrationItemError("Es un documento nativo de Google; no se puede copiar entre cuentas.", false);
+    const size = Number(metadata.size ?? item.size);
+    if (!Number.isSafeInteger(size) || size < 0) throw new MigrationItemError("Google Drive no informó un tamaño válido.", false);
+    const contentType = metadata.mimeType || "application/octet-stream";
+    const name = metadata.name || item.name;
+    if (size === 0) {
+      budget.fetches++;
+      const created = await fetch(`${DRIVE_FILES}?fields=id`, { method: "POST", headers: { Authorization: `Bearer ${ctx.currentToken}`, "Content-Type": "application/json; charset=UTF-8" }, body: JSON.stringify({ name, mimeType: contentType }) });
+      const body = await created.json().catch(() => ({}));
+      if (!created.ok || !body.id) throw new MigrationItemError(body.error?.message || `Google Drive devolvió ${created.status}.`, created.status === 429 || created.status >= 500);
+      state.current = { itemId: item.id, size: 0, done: 0, source: source.account.permissionId };
+      await finishMigratedItem(env, session, state, item, body.id, ctx);
+      return;
+    }
+    budget.fetches++;
+    const initiation = await fetchWithTimeout(`${DRIVE_UPLOAD}?uploadType=resumable&fields=id,name,size,mimeType`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${ctx.currentToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": contentType, "X-Upload-Content-Length": String(size) },
+      body: JSON.stringify({ name, mimeType: contentType }),
+    }, 20000);
+    const uploadUrl = initiation.headers.get("Location");
+    if (!initiation.ok || !uploadUrl) throw new MigrationItemError(`La cuenta nueva de Drive no pudo preparar la copia (${initiation.status}).`, initiation.status === 429 || initiation.status >= 500);
+    state.current = { itemId: item.id, uploadUrl, size, done: 0, contentType, source: source.account.permissionId };
+  }
+  const current = state.current;
+  const source = ctx.previous.find(entry => entry.account.permissionId === current.source);
+  if (!source) throw new MigrationItemError("La cuenta anterior de Drive ya no está disponible para leer este archivo.", false);
+  if (current.resync) {
+    // A previous fragment was interrupted: ask Drive how many bytes it kept.
+    budget.fetches++;
+    const probe = await fetch(current.uploadUrl, { method: "PUT", headers: { Authorization: `Bearer ${ctx.currentToken}`, "Content-Length": "0", "Content-Range": `bytes */${current.size}` } });
+    if (probe.status === 200 || probe.status === 201) {
+      const body = await probe.json().catch(() => ({}));
+      if (!body.id) throw new MigrationItemError("La cuenta nueva no confirmó la copia.", true);
+      current.done = current.size;
+      await finishMigratedItem(env, session, state, item, body.id, ctx);
+      return;
+    }
+    if (probe.status === 404 || probe.status === 410) { state.current = null; throw new MigrationItemError("La sesión de copia venció; se reinicia este archivo.", true); }
+    if (probe.status !== 308) throw new MigrationItemError(`Google Drive respondió ${probe.status} al retomar la copia.`, true);
+    const lastByte = probe.headers.get("Range")?.match(/bytes=0-(\d+)/)?.[1];
+    current.done = lastByte ? Math.min(current.size, Number(lastByte) + 1) : 0;
+    current.resync = false;
+  }
+  const length = Math.min(MIGRATION_CHUNK_BYTES, current.size - current.done);
+  const end = current.done + length - 1;
+  budget.fetches++;
+  const download = await fetch(`${DRIVE_FILES}/${encodeURIComponent(item.oldId)}?alt=media`, { headers: { Authorization: `Bearer ${source.token}`, Range: `bytes=${current.done}-${end}` } });
+  const fullBody = download.status === 200 && current.done === 0 && length === current.size;
+  if ((download.status !== 206 && !fullBody) || !download.body) throw new MigrationItemError(`La cuenta anterior no entregó el archivo (${download.status}).`, download.status === 429 || download.status >= 500);
+  const fixed = new FixedLengthStream(length);
+  const piping = download.body.pipeTo(fixed.writable).catch(() => {});
+  budget.fetches++;
+  let uploaded;
+  try {
+    uploaded = await fetch(current.uploadUrl, { method: "PUT", headers: { Authorization: `Bearer ${ctx.currentToken}`, "Content-Type": current.contentType, "Content-Length": String(length), "Content-Range": `bytes ${current.done}-${end}/${current.size}` }, body: fixed.readable });
+  } catch {
+    current.resync = true;
+    throw new MigrationItemError("La conexión con Drive se cortó en medio de un fragmento; se reintentará.", true);
+  }
+  await piping;
+  budget.bytes += length;
+  if (uploaded.status === 308) {
+    const lastByte = uploaded.headers.get("Range")?.match(/bytes=0-(\d+)/)?.[1];
+    current.done = lastByte ? Math.min(current.size, Number(lastByte) + 1) : 0;
+    return;
+  }
+  if (uploaded.status === 200 || uploaded.status === 201) {
+    const body = await uploaded.json().catch(() => ({}));
+    if (!body.id || (body.size != null && Number(body.size) !== current.size)) throw new MigrationItemError("La cuenta nueva no confirmó una copia completa.", false);
+    current.done = current.size;
+    await finishMigratedItem(env, session, state, item, body.id, ctx);
+    return;
+  }
+  if (uploaded.status === 404 || uploaded.status === 410) {
+    state.current = null; // the upload session expired; start this file again
+    throw new MigrationItemError("La sesión de copia venció; se reinicia este archivo.", true);
+  }
+  const failure = await uploaded.json().catch(() => ({}));
+  if (uploaded.status === 429 || uploaded.status >= 500) current.resync = true;
+  throw new MigrationItemError(failure.error?.message || `Google Drive devolvió ${uploaded.status} durante la copia.`, uploaded.status === 429 || uploaded.status >= 500);
+}
+
+async function advanceDriveMigration(env, session) {
+  const state = await loadMigration(env);
+  if (!state || state.status !== "running") return state;
+  const ctx = { budget: { fetches: 0, bytes: 0, startedAt: Date.now() }, aliases: await driveAliases(env), aliasesChanged: false, previous: [], currentToken: null };
+  ctx.currentToken = await googleAccessToken(env); ctx.budget.fetches++;
+  if (!ctx.currentToken) throw new Error("Google Drive no está conectado.");
+  ctx.previous = await previousAccessTokens(env); ctx.budget.fetches += Math.max(1, ctx.previous.length);
+  if (!ctx.previous.length) {
+    state.status = "error";
+    state.lastError = "No se pudo abrir la cuenta anterior de Drive. Si revocaste el acceso, volvé a conectar esa cuenta y después la nueva.";
+    await saveMigration(env, state);
+    return state;
+  }
+  state.lastError = null;
+  while (state.index < state.items.length
+    && ctx.budget.fetches < MIGRATION_STEP_FETCHES
+    && ctx.budget.bytes < MIGRATION_STEP_BYTES
+    && Date.now() - ctx.budget.startedAt < MIGRATION_STEP_MS) {
+    const item = state.items[state.index];
+    try { await migrateOneUnit(env, session, state, ctx); }
+    catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo mover el archivo.";
+      item.attempts = Number(item.attempts || 0) + 1;
+      if (error instanceof MigrationItemError && error.retryable && item.attempts < 5) { state.lastError = `${item.name}: ${message}`; break; }
+      item.state = "failed"; item.error = message;
+      state.movedBytes = Number(state.movedBytes || 0) + Number(item.size || 0);
+      state.current = null; state.index++;
+    }
+  }
+  if (state.index >= state.items.length) {
+    state.status = "complete";
+    state.finishedAt = new Date().toISOString();
+    state.current = null;
+  }
+  if (ctx.aliasesChanged) await env.GOOGLE_OAUTH_STORE.put(`drive-aliases:${env.OWNER_USER_ID}`, JSON.stringify(ctx.aliases));
+  await saveMigration(env, state);
+  return state;
+}
+
+async function handleDriveMigrationRoutes(request, env, url) {
+  if (!url.pathname.startsWith("/google/migration/")) return null;
+  const session = await getUser(request, env);
+  if (!session) return json({ error: "La sesión venció. Volvé a iniciar sesión." }, 401);
+  if (!await isOwner(session, env)) return json({ error: "Solo el dueño puede mover los archivos entre cuentas de Drive." }, 403);
+  if (!env.GOOGLE_OAUTH_STORE) return json({ error: "Falta configurar el almacenamiento seguro de Google Drive." }, 503);
+  if (url.pathname === "/google/migration/status" && request.method === "GET") {
+    return json({ migration: publicMigration(await loadMigration(env)), previousAccounts: (await previousDriveAccounts(env)).map(({ email, name, replacedAt }) => ({ email, name, replacedAt })) });
+  }
+  if (url.pathname === "/google/migration/start" && request.method === "POST") {
+    const input = await request.json().catch(() => ({}));
+    const state = await startDriveMigration(env, session, { deleteOriginals: typeof input.deleteOriginals === "boolean" ? input.deleteOriginals : undefined, restart: input.restart === true });
+    return json({ migration: publicMigration(state) });
+  }
+  if (url.pathname === "/google/migration/step" && request.method === "POST") {
+    return json({ migration: publicMigration(await advanceDriveMigration(env, session)) });
+  }
+  if (url.pathname === "/google/migration/pause" && request.method === "POST") {
+    const state = await loadMigration(env);
+    if (state && state.status === "running") { state.status = "paused"; await saveMigration(env, state); }
+    return json({ migration: publicMigration(state) });
+  }
+  return json({ error: "Ruta de mudanza no encontrada." }, 404);
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
     const url = new URL(request.url);
     try {
+      const migrationResponse = await handleDriveMigrationRoutes(request, env, url);
+      if (migrationResponse) return migrationResponse;
+
       if (url.pathname === "/health" && request.method === "GET") {
         return json({ ok: true, storage: Boolean(env.MEDIA_BUCKET), configured: Boolean(env.SUPABASE_URL && env.SUPABASE_PUBLISHABLE_KEY && env.OWNER_USER_ID && env.SHARE_SIGNING_SECRET), googleConfigured: Boolean(env.GOOGLE_CLIENT_SECRET && env.GOOGLE_TOKEN_ENCRYPTION_KEY && env.GOOGLE_OAUTH_STORE) });
       }
@@ -446,8 +837,10 @@ export default {
         const stateBytes = crypto.getRandomValues(new Uint8Array(32));
         const state = bytesToBase64(stateBytes).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
         await env.GOOGLE_OAUTH_STORE.put(`state:${state}`, session.user.id, { expirationTtl: 600 });
+        const connectInput = await request.json().catch(() => ({}));
+        if (connectInput.switchAccount === true) await env.GOOGLE_OAUTH_STORE.put(`drive-switch:${session.user.id}`, JSON.stringify({ deleteOriginals: connectInput.deleteOriginals !== false, requestedAt: Date.now() }), { expirationTtl: 1800 });
         const authorize = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-        authorize.search = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: GOOGLE_REDIRECT_URI, response_type: "code", scope: GOOGLE_SCOPE, access_type: "offline", prompt: "consent", include_granted_scopes: "true", state }).toString();
+        authorize.search = new URLSearchParams({ client_id: env.GOOGLE_CLIENT_ID, redirect_uri: GOOGLE_REDIRECT_URI, response_type: "code", scope: GOOGLE_SCOPE, access_type: "offline", prompt: "select_account consent", include_granted_scopes: "true", state }).toString();
         return json({ url: authorize.toString() });
       }
 
@@ -463,9 +856,36 @@ export default {
         const tokens = await tokenResponse.json().catch(() => ({}));
         if (!tokenResponse.ok || !tokens.access_token) return new Response("Google no pudo completar la conexión. Volvé a intentarlo desde MediaChafa.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
         const existing = await env.GOOGLE_OAUTH_STORE.get(`refresh:${ownerId}`);
+        if (!tokens.refresh_token && !existing) return new Response("Google no entregó un permiso persistente. Revocá la conexión de MediaChafa en tu cuenta de Google y volvé a conectar.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+        const newAccount = await driveAccountInfo(tokens.access_token).catch(() => null);
+        const switchRequest = await env.GOOGLE_OAUTH_STORE.get(`drive-switch:${ownerId}`, "json").catch(() => null);
+        await env.GOOGLE_OAUTH_STORE.delete(`drive-switch:${ownerId}`);
+        let switched = false;
+        let previous = await previousDriveAccounts(env);
+        if (existing && tokens.refresh_token && newAccount) {
+          let oldAccount = await env.GOOGLE_OAUTH_STORE.get(`drive-account:${ownerId}`, "json").catch(() => null);
+          if (!oldAccount) {
+            try { oldAccount = await driveAccountInfo(await googleTokenFromRefresh(env, await decryptGoogleToken(existing, env))); }
+            catch { oldAccount = null; }
+          }
+          if (oldAccount && !sameDriveAccount(oldAccount, newAccount)) {
+            previous = previous.filter(entry => !sameDriveAccount(entry, oldAccount));
+            previous.unshift({ ...oldAccount, refresh: existing, replacedAt: new Date().toISOString() });
+            switched = true;
+          }
+        }
+        if (newAccount) previous = previous.filter(entry => !sameDriveAccount(entry, newAccount));
+        await savePreviousDriveAccounts(env, previous);
         if (tokens.refresh_token) await env.GOOGLE_OAUTH_STORE.put(`refresh:${ownerId}`, await encryptGoogleToken(tokens.refresh_token, env));
-        else if (!existing) return new Response("Google no entregó un permiso persistente. Revocá la conexión de MediaChafa en tu cuenta de Google y volvé a conectar.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-        return Response.redirect("https://mediachafa-transfer.vercel.app/?drive=connected", 302);
+        if (newAccount) await env.GOOGLE_OAUTH_STORE.put(`drive-account:${ownerId}`, JSON.stringify(newAccount));
+        if (switched) {
+          await env.GOOGLE_OAUTH_STORE.put(`drive-migration:${ownerId}`, JSON.stringify({
+            status: "pending", from: previous[0]?.email || null, to: newAccount.email || null,
+            deleteOriginals: switchRequest ? switchRequest.deleteOriginals !== false : true,
+            createdAt: new Date().toISOString(), items: [], index: 0, current: null, movedBytes: 0, totalBytes: 0, updatedAt: Date.now(),
+          }));
+        }
+        return Response.redirect(`https://mediachafa-transfer.vercel.app/?drive=connected${switched ? "&migrate=1" : ""}`, 302);
       }
 
       if (url.pathname === "/google/status" && request.method === "GET") {
@@ -480,7 +900,11 @@ export default {
         let quota = null;
         try { quota = await googleQuota(env, accessToken); }
         catch (error) { console.warn("Google Drive quota lookup failed", error instanceof Error ? error.message : "unknown error"); }
-        return json({ configured: true, connected: true, quota });
+        const owner = await isOwner(session, env);
+        const account = await currentDriveAccount(env, accessToken).catch(() => null);
+        const previousAccounts = owner ? (await previousDriveAccounts(env)).map(({ email, name, replacedAt }) => ({ email, name, replacedAt })) : [];
+        const migration = owner ? publicMigration(await loadMigration(env)) : null;
+        return json({ configured: true, connected: true, quota, account: account ? { email: account.email, name: account.name } : null, previousAccounts, migration });
       }
 
       if (url.pathname === "/transfer" && request.method === "POST") {
@@ -605,9 +1029,9 @@ export default {
         if (!game) return json({ error: "El juego no está disponible públicamente en el catálogo." }, 404);
         const id = googleIdFromPublicUrl(game.download_url);
         if (!id) return json({ error: "El enlace de Drive no contiene un archivo descargable válido." }, 400);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive no está conectado en MediaChafa." }, 503);
-        const metadataResponse = await fetchWithTimeout(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=id,name,mimeType,size&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${accessToken}` } }, 20000);
+        const metadataLookup = await driveFileFetch(env, id, "fields=id,name,mimeType,size&supportsAllDrives=true");
+        if (!metadataLookup.connected) return json({ error: "Google Drive no está conectado en MediaChafa." }, 503);
+        const metadataResponse = metadataLookup.response;
         const metadata = await metadataResponse.json().catch(() => ({}));
         if (!metadataResponse.ok) return json({ error: metadata.error?.message || "MediaChafa no tiene acceso de lectura a ese archivo de Drive. Revisá que el enlace sea de un archivo de tu Drive conectado." }, metadataResponse.status === 404 ? 404 : 502);
         const fileName = String(metadata.name || game.title || "descarga").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").slice(0, 255);
@@ -626,11 +1050,12 @@ export default {
         const signature = url.searchParams.get("signature") || "";
         if (!env.SHARE_SIGNING_SECRET || !/^[A-Za-z0-9_-]{10,200}$/.test(id)) return json({ error: "Este enlace de descarga no es válido." }, 403);
         const game = await findPublicPs4Game(gameId, env);
-        if (!game || googleIdFromPublicUrl(game.download_url) !== id) return json({ error: "El juego ya no está disponible en el catálogo." }, 404);
+        const catalogId = game ? googleIdFromPublicUrl(game.download_url) : null;
+        if (!game || (catalogId !== id && await resolveDriveId(env, catalogId || "") !== await resolveDriveId(env, id))) return json({ error: "El juego ya no está disponible en el catálogo." }, 404);
         if (!safeEqual(await sign(env.SHARE_SIGNING_SECRET, `ps4:${gameId}\n${id}\n${fileName}`), signature)) return json({ error: "Este enlace de descarga no es válido." }, 403);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive no está conectado en MediaChafa." }, 503);
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        const download = await driveFileFetch(env, id, "alt=media&supportsAllDrives=true");
+        if (!download.connected) return json({ error: "Google Drive no está conectado en MediaChafa." }, 503);
+        const response = download.response;
         if (!response.ok || !response.body) return json({ error: response.status === 404 ? "El archivo ya no existe o MediaChafa no tiene acceso de lectura en Drive." : "Google Drive no pudo entregar el archivo." }, response.status === 404 ? 404 : 502);
         const headers = new Headers({ "Content-Type": response.headers.get("Content-Type") || "application/octet-stream", "Cache-Control": "private, no-store", "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}` });
         const length = response.headers.get("Content-Length");
@@ -675,9 +1100,9 @@ export default {
           ? `gdrive:${id}\npermanent\n${mode}\n${fileName}`
           : `gdrive:${id}\n${expires}\n${mode}\n${fileName}`;
         if (!safeEqual(await sign(env.SHARE_SIGNING_SECRET, signedValue), suppliedSignature)) return json({ error: "Este enlace no es válido." }, 403);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive no está conectado." }, 503);
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        const download = await driveFileFetch(env, id, "alt=media");
+        if (!download.connected) return json({ error: "Google Drive no está conectado." }, 503);
+        const response = download.response;
         if (!response.ok || !response.body) return json({ error: response.status === 404 || response.status === 410 ? "El archivo ya no existe en Google Drive." : "Google Drive no pudo entregar el archivo." }, response.status === 404 || response.status === 410 ? 404 : 502);
         const headers = new Headers({ "Content-Type": response.headers.get("Content-Type") || "application/octet-stream", "Cache-Control": "private, no-store", "Content-Disposition": `${mode}; filename*=UTF-8''${encodeURIComponent(fileName)}` });
         for (const [name, value] of Object.entries(corsHeaders)) headers.set(name, value);
@@ -697,9 +1122,9 @@ export default {
         const owner = await isOwner(session, env);
         if (!rows.length) return json({ error: "El archivo no existe en la biblioteca." }, 404);
         if (!owner && rows[0].created_by !== session.user.id) return json({ error: "Solo podés borrar los archivos que subiste." }, 403);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive no está conectado." }, 503);
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}`, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } });
+        const removal = await driveFileFetch(env, id, "", { method: "DELETE" });
+        if (!removal.connected) return json({ error: "Google Drive no está conectado." }, 503);
+        const response = removal.response;
         if (!response.ok && response.status !== 404) return json({ error: "No se pudo eliminar en Google Drive." }, 502);
         return json({ ok: true });
       }
@@ -754,9 +1179,9 @@ export default {
         if (!googleFileId(`gdrive://${id}`)) return json({ error: "Archivo inválido." }, 400);
         const record = await findGoogleFileRecord(id, env, session);
         if (!record) return json({ error: "Archivo no encontrado o no tenés permiso para verlo." }, 404);
-        const accessToken = await googleAccessToken(env);
-        if (!accessToken) return json({ error: "Google Drive no está conectado." }, 503);
-        const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        const download = await driveFileFetch(env, id, "alt=media");
+        if (!download.connected) return json({ error: "Google Drive no está conectado." }, 503);
+        const response = download.response;
         if (!response.ok || !response.body) return json({ error: "Google Drive no pudo entregar el archivo." }, 502);
         const preview = url.searchParams.get("preview") === "1";
         const headers = new Headers({

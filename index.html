@@ -414,10 +414,12 @@ async function loadGoogleDriveStatus() {
         }
         googleDriveAvailable=Boolean(result.connected);
         googleDriveQuota=result.quota||null;
+        googleDriveStatus=result;
         $('#drive-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
         $('#drive-button').disabled=!ownerMode;
         $('#drive-button').textContent=ownerMode?(googleDriveAvailable?'Drive conectado':'Vincular Drive'):(googleDriveAvailable?'Drive compartido conectado':'Drive no conectado');
-        $('#drive-button').title=ownerMode?(googleDriveAvailable?'Google Drive conectado a tu cuenta':'Conectar Google Drive'):(googleDriveAvailable?'Google Drive compartido por la cuenta dueña':'El dueño debe conectar Google Drive');
+        $('#drive-button').title=ownerMode?(googleDriveAvailable?`Google Drive conectado${result.account?.email?` (${result.account.email})`:''} · tocá para cambiar de cuenta`:'Conectar Google Drive'):(googleDriveAvailable?'Google Drive compartido por la cuenta dueña':'El dueño debe conectar Google Drive');
+        updateDriveButtonForMigration();
         const card=$('.storage');
         if((ownerMode||uploaderMode)&&googleDriveQuota){
           const used=Number(googleDriveQuota.usageInDrive||0),totalUsed=Number(googleDriveQuota.usage||used),limit=Number(googleDriveQuota.limit||0),free=Math.max(0,limit-totalUsed);
@@ -435,9 +437,114 @@ async function loadGoogleDriveStatus() {
         $('#drive-remaining-label').textContent=error.message||'No se pudo consultar el espacio de Drive';
       }
     }
+
+    // ---- Cuenta de Google Drive: cambiar de cuenta y mover todos los archivos ----
+    let googleDriveStatus=null,driveMigrationRunning=false;
+    async function driveApi(path,method='GET',body){
+      const {data:{session}}=await client.auth.getSession();
+      for(let attempt=0;;attempt++){
+        try{
+          const response=await fetch(`${R2_WORKER_URL}${path}`,{method,headers:{Authorization:`Bearer ${session?.access_token||''}`,'Content-Type':'application/json','Cache-Control':'no-cache'},body:body?JSON.stringify(body):undefined});
+          const result=await response.json().catch(()=>({}));
+          if(response.status>=500&&attempt<4){await new Promise(resolve=>setTimeout(resolve,800*Math.pow(2,attempt)));continue;}
+          if(!response.ok)throw new Error(result.error||`Error ${response.status}`);
+          return result;
+        }catch(error){if(attempt>=4||!(error instanceof TypeError))throw error;await new Promise(resolve=>setTimeout(resolve,800*Math.pow(2,attempt)));}
+      }
+    }
+    function driveMigrationPending(migration){return Boolean(migration&&['pending','running','paused','error'].includes(migration.status));}
+    function driveMigrationPercent(migration){if(!migration)return 0;if(migration.totalBytes>0)return Math.min(100,Math.floor(migration.movedBytes/migration.totalBytes*100));return migration.total?Math.floor(migration.processed/migration.total*100):0;}
+    function updateDriveButtonForMigration(){
+      const migration=googleDriveStatus?.migration;
+      if(!ownerMode||!googleDriveAvailable)return;
+      if(driveMigrationPending(migration)){$('#drive-button').textContent=migration.status==='pending'?'Drive: mover archivos':`Drive: moviendo ${driveMigrationPercent(migration)}%`;$('#drive-button').title='Hay archivos por mover a la nueva cuenta de Drive';}
+      else $('#drive-button').textContent='Drive conectado';
+    }
+    async function switchDriveAccount({deleteOriginals=true}={}){
+      if(!ownerMode)throw new Error('Solo el dueño puede cambiar la cuenta de Google Drive.');
+      const result=await driveApi('/google/connect','POST',{switchAccount:true,deleteOriginals:deleteOriginals!==false});
+      window.location.assign(result.url);
+    }
+    function openDrivePanel(){
+      const status=googleDriveStatus||{},account=status.account,migration=status.migration,previous=status.previousAccounts||[];
+      const pending=driveMigrationPending(migration);
+      const pendingNote=pending?`<div class="notice" style="margin-top:12px">Hay una mudanza ${migration.status==='paused'?'en pausa':'sin terminar'}: ${migration.total?`${migration.processed} de ${migration.total} archivos · ${driveMigrationPercent(migration)}%`:'todavía no empezó'}.</div>`:'';
+      const previousNote=previous.length?`<p class="sub" style="margin-top:10px">Cuenta anterior: ${previous.map(item=>esc(item.email||item.name||'sin nombre')).join(', ')}</p>`:'';
+      modal('Google Drive',`<p class="sub">Cuenta conectada: <strong>${esc(account?.email||'cuenta de Google')}</strong>${account?.name?` · ${esc(account.name)}`:''}</p>${previousNote}${pendingNote}
+        <div class="notice" style="margin-top:12px">Al cambiar de cuenta, Google te deja elegir la cuenta nueva. Después MediaChafa mueve todos los archivos de <strong>Archivos</strong> que están en Drive a esa cuenta y los deja igual que antes: mismos nombres, carpetas y enlaces compartidos. Vas a ver una barra con el avance; puede tardar unos minutos.</div>
+        <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:12px"><input type="checkbox" id="drive-delete-originals" checked> <span>Borrar cada original de la cuenta anterior cuando su copia quede confirmada (libera espacio).</span></label>
+        ${pending?'<button class="secondary" id="drive-resume-migration" type="button" style="margin-top:12px;width:100%">Continuar moviendo archivos</button>':''}`,'Cambiar de cuenta de Drive',async root=>{
+        const button=root.querySelector('.submit');button.disabled=true;button.textContent='Abriendo Google…';
+        try{await switchDriveAccount({deleteOriginals:root.querySelector('#drive-delete-originals').checked});}
+        catch(error){button.disabled=false;button.textContent='Cambiar de cuenta de Drive';toast(error.message||'No se pudo abrir Google.');}
+      });
+      const resume=$('#modal-root').querySelector('#drive-resume-migration');
+      if(resume)resume.onclick=()=>runDriveMigration({deleteOriginals:$('#modal-root').querySelector('#drive-delete-originals').checked});
+    }
+    async function runDriveMigration({deleteOriginals,restart=false}={}){
+      if(!ownerMode)throw new Error('Solo el dueño puede mover los archivos de Drive.');
+      if(driveMigrationRunning){toast('La mudanza de Drive ya está en marcha.');return googleDriveStatus?.migration||null;}
+      driveMigrationRunning=true;
+      modal('Moviendo archivos a la nueva cuenta de Drive',`<p class="sub" id="drive-mig-accounts">Preparando…</p>
+        <div style="margin-top:14px"><div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;margin-bottom:7px"><strong id="drive-mig-label">Leyendo la biblioteca…</strong><span id="drive-mig-percent">0%</span></div><div class="bar"><div class="bar-fill" id="drive-mig-bar" style="width:0%"></div></div>
+        <p class="sub" id="drive-mig-stats" style="margin-top:8px">0 de 0 archivos</p>
+        <p class="sub" id="drive-mig-file" style="margin-top:4px"></p></div>
+        <div class="notice hidden" id="drive-mig-errors" style="margin-top:12px"></div>`,'Cerrar',root=>root.replaceChildren());
+      const root=$('#modal-root'),dialog=root.querySelector('.modal'),backdrop=root.querySelector('.modal-backdrop'),closeButton=root.querySelector('.submit'),pauseButton=root.querySelector('.cancel');
+      const show=selector=>root.querySelector('.modal')===dialog?dialog.querySelector(selector):null;
+      let paused=false,lastBytes=0,lastTime=performance.now(),speed=0;
+      backdrop.dataset.locked='true';root.querySelector('.close').disabled=true;closeButton.disabled=true;pauseButton.textContent='Pausar';
+      pauseButton.onclick=async()=>{paused=true;pauseButton.disabled=true;pauseButton.textContent='Pausando…';};
+      const render=migration=>{
+        googleDriveStatus={...(googleDriveStatus||{}),migration};updateDriveButtonForMigration();
+        if(!migration||!show('#drive-mig-bar'))return;
+        const percent=driveMigrationPercent(migration),now=performance.now(),seconds=Math.max(.1,(now-lastTime)/1000);
+        if(migration.movedBytes>lastBytes){speed=speed?speed*.6+(migration.movedBytes-lastBytes)/seconds*.4:(migration.movedBytes-lastBytes)/seconds;}
+        lastBytes=migration.movedBytes;lastTime=now;
+        const remaining=speed>0?Math.max(0,(migration.totalBytes-migration.movedBytes)/speed):0;
+        const eta=remaining>0?(remaining>90?` · quedan ~${Math.ceil(remaining/60)} min`:` · quedan ~${Math.ceil(remaining)} s`):'';
+        show('#drive-mig-accounts').innerHTML=`De <strong>${esc(migration.from||'la cuenta anterior')}</strong> a <strong>${esc(migration.to||'la cuenta nueva')}</strong>${migration.deleteOriginals?' · los originales se borran al confirmar cada copia':' · los originales se conservan'}`;
+        show('#drive-mig-bar').style.width=`${percent}%`;show('#drive-mig-percent').textContent=`${percent}%`;
+        show('#drive-mig-stats').textContent=`${Math.min(migration.total,migration.processed+(migration.status==='complete'?0:1))} de ${migration.total} archivos · ${formatBytes(migration.movedBytes)} de ${formatBytes(migration.totalBytes)}${speed>0&&migration.status==='running'?` · ${(speed/1024/1024).toFixed(1)} MB/s${eta}`:''}`;
+        show('#drive-mig-file').textContent=migration.status==='running'&&migration.currentName?`Ahora: ${migration.currentName}${migration.currentSize?` (${Math.floor(migration.currentDone/migration.currentSize*100)}%)`:''}`:'';
+        show('#drive-mig-label').textContent=migration.status==='complete'?'Mudanza terminada':migration.status==='paused'?'En pausa':migration.lastError?`Reintentando: ${migration.lastError}`:'Moviendo archivos…';
+        const errors=show('#drive-mig-errors');
+        if(errors){errors.classList.toggle('hidden',!migration.failed);errors.innerHTML=migration.failed?`<strong>${migration.failed} archivo(s) no se pudieron mover:</strong><br>${migration.errors.map(item=>`${esc(item.name)}: ${esc(item.error||'error')}`).join('<br>')}`:'';}
+      };
+      let migration=null;
+      try{
+        migration=(await driveApi('/google/migration/start','POST',{...(typeof deleteOriginals==='boolean'?{deleteOriginals}:{}),restart})).migration;render(migration);
+        while(migration&&migration.status==='running'){
+          if(paused){migration=(await driveApi('/google/migration/pause','POST')).migration;break;}
+          migration=(await driveApi('/google/migration/step','POST')).migration;render(migration);
+          if(migration?.lastError)await new Promise(resolve=>setTimeout(resolve,1500));
+        }
+        render(migration);
+        if(migration?.status==='complete'){
+          toast(`Listo: ${migration.moved} archivo(s) movidos${migration.skipped?`, ${migration.skipped} ya estaban`:''}${migration.failed?`, ${migration.failed} con error`:''}.`);
+          await loadLibrary();
+        } else if(migration?.status==='paused')toast('Mudanza en pausa. Tocá el botón de Drive para continuar.');
+        else if(migration?.status==='error')toast(migration.lastError||'La mudanza se detuvo.');
+      }catch(error){
+        const label=show('#drive-mig-label');if(label)label.textContent='Mudanza detenida';
+        toast(error.message==='Failed to fetch'?'Se perdió la conexión. Tocá el botón de Drive para continuar; lo ya movido queda guardado.':error.message||'No se pudo mover los archivos.');
+      }finally{
+        driveMigrationRunning=false;
+        if(root.querySelector('.modal')===dialog){backdrop.dataset.locked='false';root.querySelector('.close').disabled=false;closeButton.disabled=false;pauseButton.classList.add('hidden');}
+        await loadGoogleDriveStatus().catch(()=>{});
+      }
+      return migration;
+    }
+    // Lo usa la IA de Beta (con tu aprobación) para cambiar de cuenta o mover los archivos.
+    window.MediaChafaDrive={
+      status:()=>googleDriveStatus,
+      openPanel:openDrivePanel,
+      switchAccount:switchDriveAccount,
+      startMigration:runDriveMigration,
+    };
     $('#drive-button').onclick=async()=>{
       if(!ownerMode){toast(googleDriveAvailable?'Google Drive está conectado por el dueño.':'El dueño debe conectar Google Drive desde su cuenta.');return;}
-      if(googleDriveAvailable){toast('Google Drive ya está conectado.');return;}
+      if(googleDriveAvailable){if(driveMigrationRunning){toast('La mudanza de Drive está en marcha.');return;}openDrivePanel();return;}
       const {data:{session}}=await client.auth.getSession();
       const response=await fetch(`${R2_WORKER_URL}/google/connect`,{method:'POST',headers:{Authorization:`Bearer ${session?.access_token||''}`}});
       const result=await response.json().catch(()=>({}));
@@ -537,8 +644,12 @@ async function loadGoogleDriveStatus() {
       $('#drive-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
       if(!guestOnly) await loadGoogleDriveStatus();
       if(new URLSearchParams(location.search).get('drive')==='connected'){
-        toast('Google Drive quedó conectado.');
+        const startMove=new URLSearchParams(location.search).get('migrate')==='1';
         history.replaceState(null,'',location.pathname+location.hash);
+        if(startMove&&ownerMode){toast(`Drive cambiado a ${googleDriveStatus?.account?.email||'la cuenta nueva'}. Moviendo tus archivos…`);setTimeout(()=>runDriveMigration().catch(error=>toast(error.message)),300);}
+        else toast('Google Drive quedó conectado.');
+      } else if(ownerMode&&driveMigrationPending(googleDriveStatus?.migration)){
+        toast('Hay archivos por mover a tu nueva cuenta de Drive. Tocá el botón de Drive para continuar.');
       }
       const capacity = getCapacity();
       $('#r2-capacity-label').textContent = formatBytes(capacity);
