@@ -379,6 +379,26 @@ function json(data, status, origin) {
   });
 }
 
+function providerErrorDetail(responseData) {
+  const upstream = responseData?.error;
+  const raw = upstream?.metadata?.raw || upstream?.metadata?.provider_error || "";
+  let nested = "";
+  if (typeof raw === "string" && raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      nested = parsed?.error?.message || parsed?.message || parsed?.detail || "";
+    } catch { nested = raw; }
+  }
+  const message = typeof upstream === "string" ? upstream : upstream?.message;
+  const code = upstream?.code;
+  const detail = String(nested || message || responseData?.message || "").trim();
+  const parts = [];
+  if (code) parts.push(`código ${String(code).slice(0, 60)}`);
+  if (detail && !/^provider returned error$/i.test(detail)) parts.push(detail);
+  else if (nested && nested !== detail) parts.push(nested);
+  return parts.join(" · ").slice(0, 420);
+}
+
 function base64(bytes) {
   let binary = "";
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -845,7 +865,11 @@ export default {
         responseData = await result.json().catch(() => ({}));
         if (result.ok) rawAnswer = (responseData?.candidates?.[0]?.content?.parts || []).map((part) => part.text || "").join("\n");
       }
-      if (!result.ok) throw new Error(String(responseData.error?.message || responseData.message || `${modelProvider} respondió HTTP ${result.status}. No se probaron modelos pagos ni otros proveedores automáticamente.`).slice(0, 500));
+      if (!result.ok) {
+        const detail = providerErrorDetail(responseData);
+        const reason = result.status === 429 ? "Se alcanzó un límite temporal o la cuota gratuita." : detail || "El proveedor no explicó el motivo.";
+        throw new Error(`${modelProvider} respondió HTTP ${result.status}: ${reason} No se probó un modelo pago ni se cambió de proveedor.`.slice(0, 500));
+      }
       if (!rawAnswer) throw new Error("El modelo no devolvió una respuesta.");
       const plan = extractPlan(rawAnswer);
       let proposals = [];
