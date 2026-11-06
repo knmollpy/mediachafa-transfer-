@@ -320,6 +320,53 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 `; document.head.append(betaViewportStyle); const betaApp=$('#app'); if(betaApp){const syncBetaViewport=()=>{const active=betaApp.classList.contains('beta-mode');document.documentElement.classList.toggle('beta-fullscreen',active);if(active&&window.scrollY)window.scrollTo(0,0)};new MutationObserver(syncBetaViewport).observe(betaApp,{attributes:true,attributeFilter:['class']});syncBetaViewport()} const projectMapStyle = document.createElement('style'); projectMapStyle.textContent = `#beta-panel .beta-private-map{width:min(1040px,100%);margin:0 auto 18px;background:linear-gradient(135deg,#1a1111,#101010);border-color:#562626}#beta-panel .beta-map-details{margin-top:12px;border-top:1px solid #3b2424;padding-top:10px;color:#f5eaea}#beta-panel .beta-map-details summary{cursor:pointer;color:#ffb4b4;font-size:12px}#beta-panel .beta-map-details pre{max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border:1px solid #382323;border-radius:10px;background:#0b0b0b;color:#ddd;font:11px/1.5 ui-monospace,monospace}`;
   document.head.append(projectMapStyle);
 
+  const betaCleanStyle = document.createElement('style');
+  betaCleanStyle.textContent = `
+#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{grid-template-columns:240px minmax(0,1fr) minmax(320px,380px);grid-template-rows:auto minmax(0,1fr);gap:0;background:#171717;border-radius:16px;border:1px solid rgba(255,255,255,.06)}
+#app.beta-mode #beta-panel .beta-sidebar{background:#121212;border-right:1px solid rgba(255,255,255,.06);padding:14px 10px;gap:6px;border-radius:16px 0 0 16px}
+#app.beta-mode #beta-panel .beta-sidebar #beta-clear{background:transparent;border:1px solid rgba(255,255,255,.12);font-size:13px}
+#app.beta-mode #beta-panel .beta-sidebar #beta-clear:hover{background:#242424}
+#app.beta-mode #beta-panel .beta-nav button{font-size:14px;color:#cfcfcf}
+#app.beta-mode #beta-panel .beta-nav button.active{background:#262626;color:#fff;box-shadow:inset 3px 0 0 #e0353b}
+#app.beta-mode #beta-panel .beta-sidebar-section{font-size:11px;color:#8a8a8a;margin-top:18px}
+#app.beta-mode #beta-panel .beta-sidebar-recent{background:#222;font-size:13px}
+#app.beta-mode #beta-panel .beta-header{grid-column:2/4;padding:10px 18px;border-bottom:1px solid rgba(255,255,255,.06);justify-content:center;background:#171717}
+#app.beta-mode #beta-panel .beta-model-control{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 10px;width:min(720px,100%);max-width:720px;min-width:0}
+#app.beta-mode #beta-panel #beta-model-select{grid-column:1;background:#212121;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:9px 12px;font-size:13px}
+#app.beta-mode #beta-panel .beta-model-probe{grid-column:2;grid-row:1;align-self:center;background:#212121;border-color:rgba(255,255,255,.14);padding:8px 12px;font-size:11px}
+#app.beta-mode #beta-panel .beta-model-health,#app.beta-mode #beta-panel .beta-model-count{grid-column:1/-1;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app.beta-mode #beta-panel #beta-chat-view.active{border-right:1px solid rgba(255,255,255,.06);padding:0}
+#app.beta-mode #beta-panel .beta-chat-stage{width:100%;padding:0 0 14px}
+#app.beta-mode #beta-panel .beta-messages{width:100%;max-width:none;padding:24px max(18px,calc((100% - 760px)/2)) 24px;gap:22px;scrollbar-width:thin;scrollbar-color:#3a3a3a transparent}
+#app.beta-mode #beta-panel .beta-chat-stage form,#app.beta-mode #beta-panel .beta-status-row,#app.beta-mode #beta-panel .beta-count,#app.beta-mode #beta-panel .beta-status{width:min(760px,calc(100% - 36px));margin-left:auto;margin-right:auto}
+#app.beta-mode #beta-panel .beta-prompt-title{font-size:28px;font-weight:600;color:#f2f2f2}
+#app.beta-mode #beta-panel .beta-message{position:relative;max-width:100%;padding:0;background:transparent!important;border:0!important;color:#ececec;font-size:15px;line-height:1.7}
+#app.beta-mode #beta-panel .beta-message strong{color:#9a9a9a!important;font-size:12px;font-weight:600;margin-bottom:6px}
+#app.beta-mode #beta-panel .beta-message.assistant{padding-right:70px}
+#app.beta-mode #beta-panel .beta-message.user{max-width:min(78%,600px);padding:11px 16px;background:#2f2f2f!important;border-radius:20px;color:#fff}
+#app.beta-mode #beta-panel .beta-message.user strong{display:none}
+#app.beta-mode #beta-panel .beta-message.failed{outline:1px solid #8a2a2a}
+#app.beta-mode #beta-panel .beta-message-model{color:#7d7d7d;font-size:11px}
+#app.beta-mode #beta-panel .beta-copy-btn{position:absolute;top:0;right:0;padding:4px 10px;font-size:11px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#212121;color:#d8d8d8;cursor:pointer;opacity:.7;transition:opacity .15s,background .15s}
+#app.beta-mode #beta-panel .beta-copy-btn:hover{opacity:1;background:#2c2c2c}
+#app.beta-mode #beta-panel .beta-proposal{margin-top:14px;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:#1f1f1f;white-space:normal;transition:opacity .25s,transform .25s}
+#app.beta-mode #beta-panel .beta-proposal pre{max-height:220px;overflow:auto;background:#141414;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;font-size:12px;color:#ddd}
+#app.beta-mode #beta-panel .beta-proposal small{display:block;color:#8f8f8f;margin:8px 0}
+#app.beta-mode #beta-panel .beta-proposal-controls{display:flex;gap:8px}
+#app.beta-mode #beta-panel .beta-proposal-leaving{opacity:0;transform:translateY(-6px)}
+#app.beta-mode #beta-panel .beta-composer{background:#262626!important;border:1px solid rgba(255,255,255,.1)!important;border-radius:24px;box-shadow:0 8px 28px rgba(0,0,0,.35)}
+#app.beta-mode #beta-panel .beta-compose textarea{min-height:48px;font-size:15px}
+#app.beta-mode #beta-panel .beta-tools label{background:transparent;border:1px solid rgba(255,255,255,.12);color:#cfcfcf}
+#app.beta-mode #beta-panel #beta-send{width:38px;height:38px;border-radius:50%;padding:0}
+#app.beta-mode #beta-panel .beta-count{color:#7a7a7a;text-align:center}
+#app.beta-mode #beta-panel .beta-status-row{justify-content:center!important}
+#app.beta-mode #beta-panel #beta-browser-view.active{padding:0 14px;background:#141414;border-radius:0 0 16px 0;overflow:auto}
+#app.beta-mode #beta-panel .beta-activity,#app.beta-mode #beta-panel .beta-work-preview{background:#1b1b1b!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:14px}
+@media(max-width:1100px){#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{grid-template-columns:200px minmax(0,1fr) 300px}}
+@media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:flex;flex-direction:column;overflow:auto}#app.beta-mode #beta-panel .beta-sidebar{border-right:0;border-bottom:1px solid rgba(255,255,255,.06);border-radius:16px 16px 0 0}#app.beta-mode #beta-panel .beta-message.assistant{padding-right:0;padding-top:26px}#app.beta-mode #beta-panel .beta-model-control{grid-template-columns:1fr}#app.beta-mode #beta-panel .beta-model-probe{grid-column:1;grid-row:auto}}
+`;
+  document.head.append(betaCleanStyle);
+
   function activity(message, state = 'active') {
     if (!activityList) return;
     if (state === 'active') activityItems = activityItems.map(item => item.state === 'active' ? { ...item, state: 'done' } : item);
@@ -365,14 +412,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     body.textContent = content;
     article.append(heading, body);
     if (role === 'assistant') {
-      article.style.position = 'relative';
       const copyBtn = document.createElement('button');
       copyBtn.type = 'button';
       copyBtn.className = 'beta-copy-btn';
       copyBtn.title = 'Copiar mensaje';
       copyBtn.setAttribute('aria-label', 'Copiar mensaje');
       copyBtn.textContent = 'Copiar';
-      copyBtn.style.cssText = 'position:absolute;top:8px;right:8px;padding:3px 9px;font-size:11px;border-radius:8px;border:1px solid #4a2a2a;background:#1a1111;color:#f5eaea;cursor:pointer;opacity:.85';
       copyBtn.addEventListener('click', async () => {
         const text = body.textContent || '';
         try {
@@ -398,6 +443,14 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     messagesNode.scrollTop = messagesNode.scrollHeight;
     stage.classList.add('has-messages');
     return article;
+  }
+
+  function resolveProposal(actionId, card) {
+    for (const item of history) {
+      if (Array.isArray(item.proposals)) item.proposals = item.proposals.filter(p => p.id !== actionId);
+    }
+    saveHistory();
+    setTimeout(() => { card.classList.add('beta-proposal-leaving'); setTimeout(() => card.remove(), 260); }, 1400);
   }
 
   function renderProposals(messageNode, proposals, expiresInSeconds = 600) {
@@ -478,11 +531,15 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           if (data.url) result.append(' ', link);
           activity(`${proposal.provider}: ${data.message || 'Cambio aplicado.'}`, 'done');
           showWorkPreview(data.message || 'Cambio aplicado.', 'done', `${proposal.provider} · ${proposal.type.replaceAll('_', ' ')}`, data.url || '');
-          addMessage('assistant', `${data.message || 'Cambio aplicado.'}${data.url ? `\n${data.url}` : ''}`);
+          const doneText = `${data.message || 'Cambio aplicado.'}${data.url ? `\n${data.url}` : ''}`;
+          addMessage('assistant', doneText);
+          history.push({ role: 'assistant', content: doneText });
+          resolveProposal(proposal.id, card);
         } catch (error) {
           result.textContent = error.message;
           result.dataset.state = 'error';
           approve.disabled = false;
+          if (/venci|expir|no existe|not found|ya fue|already/i.test(error.message || '')) resolveProposal(proposal.id, card);
           activity(`La acción en ${proposal.provider} no se completó: ${error.message}`, 'error');
           showWorkPreview(error.message, 'error', `${proposal.provider} · ${proposal.type.replaceAll('_', ' ')}`);
         }
@@ -493,6 +550,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           const data = await api(`/actions/${encodeURIComponent(proposal.id)}/reject`, { method: 'POST', body: '{}' });
           result.textContent = data.message || 'Cambio denegado.';
           activity(`${proposal.provider}: propuesta denegada.`, 'done');
+          resolveProposal(proposal.id, card);
         } catch (error) {
           result.textContent = error.message;
           result.dataset.state = 'error';
