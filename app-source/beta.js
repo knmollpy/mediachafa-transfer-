@@ -71,6 +71,34 @@
     card.append(title, description, tokenInput, actions, connection); connectorGrid.append(card);
   }
 
+  // GitHub Pages reutiliza la conexión de GitHub: no pide otro token.
+  const pagesStyle = document.createElement('style');
+  pagesStyle.textContent = `#beta-panel .beta-pages-card select{width:100%;margin:9px 0;padding:11px 13px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:#141414;color:#f2f2f2}#beta-panel .beta-pages-form{display:grid;grid-template-columns:minmax(0,1fr) 120px;gap:0 8px}#beta-panel .beta-pages-form select:first-child{grid-column:1/-1}#beta-panel .beta-pages-sites{list-style:none;margin:8px 0;padding:0;display:grid;gap:6px;font-size:12px}#beta-panel .beta-pages-sites li{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 10px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:#141414;color:#ddd}#beta-panel .beta-pages-sites a{color:#ff9d9d;overflow-wrap:anywhere}#beta-panel .beta-pages-sites small{color:#9a8a8a}#beta-panel .beta-pages-sites button{margin-left:auto;padding:4px 10px;font-size:11px}`;
+  document.head.append(pagesStyle);
+  const pagesCard = document.createElement('article');
+  pagesCard.className = 'beta-connector beta-pages-card';
+  pagesCard.id = 'beta-pages-card';
+  {
+    const title = document.createElement('h3'); title.textContent = 'GitHub Pages';
+    const description = document.createElement('p');
+    description.textContent = 'Usa tu conexión de GitHub, no hace falta otro token. Publicá cualquier repositorio de knmollpy como sitio web gratis. El token de GitHub necesita Pages: Read and write y Administration: Read and write (fine-grained) o el alcance repo (classic). Cada publicación pide tu confirmación.';
+    const sites = document.createElement('ul'); sites.className = 'beta-pages-sites'; sites.id = 'beta-pages-sites';
+    const formRow = document.createElement('div'); formRow.className = 'beta-pages-form';
+    const repoSelect = document.createElement('select'); repoSelect.id = 'beta-pages-repo'; repoSelect.setAttribute('aria-label', 'Repositorio para GitHub Pages');
+    const branchInput = document.createElement('input'); branchInput.id = 'beta-pages-branch'; branchInput.type = 'text'; branchInput.placeholder = 'Rama (ej. main)'; branchInput.autocomplete = 'off'; branchInput.spellcheck = false; branchInput.setAttribute('aria-label', 'Rama a publicar');
+    const folderSelect = document.createElement('select'); folderSelect.id = 'beta-pages-folder'; folderSelect.setAttribute('aria-label', 'Carpeta a publicar');
+    for (const value of ['/', '/docs']) { const option = document.createElement('option'); option.value = value; option.textContent = value === '/' ? '/ (raíz)' : '/docs'; folderSelect.append(option); }
+    formRow.append(repoSelect, branchInput, folderSelect);
+    const actions = document.createElement('div'); actions.className = 'beta-actions';
+    const publish = document.createElement('button'); publish.className = 'add-btn'; publish.type = 'button'; publish.id = 'beta-pages-publish'; publish.textContent = 'Publicar con Pages';
+    const refresh = document.createElement('button'); refresh.className = 'secondary'; refresh.type = 'button'; refresh.id = 'beta-pages-refresh'; refresh.textContent = 'Actualizar';
+    actions.append(publish, refresh);
+    const connection = document.createElement('span'); connection.className = 'beta-connection-status'; connection.id = 'beta-connection-pages'; connection.setAttribute('role', 'status'); connection.textContent = 'Conectá GitHub para ver tus sitios.';
+    pagesCard.append(title, description, sites, formRow, actions, connection);
+    const cloudflareCard = $('#beta-connection-cloudflare')?.closest('article');
+    if (cloudflareCard) cloudflareCard.after(pagesCard); else if (connectorGrid) connectorGrid.append(pagesCard);
+  }
+
   // IAs sin cuenta: no hay nada que conectar; la tarjeta solo informa límites y uso de hoy.
   const keylessProviderInfo = {
     ovh: { title: 'OVHcloud AI Endpoints', detail: 'GPT-OSS 120B, Qwen 3.5 397B, Llama 3.3 70B, Mistral y más. Límite del proveedor: 2 por minuto por modelo. Tope de Beta: 200 por día por modelo.' },
@@ -1015,6 +1043,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       if (resources.cloudflare) details.push(`Cloudflare: ${resources.cloudflare.length} Workers disponibles`);
       $('#beta-resource-summary').textContent = details.join(' · ') || 'Conectá un servicio para que Beta pueda consultar sus recursos.';
       await loadPrivateProjectMap(false);
+      await loadGithubPages(Boolean(data.integrations?.github?.connected));
     } catch (error) {
       for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter', 'groq', 'cohere', 'gemini']) { const node = $(`#beta-connection-${provider}`); if (node) node.textContent = error.message; }
     }
@@ -1059,6 +1088,83 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       statusNode.dataset.state = 'error';
     }
   }
+  let pagesRepositories = [];
+  function setPagesStatus(message, state = 'idle') {
+    const node = $('#beta-connection-pages'); if (!node) return;
+    node.textContent = message; node.dataset.state = state;
+  }
+  async function loadGithubPages(githubConnected = true) {
+    const list = $('#beta-pages-sites'); const repoSelect = $('#beta-pages-repo');
+    if (!list || !repoSelect) return;
+    if (!githubConnected) { list.replaceChildren(); repoSelect.replaceChildren(); setPagesStatus('Conectá GitHub arriba para usar GitHub Pages.'); return; }
+    setPagesStatus('Consultando tus sitios de GitHub Pages…');
+    try {
+      const data = await api('/integrations/pages');
+      if (!data.connected) { setPagesStatus('Conectá GitHub arriba para usar GitHub Pages.'); return; }
+      pagesRepositories = data.repositories || [];
+      const previous = repoSelect.value;
+      repoSelect.replaceChildren(...pagesRepositories.map((repo) => {
+        const option = document.createElement('option'); option.value = repo.name;
+        option.textContent = `${repo.name}${repo.private ? ' · privado' : ''}${repo.hasPages ? ' · ya publicado' : ''}`;
+        return option;
+      }));
+      if (previous && pagesRepositories.some((repo) => repo.name === previous)) repoSelect.value = previous;
+      syncPagesBranch();
+      list.replaceChildren(...(data.sites || []).map((site) => {
+        const item = document.createElement('li');
+        const name = document.createElement('strong'); name.textContent = site.repository.replace(/^knmollpy\//, '');
+        item.append(name);
+        if (site.url) { const link = document.createElement('a'); link.href = site.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = site.url; item.append(link); }
+        const meta = document.createElement('small');
+        meta.textContent = site.error ? site.error : [site.status ? `estado: ${site.status}` : '', site.branch ? `rama ${site.branch}${site.folder ? ` ${site.folder}` : ''}` : '', site.buildType === 'workflow' ? 'con GitHub Actions' : ''].filter(Boolean).join(' · ');
+        item.append(meta);
+        if (!site.error) {
+          const rebuild = document.createElement('button'); rebuild.type = 'button'; rebuild.className = 'secondary'; rebuild.textContent = 'Volver a publicar';
+          rebuild.addEventListener('click', () => runPagesAction({ provider: 'github', type: 'pages_build', repository: site.repository }, `¿Volver a publicar el sitio de ${site.repository}?`, rebuild));
+          item.append(rebuild);
+        }
+        return item;
+      }));
+      const count = (data.sites || []).length;
+      setPagesStatus(count ? `Conectado · ${count} sitio${count === 1 ? '' : 's'} publicado${count === 1 ? '' : 's'}` : 'Conectado · todavía no tenés sitios publicados', 'connected');
+    } catch (error) {
+      setPagesStatus(/Ruta de integraciones no encontrada|404/.test(error.message) ? 'El servidor de Beta todavía no tiene GitHub Pages. Esperá a que se actualice.' : error.message, 'error');
+    }
+  }
+  function syncPagesBranch() {
+    const repo = pagesRepositories.find((item) => item.name === $('#beta-pages-repo')?.value);
+    const branchInput = $('#beta-pages-branch');
+    if (repo && branchInput) branchInput.value = repo.defaultBranch || 'main';
+  }
+  async function runPagesAction(action, question, button) {
+    if (!window.confirm(question)) return;
+    if (button) button.disabled = true;
+    setPagesStatus('Preparando la publicación…');
+    try {
+      const proposal = await api('/actions/propose', { method: 'POST', body: JSON.stringify({ actions: [action] }) });
+      const prepared = proposal.proposals?.[0];
+      if (!prepared) throw new Error(proposal.failures?.[0] || 'Beta no aceptó la publicación. Revisá que GitHub esté conectado y los datos sean correctos.');
+      activity(`GitHub Pages: ${prepared.summary}`);
+      const result = await api(`/actions/${encodeURIComponent(prepared.id)}/approve`, { method: 'POST', body: '{}' });
+      activity(`GitHub Pages: ${result.message || 'Listo.'}`, 'done');
+      setPagesStatus(result.message || 'Listo.', 'connected');
+      if (result.url) showWorkPreview(result.message || 'Listo.', 'done', 'GitHub Pages', result.url);
+      setTimeout(() => loadGithubPages(true), 1500);
+    } catch (error) {
+      activity(`GitHub Pages no se completó: ${error.message}`, 'error');
+      setPagesStatus(error.message, 'error');
+    } finally { if (button) button.disabled = false; }
+  }
+  $('#beta-pages-repo')?.addEventListener('change', syncPagesBranch);
+  $('#beta-pages-refresh')?.addEventListener('click', () => loadGithubPages(true));
+  $('#beta-pages-publish')?.addEventListener('click', (event) => {
+    const repository = $('#beta-pages-repo')?.value;
+    const branch = $('#beta-pages-branch')?.value.trim();
+    const folder = $('#beta-pages-folder')?.value || '/';
+    if (!repository) { setPagesStatus('Elegí un repositorio.', 'error'); return; }
+    if (!/^[A-Za-z0-9._\/-]{1,100}$/.test(branch || '')) { setPagesStatus('Escribí una rama válida, por ejemplo main.', 'error'); $('#beta-pages-branch')?.focus(); return; }
+    runPagesAction({ provider: 'github', type: 'enable_pages', repository, branch, folder }, `¿Publicar ${repository} con GitHub Pages desde la rama ${branch}, carpeta ${folder}?`, event.currentTarget);
+  });
   $('#beta-map-refresh')?.addEventListener('click', () => loadPrivateProjectMap(true));
 
   document.querySelectorAll('[data-beta-connect]').forEach(button => button.addEventListener('click', async () => {
