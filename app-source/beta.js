@@ -71,6 +71,41 @@
     card.append(title, description, tokenInput, actions, connection); connectorGrid.append(card);
   }
 
+  // IAs sin cuenta: no hay nada que conectar; la tarjeta solo informa límites y uso de hoy.
+  const keylessProviderInfo = {
+    ovh: { title: 'OVHcloud AI Endpoints', detail: 'GPT-OSS 120B, Qwen 3.5 397B, Llama 3.3 70B, Mistral y más. Límite del proveedor: 2 por minuto por modelo. Tope de Beta: 200 por día por modelo.' },
+    llm7: { title: 'LLM7 (código abierto en GitHub)', detail: 'DeepSeek V4 Flash, GLM 5.3 Flash, MiniMax, Codestral y más. Límite del proveedor: 10 por minuto y 60 por hora. Tope de Beta: 100 por día compartidas.' },
+    pollinations: { title: 'Pollinations (código abierto en GitHub)', detail: 'GPT-OSS 20B con razonamiento. Límite del proveedor: 1 consulta cada 30 segundos. Tope de Beta: 150 por día.' },
+    horde: { title: 'AI Horde (red comunitaria)', detail: 'Modelos abiertos que corren voluntarios (Gemma, Qwen, Phi, Llama…). Puede tardar 1-2 minutos según la cola y no lee el código del proyecto. Tope de Beta: 100 por día.' },
+  };
+  const keylessUsageNodes = {};
+  if (connectorGrid && !$('#beta-keyless-card')) {
+    const card = document.createElement('article');
+    card.className = 'beta-connector beta-free-models';
+    card.id = 'beta-keyless-card';
+    const title = document.createElement('h3'); title.textContent = 'IAs sin cuenta · ya activas';
+    const description = document.createElement('p');
+    description.textContent = 'No necesitan clave ni registro: aparecen solas en el selector de modelos. Cada una muestra su nivel de pensamiento, su tope diario y cuántas llevás hoy. Son servicios gratuitos de terceros y pueden cambiar o fallar sin aviso.';
+    const list = document.createElement('ul');
+    list.className = 'beta-keyless-list';
+    for (const [provider, info] of Object.entries(keylessProviderInfo)) {
+      const item = document.createElement('li');
+      const name = document.createElement('strong'); name.textContent = info.title;
+      const usage = document.createElement('span'); usage.className = 'beta-connection-status'; usage.textContent = 'Cargando uso…';
+      keylessUsageNodes[provider] = usage;
+      item.append(name, ' — ', info.detail, ' ', usage);
+      list.append(item);
+    }
+    card.append(title, description, list);
+    connectorGrid.prepend(card);
+  }
+  function renderKeylessUsage() {
+    for (const [provider, node] of Object.entries(keylessUsageNodes)) {
+      const quota = providerQuotas[provider];
+      node.textContent = quota?.keyless ? `Hoy: ${quota.used || 0} de ${quota.limit || '—'} consultas` : 'Sin datos todavía (el servidor de Beta aún no tiene esta IA)';
+    }
+  }
+
   const browserFrame = $('#beta-browser-frame');
   const workPreview = document.createElement('section');
   workPreview.className = 'beta-work-preview';
@@ -142,13 +177,13 @@
 
   function renderModelOptions() {
     if (!modelCatalog.length) {
-      modelSelect.replaceChildren(new Option('Conectá un proveedor gratuito en Integraciones', ''));
+      modelSelect.replaceChildren(new Option('No hay modelos disponibles ahora', ''));
       modelSelect.disabled = true;
       modelHealthNote.textContent = 'Conectá un proveedor para comprobar modelos.';
       modelHealthNote.dataset.state = 'unknown';
       modelProbe.disabled = true;
       modelCount.textContent = 'Catálogo gratuito no conectado';
-      $('#beta-count').textContent = 'Conectá OpenRouter, Groq, Cohere o Gemini Free Tier en Integraciones para cargar los modelos gratuitos disponibles.';
+      $('#beta-count').textContent = 'No llegaron modelos del servidor de Beta. Las IAs sin cuenta aparecen solas; también podés conectar OpenRouter, Groq, Cohere o Gemini Free Tier en Integraciones.';
       imageInput.disabled = true;
       audioInput.disabled = true;
       return;
@@ -161,7 +196,7 @@
       option.value = model.id;
       const health = modelHealthLabel(model.health || modelHealth[model.id]);
       const quotaLabel = Number.isFinite(model.dailyLimit) ? ` · ${model.usedToday || 0}/${model.dailyLimit} ${model.quotaPeriod === 'month' ? 'mes' : 'hoy'}` : '';
-      option.textContent = `${health.icon} ${model.provider} · ${model.name} · ${model.thinkingLevel || 'medio'}${quotaLabel}`;
+      option.textContent = `${health.icon} ${model.provider} · ${model.name} · pensamiento ${model.thinkingLevel || 'medio'}${quotaLabel}`;
       return option;
     }));
     modelSelect.value = modelCatalog.some(model => model.id === prior) ? prior : modelCatalog[0].id;
@@ -174,8 +209,8 @@
     modelHealthNote.textContent = model ? `${health.icon} ${health.text} · ahora: ${goodCount} responden, ${errorCount} con error, ${unknownCount} sin probar/vencidos (15 min).` : health.text;
     modelProbe.disabled = !model || Number(model.remaining) <= 0;
     const periodLabel = model?.quotaPeriod === 'month' ? 'este mes' : 'hoy';
-    modelCount.textContent = model ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0}/${model.dailyLimit || '—'} ${periodLabel}` : 'Conectá proveedores para ver modelos gratuitos';
-    $('#beta-count').textContent = model ? `${model.usedToday || 0} de ${model.dailyLimit || '—'} consultas gratuitas usadas ${periodLabel} en ${model.provider}; ${model.remaining ?? '—'} disponibles para este modelo/proveedor.` : 'Sin modelo seleccionado.';
+    modelCount.textContent = model ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0}/${model.dailyLimit || '—'} ${periodLabel}${model.rateLimit ? ` · ritmo: ${model.rateLimit}` : ''}${model.keyless ? ' · sin cuenta' : ''}` : 'Conectá proveedores para ver modelos gratuitos';
+    $('#beta-count').textContent = model ? `${model.usedToday || 0} de ${model.dailyLimit || '—'} consultas gratuitas usadas ${periodLabel} en ${model.provider}; ${model.remaining ?? '—'} disponibles para este modelo/proveedor.${model.rateLimit ? ` Límite del proveedor: ${model.rateLimit}.` : ''}` : 'Sin modelo seleccionado.';
     const imageLabel = document.querySelector('label[for="beta-image"]');
     const audioLabel = document.querySelector('label[for="beta-audio"]');
     const imageAllowed = Boolean(model?.vision);
@@ -821,6 +856,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       restoreModelHealth();
       providerQuotas = data.quotas || {};
       renderModelOptions();
+      renderKeylessUsage();
       if (!modelCatalog.length) {
         const detail = Object.values(data.catalogErrors || {})[0];
         setStatus(detail || 'Conectá al menos una API gratuita en Integraciones para cargar modelos.', detail ? 'error' : '');
@@ -862,7 +898,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const prompt = input.value.trim();
     if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
     const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
-    if (!selectedModel) { setStatus('Conectá OpenRouter y elegí un modelo gratuito disponible.', 'error'); return; }
+    if (!selectedModel) { setStatus('Elegí un modelo de IA disponible en el selector.', 'error'); return; }
     if (Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
     if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
     if (pendingAudio && !selectedModel?.audio) { setStatus('Este modelo no admite audio. Elegí uno que indique audio.', 'error'); return; }
