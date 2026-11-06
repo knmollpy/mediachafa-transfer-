@@ -22,17 +22,26 @@
   let activityItems = [];
   let modelCatalog = [];
   let providerQuotas = {};
+  let modelHealth = {};
+  const HEALTH_FRESH_MS = 15 * 60 * 1000;
   const modelSelect = document.createElement('select');
   modelSelect.id = 'beta-model-select';
   modelSelect.setAttribute('aria-label', 'Modelo de inteligencia artificial');
   const modelCount = document.createElement('small');
   modelCount.id = 'beta-model-count';
   modelCount.className = 'beta-model-count';
-  const modelControl = document.createElement('label');
+  const modelControl = document.createElement('div');
   modelControl.className = 'beta-model-control';
   const modelLabel = document.createElement('span');
   modelLabel.textContent = 'Modelo de IA';
-  modelControl.append(modelLabel, modelSelect, modelCount);
+  const modelHealthNote = document.createElement('small');
+  modelHealthNote.className = 'beta-model-health';
+  modelHealthNote.setAttribute('role', 'status');
+  const modelProbe = document.createElement('button');
+  modelProbe.type = 'button';
+  modelProbe.className = 'beta-model-probe';
+  modelProbe.textContent = 'Probar modelo · usa 1 consulta';
+  modelControl.append(modelLabel, modelSelect, modelHealthNote, modelCount, modelProbe);
   const betaHeader = $('#beta-panel .beta-header');
   betaHeader.insertBefore(modelControl, betaHeader.querySelector('.beta-nav'));
 
@@ -93,6 +102,38 @@
     if (url) workPreviewLink.href = url;
   }
 
+  function restoreModelHealth() {
+    try { modelHealth = JSON.parse(localStorage.getItem(`mediachafa-beta-health:${ownerId}`) || '{}') || {}; }
+    catch { modelHealth = {}; }
+    for (const model of modelCatalog) model.health = modelHealth[model.id] || null;
+  }
+
+  function recordModelHealth(modelId, ok, error = '') {
+    const health = { ok, checkedAt: Date.now(), error: String(error || '').slice(0, 260) };
+    modelHealth[modelId] = health;
+    const healthKeys = Object.keys(modelHealth);
+    if (healthKeys.length > 200) {
+      healthKeys.sort((a, b) => Number(modelHealth[a]?.checkedAt || 0) - Number(modelHealth[b]?.checkedAt || 0));
+      for (const oldKey of healthKeys.slice(0, healthKeys.length - 200)) delete modelHealth[oldKey];
+    }
+    try { localStorage.setItem(`mediachafa-beta-health:${ownerId}`, JSON.stringify(modelHealth)); } catch {}
+    const model = modelCatalog.find(item => item.id === modelId);
+    if (model) model.health = health;
+    renderModelOptions();
+  }
+
+  function modelHealthLabel(health) {
+    if (!health?.checkedAt) return { icon: '⚪', state: 'unknown', text: 'Sin probar en este dispositivo' };
+    const age = Date.now() - Number(health.checkedAt);
+    const time = new Date(health.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (age > HEALTH_FRESH_MS) return { icon: '⚪', state: 'stale', text: `Última prueba ${time}; quedó vieja` };
+    const elapsed = Math.max(0, Math.floor(age / 60000));
+    const ago = elapsed < 1 ? 'recién' : `hace ${elapsed} min`;
+    return health.ok
+      ? { icon: '🟢', state: 'ok', text: `Respondió ${ago} (${time})` }
+      : { icon: '🔴', state: 'error', text: `Falló ${ago} (${time}): ${health.error || 'error del proveedor'}` };
+  }
+
   function updateModelUsage(modelId, usage = {}) {
     const model = modelCatalog.find(item => item.id === modelId);
     if (model) Object.assign(model, usage);
@@ -103,6 +144,9 @@
     if (!modelCatalog.length) {
       modelSelect.replaceChildren(new Option('Conectá un proveedor gratuito en Integraciones', ''));
       modelSelect.disabled = true;
+      modelHealthNote.textContent = 'Conectá un proveedor para comprobar modelos.';
+      modelHealthNote.dataset.state = 'unknown';
+      modelProbe.disabled = true;
       modelCount.textContent = 'Catálogo gratuito no conectado';
       $('#beta-count').textContent = 'Conectá OpenRouter, Groq, Cohere o Gemini Free Tier en Integraciones para cargar los modelos gratuitos disponibles.';
       imageInput.disabled = true;
@@ -115,12 +159,20 @@
     modelSelect.replaceChildren(...modelCatalog.map(model => {
       const option = document.createElement('option');
       option.value = model.id;
+      const health = modelHealthLabel(model.health || modelHealth[model.id]);
       const quotaLabel = Number.isFinite(model.dailyLimit) ? ` · ${model.usedToday || 0}/${model.dailyLimit} ${model.quotaPeriod === 'month' ? 'mes' : 'hoy'}` : '';
-      option.textContent = `${model.provider} · ${model.name} · ${model.thinkingLevel || 'medio'}${quotaLabel}`;
+      option.textContent = `${health.icon} ${model.provider} · ${model.name} · ${model.thinkingLevel || 'medio'}${quotaLabel}`;
       return option;
     }));
     modelSelect.value = modelCatalog.some(model => model.id === prior) ? prior : modelCatalog[0].id;
     const model = modelCatalog.find(item => item.id === modelSelect.value);
+    const health = model ? modelHealthLabel(model.health || modelHealth[model.id]) : { state: 'unknown', text: 'Conectá un proveedor para comprobar modelos' };
+    modelHealthNote.dataset.state = health.state;
+    const goodCount = modelCatalog.filter(item => modelHealthLabel(item.health || modelHealth[item.id]).state === 'ok').length;
+    const errorCount = modelCatalog.filter(item => modelHealthLabel(item.health || modelHealth[item.id]).state === 'error').length;
+    const unknownCount = Math.max(0, modelCatalog.length - goodCount - errorCount);
+    modelHealthNote.textContent = model ? `${health.icon} ${health.text} · ahora: ${goodCount} responden, ${errorCount} con error, ${unknownCount} sin probar/vencidos (15 min).` : health.text;
+    modelProbe.disabled = !model || Number(model.remaining) <= 0;
     const periodLabel = model?.quotaPeriod === 'month' ? 'este mes' : 'hoy';
     modelCount.textContent = model ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0}/${model.dailyLimit || '—'} ${periodLabel}` : 'Conectá proveedores para ver modelos gratuitos';
     $('#beta-count').textContent = model ? `${model.usedToday || 0} de ${model.dailyLimit || '—'} consultas gratuitas usadas ${periodLabel} en ${model.provider}; ${model.remaining ?? '—'} disponibles para este modelo/proveedor.` : 'Sin modelo seleccionado.';
@@ -138,8 +190,17 @@
 
   const usageNote = document.createElement('p');
   usageNote.className = 'beta-model-note';
-  usageNote.textContent = 'Cambiá entre OpenRouter, Groq, Cohere Trial y Gemini Free Tier. Cada proveedor conserva su propia cuota gratuita; OpenRouter comparte 50 solicitudes diarias entre sus modelos. Sin fallback a opciones pagas. Los niveles de pensamiento son orientativos.';
+  usageNote.textContent = 'El indicador refleja consultas reales recientes: verde respondió, rojo falló y gris significa sin probar o vencido (15 min). Probar envía una consulta real y consume 1 de la cuota mostrada. Los errores no activan modelos pagos ni cambian de proveedor automáticamente.';
   modelControl.append(usageNote);
+  modelProbe.addEventListener('click', () => {
+    const model = modelCatalog.find(item => item.id === modelSelect.value);
+    if (!model) return;
+    if (input.value.trim() || pendingImage || pendingAudio) { setStatus('Enviá primero el texto del compositor para no reemplazarlo por la prueba.', 'error'); return; }
+    if (!window.confirm(`Probar ${model.name} enviará una consulta real y usará 1 consulta gratuita de ${model.provider}. ¿Continuar?`)) return;
+    input.value = 'Prueba de disponibilidad: respondé únicamente OK.';
+    form.requestSubmit(sendButton);
+  });
+
   modelSelect.addEventListener('change', () => {
     try { if (ownerId) localStorage.setItem(`mediachafa-beta-model:${ownerId}`, modelSelect.value); } catch {}
     renderModelOptions();
@@ -168,6 +229,11 @@
     #beta-panel .beta-model-control{display:flex;flex-direction:column;gap:4px;min-width:220px;max-width:310px;color:#e9dddd;font-size:11px;font-weight:700}
     #beta-panel #beta-model-select{width:100%;min-width:0;padding:8px 10px;border:1px solid #6c2929;border-radius:9px;background:#161010;color:#fff;font-size:12px}
     #beta-panel .beta-model-count{color:#ffadad;font-size:10px;font-weight:500}
+    #beta-panel .beta-model-health{display:block;font-size:10px;line-height:1.4;font-weight:600;color:#b9b9b9}
+    #beta-panel .beta-model-health[data-state="ok"]{color:#71e09a}
+    #beta-panel .beta-model-health[data-state="error"]{color:#ff7777}
+    #beta-panel .beta-model-probe{align-self:flex-start;padding:5px 9px;border:1px solid #563030;border-radius:8px;background:#201414;color:#f3dede;font-size:10px;cursor:pointer}
+    #beta-panel .beta-model-probe:disabled{opacity:.5;cursor:not-allowed}
     #beta-panel .beta-model-note{max-width:330px;margin:1px 0 0;color:#bdaaaa;font-size:9px;line-height:1.35;font-weight:400}
     #beta-panel .beta-disabled{opacity:.45;cursor:not-allowed}
     #beta-panel .beta-message-model{display:block;margin-top:7px;color:#d18a8a;font-size:10px}
@@ -453,6 +519,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       await currentSession();
       const data = await api('/status');
       modelCatalog = Array.isArray(data.models) ? data.models : [];
+      restoreModelHealth();
       providerQuotas = data.quotas || {};
       renderModelOptions();
       if (!modelCatalog.length) {
@@ -507,6 +574,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const userText = prompt || (pendingImage ? 'Analizá la imagen adjunta.' : 'Transcribí y analizá el audio adjunto.');
     const displayText = `${userText}${pendingImage ? `\n[Imagen: ${pendingImage.name}]` : ''}${pendingAudio ? `\n[Audio: ${pendingAudio.name}]` : ''}`;
     const previousHistory = history.slice(-8);
+    let modelRequestStarted = false;
     const userMessage = addMessage('user', displayText);
     const progressMessage = addMessage('assistant', 'Validando tu sesión…');
     const progressBody = progressMessage.querySelector('p');
@@ -529,7 +597,11 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         remaining = Number(data.remaining ?? Math.max(0, dailyLimit - usedToday));
         updateModelUsage(data.modelId, data);
       }
-      if (!response.ok) throw new Error(data.error || `Beta respondió ${response.status}.`);
+      if (!response.ok) {
+        if (modelRequestStarted) recordModelHealth(selectedModel.id, false, data.error || `HTTP ${response.status}`);
+        throw new Error(data.error || `Beta respondió ${response.status}.`);
+      }
+      recordModelHealth(selectedModel.id, true);
       const preparationErrors = Array.isArray(data.proposalErrors) ? data.proposalErrors : [];
       const answerBase = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
       const answer = preparationErrors.length ? `${answerBase}\n\nNo pude preparar una o más acciones:\n• ${preparationErrors.join('\n• ')}` : answerBase;
@@ -552,6 +624,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       attachmentLabel(undefined, '#beta-audio-name');
     } catch (error) {
       userMessage.classList.add('failed');
+      if (modelRequestStarted && selectedModel) recordModelHealth(selectedModel.id, false, error?.message || 'Error de conexión');
       progressMessage.remove();
       history.push({ role: 'user', content: displayText });
       history = history.slice(-30);
