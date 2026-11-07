@@ -1267,3 +1267,48 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   selectBetaView('chat');
   void refreshQuota();
 })();
+
+// Pantalla completa de Beta + arreglo del panel "Actividad".
+(() => {
+  if (window.MEDIA_NATIVE_APP === true || window.Capacitor?.isNativePlatform?.()) return;
+  const app = document.querySelector('#app');
+  const brand = document.querySelector('#beta-panel .beta-brand');
+  if (!app || !brand) return;
+  const style = document.createElement('style');
+  style.textContent = `
+#app.beta-mode #beta-panel .beta-workspace.beta-split-mode.beta-activity-open #beta-browser-view{grid-column:1/-1!important;grid-row:1/-1!important;justify-self:end;left:auto}
+#app.beta-mode #beta-panel .beta-brand{display:flex;align-items:center}
+#app.beta-mode #beta-panel .beta-expand{margin-left:auto;flex:none;width:30px;height:30px;display:inline-grid;place-items:center;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:transparent;color:#cfcfcf;cursor:pointer;padding:0}
+#app.beta-mode #beta-panel .beta-expand:hover{background:#262626;color:#fff}
+#app.beta-mode #beta-panel .beta-expand svg{width:16px;height:16px}
+#app.beta-mode.beta-expanded .topbar,#app.beta-mode.beta-expanded .welcome,#app.beta-mode.beta-expanded .storage{display:none!important}
+#app.beta-mode.beta-expanded .wrap{padding:0!important;margin:0!important;max-width:none!important}
+#app.beta-mode.beta-expanded #beta-panel{position:fixed!important;inset:0!important;z-index:900;height:100svh!important;min-height:0!important;margin:0!important;padding:0!important}
+#app.beta-mode.beta-expanded #beta-panel .beta-workspace{height:100svh!important;min-height:0!important;border-radius:0!important;border:0!important}
+`;
+  document.head.append(style);
+  const icons = {
+    expand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>',
+    shrink: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>'
+  };
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.id = 'beta-expand';
+  button.className = 'beta-expand';
+  brand.append(button);
+  const paint = () => {
+    const on = app.classList.contains('beta-expanded');
+    button.innerHTML = on ? icons.shrink : icons.expand;
+    button.title = on ? 'Salir de pantalla completa' : 'Agrandar pantalla';
+    button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-pressed', String(on));
+  };
+  const setExpanded = (on) => { app.classList.toggle('beta-expanded', on); paint(); };
+  button.addEventListener('click', () => setExpanded(!app.classList.contains('beta-expanded')));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && app.classList.contains('beta-expanded') && !document.querySelector('.beta-model-modal.open, .beta-workspace.beta-activity-open')) setExpanded(false);
+  });
+  new MutationObserver(() => { if (!app.classList.contains('beta-mode') && app.classList.contains('beta-expanded')) setExpanded(false); })
+    .observe(app, { attributes: true, attributeFilter: ['class'] });
+  paint();
+})();
