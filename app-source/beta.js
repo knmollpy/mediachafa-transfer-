@@ -253,7 +253,7 @@
 
   const usageNote = document.createElement('p');
   usageNote.className = 'beta-model-note';
-  usageNote.textContent = 'El indicador refleja consultas reales recientes: verde respondió, rojo falló y gris significa sin probar o vencido (15 min). Probar envía una consulta real y consume 1 de la cuota mostrada. Los errores no activan modelos pagos ni cambian de proveedor automáticamente.';
+  usageNote.textContent = 'El indicador refleja consultas reales recientes: verde respondió, rojo falló y gris significa sin probar o vencido (15 min). Probar envía una consulta real y consume 1 de la cuota mostrada. Las IAs ⭐ MediaChafa cambian solas de motor gratuito si uno se agota; los demás modelos no cambian de proveedor. Nunca se activan modelos pagos.';
   modelControl.append(usageNote);
   modelProbe.addEventListener('click', () => {
     const model = modelCatalog.find(item => item.id === modelSelect.value);
