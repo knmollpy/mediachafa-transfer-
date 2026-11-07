@@ -2,6 +2,8 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
+  <script>window.__mediachafaErrors=[];addEventListener("error",function(e){var t=e.target;if(t&&t!==window&&(t.tagName==="SCRIPT"||t.tagName==="LINK")){__mediachafaErrors.push("No cargó "+(t.src||t.href));return}if(e.message)__mediachafaErrors.push(String(e.message).slice(0,200))},true);addEventListener("unhandledrejection",function(e){var r=e.reason;__mediachafaErrors.push("Promesa: "+String(r&&r.message||r).slice(0,200))});</script>
+
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#071528" />
   <meta name="description" content="Tu biblioteca de archivos y enlaces, disponible también desde el celular." />
@@ -1376,7 +1378,8 @@ async function loadGoogleDriveStatus() {
     window.mediaChafaBetaAuth=async()=>{const {data}=await client.auth.getSession();return {token:data.session?.access_token||'',owner:Boolean(ownerMode),anonymous:Boolean(currentUser?.is_anonymous),userId:currentUser?.id||data.session?.user?.id||''};};
     if ('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
   </script>
-  <script src="/app-source/beta.js?v=20261028-beta-workspace-fix" defer></script>
+  <script src="/app-source/beta-visual-check.js?v=20261107-fotos" defer></script>
+  <script src="/app-source/beta.js?v=20261107-fotos" defer></script>
 </body>
 </html>
 
