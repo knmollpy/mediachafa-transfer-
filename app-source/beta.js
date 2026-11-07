@@ -412,6 +412,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 #app.beta-mode #beta-panel .beta-message-model{color:#7d7d7d;font-size:11px}
 #app.beta-mode #beta-panel .beta-copy-btn{position:absolute;top:0;right:0;padding:4px 10px;font-size:11px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#212121;color:#d8d8d8;cursor:pointer;opacity:.7;transition:opacity .15s,background .15s}
 #app.beta-mode #beta-panel .beta-copy-btn:hover{opacity:1;background:#2c2c2c}
+#app.beta-mode #beta-panel .beta-message a.beta-link{color:#4da3ff;text-decoration:underline;word-break:break-all;cursor:pointer}
+#app.beta-mode #beta-panel .beta-message a.beta-link:hover{color:#7bbcff}
+#app.beta-mode #beta-panel .beta-message.user .beta-copy-btn{position:static;display:block;margin:8px 0 0 auto}
 #app.beta-mode #beta-panel .beta-proposal{margin-top:14px;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:#1f1f1f;white-space:normal;transition:opacity .25s,transform .25s}
 #app.beta-mode #beta-panel .beta-proposal pre{max-height:220px;overflow:auto;background:#141414;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;font-size:12px;color:#ddd}
 #app.beta-mode #beta-panel .beta-proposal small{display:block;color:#8f8f8f;margin:8px 0}
@@ -687,15 +690,39 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     node.insertBefore(details, body);
   }
 
+  // Convierte los enlaces (https://..., www....) en links azules que abren en otra pestaña.
+  function renderLinkedText(node, text) {
+    const value = String(text ?? '');
+    const pattern = /\b((?:https?:\/\/|www\.)[^\s<>"'`]+)/gi;
+    const parts = [];
+    let last = 0;
+    for (const match of value.matchAll(pattern)) {
+      let url = match[1];
+      const trailing = url.match(/[.,;:!?)\]}]+$/);
+      if (trailing) url = url.slice(0, -trailing[0].length);
+      if (match.index > last) parts.push(document.createTextNode(value.slice(last, match.index)));
+      const link = document.createElement('a');
+      link.href = /^www\./i.test(url) ? `https://${url}` : url;
+      link.textContent = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.className = 'beta-link';
+      parts.push(link);
+      last = match.index + url.length;
+    }
+    if (last < value.length) parts.push(document.createTextNode(value.slice(last)));
+    node.replaceChildren(...parts);
+  }
+
   function addMessage(role, content, modelName = '') {
     const article = document.createElement('article');
     article.className = `beta-message ${role}`;
     const heading = document.createElement('strong');
     heading.textContent = role === 'user' ? 'Vos' : 'Beta';
     const body = document.createElement('p');
-    body.textContent = content;
+    renderLinkedText(body, content);
     article.append(heading, body);
-    if (role === 'assistant') {
+    {
       const copyBtn = document.createElement('button');
       copyBtn.type = 'button';
       copyBtn.className = 'beta-copy-btn';
