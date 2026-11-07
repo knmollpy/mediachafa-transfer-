@@ -54,3 +54,10 @@ test("images go only to engines that can see images", async () => {
   assert.equal(res.status, 200);
   assert.equal(seen[0], "@cf/meta/llama-4-scout-17b-16e-instruct");
 });
+
+test("broken JSON answers never show raw code or JSON to the user", async () => {
+  const broken = 'Lamento el error.\n\n{"answer":"Preparé el repositorio.","actions":[{"action":"addFile","params":{"content":"<html>"}},"addFile","params":{}}]}';
+  const env = makeEnv(async () => ({ response: broken }));
+  const data = await (await chat(env, "mediachafa::rapida")).json();
+  assert.equal(data.answer, "Preparé el repositorio.");
+});
