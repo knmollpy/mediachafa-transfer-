@@ -1312,3 +1312,42 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     .observe(app, { attributes: true, attributeFilter: ['class'] });
   paint();
 })();
+
+// Chat más limpio: modelo en la barra lateral, sin línea superior, caja de texto compacta.
+(() => {
+  if (window.MEDIA_NATIVE_APP === true || window.Capacitor?.isNativePlatform?.()) return;
+  const q = (s) => document.querySelector(s);
+  const header = q('#beta-panel .beta-header');
+  const sidebar = q('#beta-panel .beta-sidebar');
+  const nav = sidebar?.querySelector('.beta-nav');
+  const modelChip = header?.querySelector('.beta-chip:not(.beta-chip-activity)');
+  if (modelChip && sidebar) { modelChip.classList.add('beta-side-model'); sidebar.insertBefore(modelChip, nav || null); }
+  const showActivity = q('#beta-show-activity');
+  const tools = q('#beta-form .beta-tools');
+  if (showActivity && tools) { showActivity.textContent = 'Actividad'; showActivity.className = 'secondary beta-tool-activity'; tools.append(showActivity); }
+  const input = q('#beta-input');
+  if (input) {
+    input.rows = 1;
+    const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 140) + 'px'; };
+    input.addEventListener('input', grow);
+    q('#beta-form')?.addEventListener('submit', () => setTimeout(grow, 0));
+    new MutationObserver(grow).observe(input, { attributes: true, attributeFilter: ['value'] });
+  }
+  const style = document.createElement('style');
+  style.textContent = `
+#app.beta-mode #beta-panel .beta-header{display:none!important}
+#app.beta-mode #beta-panel #beta-chat-view.active,#app.beta-mode #beta-panel #beta-integrations-view.active,#app.beta-mode #beta-panel .beta-workspace:not(.beta-split-mode) #beta-browser-view.active{grid-row:1/-1!important}
+#app.beta-mode #beta-panel .beta-count{display:none!important}
+#app.beta-mode #beta-panel .beta-sidebar .beta-side-model{display:flex;width:100%;max-width:none;justify-content:space-between;margin:2px 0 6px;padding:9px 12px;border-radius:10px;font-size:12px}
+#app.beta-mode #beta-panel .beta-composer{padding:8px 10px 8px 14px!important;border-radius:18px!important}
+#app.beta-mode #beta-panel .beta-compose{display:flex!important;flex-direction:column;gap:4px}
+#app.beta-mode #beta-panel .beta-compose textarea{min-height:24px!important;height:24px;max-height:140px!important;resize:none!important;padding:4px 2px!important;font-size:14px!important;line-height:1.45;overflow-y:auto}
+#app.beta-mode #beta-panel .beta-compose-bottom{gap:6px!important}
+#app.beta-mode #beta-panel .beta-tools .secondary,#app.beta-mode #beta-panel .beta-tools label{min-height:28px!important;padding:3px 10px!important;font-size:11px!important}
+#app.beta-mode #beta-panel #beta-send{width:32px!important;height:32px!important;min-height:0!important;padding:0!important}
+#app.beta-mode #beta-panel .beta-status-row{justify-content:center!important;margin-top:4px}
+#app.beta-mode #beta-panel .beta-status{margin:2px 0 0!important;font-size:11px!important}
+#app.beta-mode #beta-panel .beta-chat-stage{padding-bottom:10px!important}
+`;
+  document.head.append(style);
+})();
