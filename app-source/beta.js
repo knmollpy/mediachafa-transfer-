@@ -728,6 +728,45 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
 
   function renderProposals(messageNode, proposals, expiresInSeconds = 600) {
+    const runners = [];
+    let bulkBar;
+    if ((proposals || []).length >= 2) {
+      bulkBar = document.createElement('div');
+      bulkBar.className = 'beta-proposal beta-bulk-approve';
+      const info = document.createElement('p');
+      info.textContent = `Beta preparó ${proposals.length} pasos para completar tu pedido. Podés revisarlos abajo y aprobarlos todos juntos: se ejecutan en orden y se frena si alguno falla.`;
+      const bulkControls = document.createElement('div');
+      bulkControls.className = 'beta-proposal-controls';
+      const all = document.createElement('button');
+      all.type = 'button';
+      all.className = 'add-btn beta-action-approve-all';
+      all.textContent = `Aprobar todo en orden (${proposals.length})`;
+      const bulkResult = document.createElement('span');
+      bulkResult.className = 'beta-action-result';
+      bulkControls.append(all);
+      bulkBar.append(info, bulkControls, bulkResult);
+      messageNode.append(bulkBar);
+      all.addEventListener('click', async () => {
+        const pending = runners.filter((runner) => !runner.done());
+        if (!pending.length) return;
+        if (!window.confirm(`Se van a ejecutar ${pending.length} paso(s) en orden:\n\n${pending.map((runner, i) => `${i + 1}. ${runner.label}`).join('\n')}\n\n¿Continuar?`)) return;
+        all.disabled = true;
+        for (let i = 0; i < pending.length; i++) {
+          bulkResult.textContent = `Ejecutando paso ${i + 1} de ${pending.length}…`;
+          bulkResult.dataset.state = '';
+          const ok = await pending[i].run();
+          if (!ok) {
+            bulkResult.textContent = `Se frenó en el paso ${i + 1}: revisá el error en esa tarjeta. Los pasos siguientes no se ejecutaron.`;
+            bulkResult.dataset.state = 'error';
+            all.disabled = false;
+            return;
+          }
+        }
+        bulkResult.textContent = `Listo: se completaron los ${pending.length} pasos.`;
+        bulkResult.dataset.state = 'done';
+        setTimeout(() => { bulkBar.classList.add('beta-proposal-leaving'); setTimeout(() => bulkBar.remove(), 260); }, 2500);
+      });
+    }
     for (const proposal of proposals || []) {
       const card = document.createElement('section');
       card.className = 'beta-proposal';
@@ -742,7 +781,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       if (proposal.repository || proposal.path || proposal.name) {
         const target = document.createElement('p');
         target.className = 'beta-proposal-target';
-        target.textContent = [proposal.repository ? `Repositorio: ${proposal.repository}` : '', proposal.path ? `Ruta: ${proposal.path}` : '', proposal.name ? `Nombre: ${proposal.name}` : ''].filter(Boolean).join(' · ');
+        target.textContent = [proposal.repository ? `Repositorio: ${proposal.repository}` : '', proposal.path ? `Ruta: ${proposal.path}` : '', proposal.name ? `Nombre: ${proposal.name}` : '', proposal.visibility ? `Visibilidad: ${proposal.visibility === 'public' ? 'pública' : 'privada'}` : '', proposal.fileCount ? `Archivos: ${proposal.fileCount}` : ''].filter(Boolean).join(' · ');
         card.append(target);
       }
       if (Array.isArray(proposal.affectedPaths) && proposal.affectedPaths.length) {
@@ -775,14 +814,15 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       result.className = 'beta-action-result';
       controls.append(approve, reject);
       card.append(controls, result);
-      approve.addEventListener('click', async () => {
+      let finished = false;
+      const runApprove = async () => {
         if (destructive) {
           const exactTarget = proposal.type === 'delete_repository' ? proposal.repository : `${proposal.repository}:${proposal.path}`;
           const typedTarget = window.prompt(`Borrado destructivo de GitHub. Escribí exactamente:\n${exactTarget}\n\nSi confirmás, no hay botón para deshacer desde Beta.`, '');
           if (typedTarget !== exactTarget) {
             result.textContent = 'Borrado cancelado; no se envió a GitHub.';
             result.dataset.state = 'error';
-            return;
+            return false;
           }
         }
         approve.disabled = reject.disabled = true;
@@ -808,7 +848,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           const doneText = `${data.message || 'Cambio aplicado.'}${data.url ? `\n${data.url}` : ''}`;
           addMessage('assistant', doneText);
           history.push({ role: 'assistant', content: doneText });
+          finished = true;
           resolveProposal(proposal.id, card);
+          return true;
         } catch (error) {
           result.textContent = error.message;
           result.dataset.state = 'error';
@@ -816,13 +858,17 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           if (/venci|expir|no existe|not found|ya fue|already/i.test(error.message || '')) resolveProposal(proposal.id, card);
           activity(`La acción en ${proposal.provider} no se completó: ${error.message}`, 'error');
           showWorkPreview(error.message, 'error', `${proposal.provider} · ${proposal.type.replaceAll('_', ' ')}`);
+          return false;
         }
-      });
+      };
+      approve.addEventListener('click', () => { runApprove(); });
+      runners.push({ run: runApprove, done: () => finished, label: proposal.summary.slice(0, 140) });
       reject.addEventListener('click', async () => {
         approve.disabled = reject.disabled = true;
         try {
           const data = await api(`/actions/${encodeURIComponent(proposal.id)}/reject`, { method: 'POST', body: '{}' });
           result.textContent = data.message || 'Cambio denegado.';
+          finished = true;
           activity(`${proposal.provider}: propuesta denegada.`, 'done');
           resolveProposal(proposal.id, card);
         } catch (error) {
@@ -989,7 +1035,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       renderProposals(answerNode, data.proposals, data.expiresInSeconds);
       if (data.proposals?.length) {
         activity(`${data.proposals.length} propuesta(s) preparadas. Todavía no se aplicó ningún cambio.`, 'done');
-        setStatus('Beta preparó cambios; revisalos y aprobá cada uno por separado.');
+        setStatus(data.proposals.length > 1 ? 'Beta preparó todos los pasos; revisalos y aprobalos juntos o uno por uno.' : 'Beta preparó un cambio; revisalo y aprobalo.');
       }
       renderModelOptions();
       if (!data.proposals?.length) setStatus(preparationErrors.length ? 'La consulta terminó; revisá los permisos indicados para GitHub.' : 'Respuesta recibida.', preparationErrors.length ? 'error' : 'idle');
