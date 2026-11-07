@@ -1,0 +1,39 @@
+name: Beta agent tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      execution_id:
+        description: Beta autonomous execution ID
+        required: false
+        type: string
+  push:
+    branches:
+      - "beta-agent/**"
+    paths:
+      - "app-source/beta-ai/**"
+      - "app-source/beta.js"
+      - "app-source/index.html"
+      - ".github/workflows/beta-agent-tests.yml"
+      - "app-source/package.json"
+
+permissions:
+  contents: read
+
+jobs:
+  beta-agent-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app-source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check JavaScript syntax
+        run: |
+          node --check beta.js
+          node --check beta-ai/worker.js
+      - name: Run Beta agent integration tests
+        run: npm run test:beta-agent

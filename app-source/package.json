@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:beta-agent": "node --test beta-ai/tests/*.test.js",
     "build:phone": "esbuild phone-mirror.js --bundle --format=esm --platform=browser --target=es2022 --outfile=phone-mirror.bundle.js",
     "mobile:copy": "node mobile/copy-web.mjs",
     "mobile:sync": "npm run mobile:copy && cap sync android",

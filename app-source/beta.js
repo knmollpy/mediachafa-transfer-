@@ -9,10 +9,13 @@
   const input = $('#beta-input');
   const sendButton = $('#beta-send');
   const status = $('#beta-status');
+  const modeSelect = $('#beta-mode');
   const imageInput = $('#beta-image');
   const audioInput = $('#beta-audio');
   let pendingImage;
   let pendingAudio;
+  let activeRun = null;
+  let pausedRequest = null;
   let history = [];
   let remaining = 50;
   let dailyLimit = 50;
@@ -71,69 +74,6 @@
     card.append(title, description, tokenInput, actions, connection); connectorGrid.append(card);
   }
 
-  // GitHub Pages reutiliza la conexión de GitHub: no pide otro token.
-  const pagesStyle = document.createElement('style');
-  pagesStyle.textContent = `#beta-panel .beta-pages-card select{width:100%;margin:9px 0;padding:11px 13px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:#141414;color:#f2f2f2}#beta-panel .beta-pages-form{display:grid;grid-template-columns:minmax(0,1fr) 120px;gap:0 8px}#beta-panel .beta-pages-form select:first-child{grid-column:1/-1}#beta-panel .beta-pages-sites{list-style:none;margin:8px 0;padding:0;display:grid;gap:6px;font-size:12px}#beta-panel .beta-pages-sites li{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 10px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:#141414;color:#ddd}#beta-panel .beta-pages-sites a{color:#ff9d9d;overflow-wrap:anywhere}#beta-panel .beta-pages-sites small{color:#9a8a8a}#beta-panel .beta-pages-sites button{margin-left:auto;padding:4px 10px;font-size:11px}`;
-  document.head.append(pagesStyle);
-  const pagesCard = document.createElement('article');
-  pagesCard.className = 'beta-connector beta-pages-card';
-  pagesCard.id = 'beta-pages-card';
-  {
-    const title = document.createElement('h3'); title.textContent = 'GitHub Pages';
-    const description = document.createElement('p');
-    description.textContent = 'Usa tu conexión de GitHub, no hace falta otro token. Publicá cualquier repositorio de knmollpy como sitio web gratis. El token de GitHub necesita Pages: Read and write y Administration: Read and write (fine-grained) o el alcance repo (classic). Cada publicación pide tu confirmación.';
-    const sites = document.createElement('ul'); sites.className = 'beta-pages-sites'; sites.id = 'beta-pages-sites';
-    const formRow = document.createElement('div'); formRow.className = 'beta-pages-form';
-    const repoSelect = document.createElement('select'); repoSelect.id = 'beta-pages-repo'; repoSelect.setAttribute('aria-label', 'Repositorio para GitHub Pages');
-    const branchInput = document.createElement('input'); branchInput.id = 'beta-pages-branch'; branchInput.type = 'text'; branchInput.placeholder = 'Rama (ej. main)'; branchInput.autocomplete = 'off'; branchInput.spellcheck = false; branchInput.setAttribute('aria-label', 'Rama a publicar');
-    const folderSelect = document.createElement('select'); folderSelect.id = 'beta-pages-folder'; folderSelect.setAttribute('aria-label', 'Carpeta a publicar');
-    for (const value of ['/', '/docs']) { const option = document.createElement('option'); option.value = value; option.textContent = value === '/' ? '/ (raíz)' : '/docs'; folderSelect.append(option); }
-    formRow.append(repoSelect, branchInput, folderSelect);
-    const actions = document.createElement('div'); actions.className = 'beta-actions';
-    const publish = document.createElement('button'); publish.className = 'add-btn'; publish.type = 'button'; publish.id = 'beta-pages-publish'; publish.textContent = 'Publicar con Pages';
-    const refresh = document.createElement('button'); refresh.className = 'secondary'; refresh.type = 'button'; refresh.id = 'beta-pages-refresh'; refresh.textContent = 'Actualizar';
-    actions.append(publish, refresh);
-    const connection = document.createElement('span'); connection.className = 'beta-connection-status'; connection.id = 'beta-connection-pages'; connection.setAttribute('role', 'status'); connection.textContent = 'Conectá GitHub para ver tus sitios.';
-    pagesCard.append(title, description, sites, formRow, actions, connection);
-    const cloudflareCard = $('#beta-connection-cloudflare')?.closest('article');
-    if (cloudflareCard) cloudflareCard.after(pagesCard); else if (connectorGrid) connectorGrid.append(pagesCard);
-  }
-
-  // IAs sin cuenta: no hay nada que conectar; la tarjeta solo informa límites y uso de hoy.
-  const keylessProviderInfo = {
-    ovh: { title: 'OVHcloud AI Endpoints', detail: 'GPT-OSS 120B, Qwen 3.5 397B, Llama 3.3 70B, Mistral y más. Límite del proveedor: 2 por minuto por modelo. Tope de Beta: 200 por día por modelo.' },
-    llm7: { title: 'LLM7 (código abierto en GitHub)', detail: 'DeepSeek V4 Flash, GLM 5.3 Flash, MiniMax, Codestral y más. Límite del proveedor: 10 por minuto y 60 por hora. Tope de Beta: 100 por día compartidas.' },
-    pollinations: { title: 'Pollinations (código abierto en GitHub)', detail: 'GPT-OSS 20B con razonamiento. Límite del proveedor: 1 consulta cada 30 segundos. Tope de Beta: 150 por día.' },
-    horde: { title: 'AI Horde (red comunitaria)', detail: 'Modelos abiertos que corren voluntarios (Gemma, Qwen, Phi, Llama…). Puede tardar 1-2 minutos según la cola y no lee el código del proyecto. Tope de Beta: 100 por día.' },
-  };
-  const keylessUsageNodes = {};
-  if (connectorGrid && !$('#beta-keyless-card')) {
-    const card = document.createElement('article');
-    card.className = 'beta-connector beta-free-models';
-    card.id = 'beta-keyless-card';
-    const title = document.createElement('h3'); title.textContent = 'IAs sin cuenta · ya activas';
-    const description = document.createElement('p');
-    description.textContent = 'No necesitan clave ni registro: aparecen solas en el selector de modelos. Cada una muestra su nivel de pensamiento, su tope diario y cuántas llevás hoy. Son servicios gratuitos de terceros y pueden cambiar o fallar sin aviso.';
-    const list = document.createElement('ul');
-    list.className = 'beta-keyless-list';
-    for (const [provider, info] of Object.entries(keylessProviderInfo)) {
-      const item = document.createElement('li');
-      const name = document.createElement('strong'); name.textContent = info.title;
-      const usage = document.createElement('span'); usage.className = 'beta-connection-status'; usage.textContent = 'Cargando uso…';
-      keylessUsageNodes[provider] = usage;
-      item.append(name, ' — ', info.detail, ' ', usage);
-      list.append(item);
-    }
-    card.append(title, description, list);
-    connectorGrid.prepend(card);
-  }
-  function renderKeylessUsage() {
-    for (const [provider, node] of Object.entries(keylessUsageNodes)) {
-      const quota = providerQuotas[provider];
-      node.textContent = quota?.keyless ? `Hoy: ${quota.used || 0} de ${quota.limit || '—'} consultas` : 'Sin datos todavía (el servidor de Beta aún no tiene esta IA)';
-    }
-  }
-
   const browserFrame = $('#beta-browser-frame');
   const workPreview = document.createElement('section');
   workPreview.className = 'beta-work-preview';
@@ -174,11 +114,6 @@
   function recordModelHealth(modelId, ok, error = '') {
     const health = { ok, checkedAt: Date.now(), error: String(error || '').slice(0, 260) };
     modelHealth[modelId] = health;
-    const healthKeys = Object.keys(modelHealth);
-    if (healthKeys.length > 200) {
-      healthKeys.sort((a, b) => Number(modelHealth[a]?.checkedAt || 0) - Number(modelHealth[b]?.checkedAt || 0));
-      for (const oldKey of healthKeys.slice(0, healthKeys.length - 200)) delete modelHealth[oldKey];
-    }
     try { localStorage.setItem(`mediachafa-beta-health:${ownerId}`, JSON.stringify(modelHealth)); } catch {}
     const model = modelCatalog.find(item => item.id === modelId);
     if (model) model.health = health;
@@ -205,13 +140,10 @@
 
   function renderModelOptions() {
     if (!modelCatalog.length) {
-      modelSelect.replaceChildren(new Option('No hay modelos disponibles ahora', ''));
+      modelSelect.replaceChildren(new Option('Conectá un proveedor gratuito en Integraciones', ''));
       modelSelect.disabled = true;
-      modelHealthNote.textContent = 'Conectá un proveedor para comprobar modelos.';
-      modelHealthNote.dataset.state = 'unknown';
-      modelProbe.disabled = true;
       modelCount.textContent = 'Catálogo gratuito no conectado';
-      $('#beta-count').textContent = 'No llegaron modelos del servidor de Beta. Las IAs sin cuenta aparecen solas; también podés conectar OpenRouter, Groq, Cohere o Gemini Free Tier en Integraciones.';
+      $('#beta-count').textContent = 'Conectá OpenRouter, Groq, Cohere o Gemini Free Tier en Integraciones para cargar los modelos gratuitos disponibles.';
       imageInput.disabled = true;
       audioInput.disabled = true;
       return;
@@ -223,8 +155,8 @@
       const option = document.createElement('option');
       option.value = model.id;
       const health = modelHealthLabel(model.health || modelHealth[model.id]);
-      const quotaLabel = model.unlimited ? ` · ${model.usedToday || 0} hoy · sin límite` : Number.isFinite(model.dailyLimit) ? ` · ${model.usedToday || 0}/${model.dailyLimit} ${model.quotaPeriod === 'month' ? 'mes' : 'hoy'}` : '';
-      option.textContent = `${health.icon} ${model.own ? '⭐ ' : ''}${model.provider} · ${model.name} · pensamiento ${model.thinkingLevel || 'medio'}${quotaLabel}`;
+      const quotaLabel = Number.isFinite(model.dailyLimit) ? ` · ${model.usedToday || 0}/${model.dailyLimit} ${model.quotaPeriod === 'month' ? 'mes' : 'hoy'}` : '';
+      option.textContent = `${health.icon} ${model.provider} · ${model.name} · ${model.thinkingLevel || 'medio'}${quotaLabel}`;
       return option;
     }));
     modelSelect.value = modelCatalog.some(model => model.id === prior) ? prior : modelCatalog[0].id;
@@ -235,10 +167,10 @@
     const errorCount = modelCatalog.filter(item => modelHealthLabel(item.health || modelHealth[item.id]).state === 'error').length;
     const unknownCount = Math.max(0, modelCatalog.length - goodCount - errorCount);
     modelHealthNote.textContent = model ? `${health.icon} ${health.text} · ahora: ${goodCount} responden, ${errorCount} con error, ${unknownCount} sin probar/vencidos (15 min).` : health.text;
-    modelProbe.disabled = !model || (!model.unlimited && Number(model.remaining) <= 0);
+    modelProbe.disabled = !model || Number(model.remaining) <= 0;
     const periodLabel = model?.quotaPeriod === 'month' ? 'este mes' : 'hoy';
-    modelCount.textContent = model?.unlimited ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0} consultas hoy · sin límite · solo tu cuenta` : model ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0}/${model.dailyLimit || '—'} ${periodLabel}${model.rateLimit ? ` · ritmo: ${model.rateLimit}` : ''}${model.keyless ? ' · sin cuenta' : ''}` : 'Conectá proveedores para ver modelos gratuitos';
-    $('#beta-count').textContent = model?.unlimited ? `${model.name}: la IA propia de MediaChafa, solo para tu cuenta. Sin límite de consultas de Beta (${model.usedToday || 0} usadas hoy). Usa primero tu Cloudflare y, si se satura, cambia sola a otro motor gratis.` : model ? `${model.usedToday || 0} de ${model.dailyLimit || '—'} consultas gratuitas usadas ${periodLabel} en ${model.provider}; ${model.remaining ?? '—'} disponibles para este modelo/proveedor.${model.rateLimit ? ` Límite del proveedor: ${model.rateLimit}.` : ''}` : 'Sin modelo seleccionado.';
+    modelCount.textContent = model ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0}/${model.dailyLimit || '—'} ${periodLabel}` : 'Conectá proveedores para ver modelos gratuitos';
+    $('#beta-count').textContent = model ? `${model.usedToday || 0} de ${model.dailyLimit || '—'} consultas gratuitas usadas ${periodLabel} en ${model.provider}; ${model.remaining ?? '—'} disponibles para este modelo/proveedor.` : 'Sin modelo seleccionado.';
     const imageLabel = document.querySelector('label[for="beta-image"]');
     const audioLabel = document.querySelector('label[for="beta-audio"]');
     const imageAllowed = Boolean(model?.vision);
@@ -271,24 +203,26 @@
     setStatus(`${model?.name || 'Modelo'} seleccionado · pensamiento ${model?.thinkingLevel || 'medio'}${model?.vision ? ' · imagen' : ''}${model?.audio ? ' · audio' : ''}.`);
   });
 
-  const betaWorkspace = $('#beta-panel .beta-workspace');
-  const betaSidebar = document.createElement('aside');
-  betaSidebar.className = 'beta-sidebar';
-  betaSidebar.setAttribute('aria-label', 'Navegación de Beta');
-  const betaSidebarSection = document.createElement('span');
-  betaSidebarSection.className = 'beta-sidebar-section';
-  betaSidebarSection.textContent = 'Recientes';
-  const betaSidebarRecent = document.createElement('div');
-  betaSidebarRecent.className = 'beta-sidebar-recent';
-  betaSidebarRecent.textContent = 'Conversación actual';
-  betaSidebar.append(betaHeader.querySelector('.beta-brand'), $('#beta-clear'), betaHeader.querySelector('.beta-nav'), betaSidebarSection, betaSidebarRecent);
-  betaWorkspace.insertBefore(betaSidebar, betaHeader);
-
   // Keep the conversation and the live work view together on desktop, like an
   // assistant workspace. On phones the panes stack vertically to avoid a
   // miniature, horizontally scrolling layout.
   const workspaceStyle = document.createElement('style');
   workspaceStyle.textContent = `
+    #beta-panel .beta-mode-label{color:#d9baba;font-size:10px;font-weight:700}
+    #beta-panel .beta-mode-select{min-height:34px;padding:5px 9px;border:1px solid #563030;border-radius:999px;background:#201414;color:#f3dede;font-size:11px}
+    #beta-panel .beta-mode-select:disabled{opacity:.6}
+    #beta-panel .beta-live-steps{margin:0 0 8px;padding-left:22px;color:#e5c7c7;font-size:12px;line-height:1.55}
+    #beta-panel .beta-live-steps li+li{margin-top:3px}
+    #beta-panel .beta-plan{margin:8px 0;padding:9px 11px;border:1px solid #563030;border-radius:10px;background:#160e0e;color:#f3dede;font-size:12px}
+    #beta-panel .beta-plan summary{cursor:pointer;font-weight:700;color:#ffb4b4}
+    #beta-panel .beta-plan ol{padding-left:22px;line-height:1.55}
+    #beta-panel .beta-plan li+li{margin-top:4px}
+    #beta-panel .beta-batch-approve{display:grid;gap:8px;border-color:#805050;background:#241313}
+    #beta-panel .beta-batch-approve p{margin:0;color:#f0dada;font-size:12px;line-height:1.5}
+    #beta-panel .beta-batch-approve button{justify-self:start}
+    #beta-panel .beta-proposal details{margin-top:8px}
+    #beta-panel .beta-proposal details summary{cursor:pointer;color:#ffb4b4;font-size:12px}
+    #beta-panel .beta-proposal details pre{max-height:300px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
     #beta-panel .beta-model-control{display:flex;flex-direction:column;gap:4px;min-width:220px;max-width:310px;color:#e9dddd;font-size:11px;font-weight:700}
     #beta-panel #beta-model-select{width:100%;min-width:0;padding:8px 10px;border:1px solid #6c2929;border-radius:9px;background:#161010;color:#fff;font-size:12px}
     #beta-panel .beta-model-count{color:#ffadad;font-size:10px;font-weight:500}
@@ -324,230 +258,10 @@
     #app.beta-mode #beta-panel .beta-split-mode .beta-status-row{justify-content:flex-start}
     @media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:flex;height:auto;min-height:0;overflow:visible;flex-direction:column;gap:0}#app.beta-mode #beta-panel .beta-split-mode>.beta-header{flex-wrap:wrap}#app.beta-mode #beta-panel .beta-split-mode .beta-brand{margin-right:0}#app.beta-mode #beta-panel .beta-model-control{order:2;max-width:none;width:100%}#app.beta-mode #beta-panel .beta-split-mode .beta-nav{order:3;width:100%;overflow:auto}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view,#app.beta-mode #beta-panel .beta-split-mode>#beta-browser-view{overflow:visible}#app.beta-mode #beta-panel .beta-split-mode>#beta-chat-view{border-right:0;border-bottom:1px solid #351717;padding:0 0 16px}#app.beta-mode #beta-panel .beta-split-mode .beta-chat-stage{min-height:58svh;height:auto;padding:20px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-messages{max-height:52svh;flex:1}#app.beta-mode #beta-panel .beta-split-mode .beta-browser{height:auto;padding:16px 0}#app.beta-mode #beta-panel .beta-split-mode .beta-browser-frame{flex:none;height:55svh}#app.beta-mode #beta-panel .beta-split-mode .beta-work-preview{min-height:160px}}
   `;
-  
-  document.head.append(workspaceStyle); const betaViewportStyle=document.createElement('style'); betaViewportStyle.textContent=`
-html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!important}
-#app.beta-mode{display:flex;flex-direction:column;height:100svh;min-height:0;overflow:hidden}
-#app.beta-mode>.topbar{flex:none}
-#app.beta-mode>.wrap{flex:1;min-height:0;height:auto;max-width:none;width:100%;padding:6px 14px 10px;overflow:hidden}
-#app.beta-mode #beta-panel{height:100%;min-height:0;overflow:hidden}
-#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:grid;grid-template-columns:220px minmax(0,1.05fr) minmax(340px,.95fr);grid-template-rows:68px minmax(0,1fr);gap:0 14px;height:100%;min-height:0;overflow:hidden}
-#app.beta-mode #beta-panel .beta-sidebar{grid-column:1;grid-row:1/3;display:flex;min-height:0;flex-direction:column;gap:12px;padding:12px 10px;border-right:1px solid rgba(255,255,255,.09);background:rgba(15,15,16,.7)}
-#app.beta-mode #beta-panel .beta-sidebar .beta-brand{flex:none;margin:0 0 8px;padding:4px 6px;font-size:15px}
-#app.beta-mode #beta-panel .beta-sidebar #beta-clear{width:100%;min-height:40px;text-align:left;padding:9px 12px;border-radius:10px;background:#222;color:#f3f3f3;border:1px solid #383838}
-#app.beta-mode #beta-panel .beta-sidebar-section{margin:12px 6px 0;color:#929292;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
-#app.beta-mode #beta-panel .beta-sidebar-recent{padding:10px 12px;border-radius:9px;background:rgba(255,255,255,.08);color:#f3f3f3;font-size:12px}
-#app.beta-mode #beta-panel .beta-nav{display:flex;flex-direction:column;gap:4px;width:100%}
-#app.beta-mode #beta-panel .beta-nav button{width:100%;min-height:39px;text-align:left;padding:9px 12px;border-radius:9px;color:#bdbdbd}
-#app.beta-mode #beta-panel .beta-nav button.active,#app.beta-mode #beta-panel .beta-nav button:hover{background:#292929;color:#fff}
-#app.beta-mode #beta-panel .beta-header{grid-column:2/4;grid-row:1;display:flex;align-items:center;justify-content:flex-end;min-width:0;min-height:0;padding:4px 4px 9px;border-bottom:1px solid rgba(255,255,255,.09)}
-#app.beta-mode #beta-panel .beta-model-control{width:min(380px,100%);min-width:260px;max-width:380px}
-#app.beta-mode #beta-panel .beta-model-note{display:none}
-#app.beta-mode #beta-panel .beta-view.active{grid-row:2;min-height:0;overflow:hidden}
-#app.beta-mode #beta-panel #beta-chat-view.active{grid-column:2;display:flex;min-width:0;border-right:1px solid rgba(255,255,255,.09);padding:0 14px 0 2px}
-#app.beta-mode #beta-panel #beta-browser-view.active{grid-column:3;display:flex;min-width:0;padding:0 0 0 2px}
-#app.beta-mode #beta-panel .beta-workspace:not(.beta-split-mode) #beta-browser-view.active{grid-column:2/4}
-#app.beta-mode #beta-panel #beta-integrations-view.active{grid-column:2/4;display:flex;overflow:auto;padding:12px 6px}
-#app.beta-mode #beta-panel .beta-chat-stage{width:100%;min-width:0;min-height:0;height:100%;margin:0;padding:12px 0 5px;justify-content:center}
-#app.beta-mode #beta-panel .beta-chat-stage.has-messages{justify-content:flex-end;padding:8px 0 4px}
-#app.beta-mode #beta-panel .beta-messages{flex:1;min-height:0;max-height:none;width:100%;overflow:auto;padding:12px 4px 18px}
-#app.beta-mode #beta-panel .beta-message{max-width:min(96%,850px);font-size:15px;padding:13px 16px}
-#app.beta-mode #beta-panel .beta-composer{width:100%;padding:14px 16px}
-#app.beta-mode #beta-panel .beta-status-row,#app.beta-mode #beta-panel .beta-count{text-align:left;justify-content:flex-start}
-#app.beta-mode #beta-panel .beta-browser{display:flex;flex-direction:column;width:100%;height:100%;min-height:0;margin:0;padding:10px 0 5px}
-#app.beta-mode #beta-panel .beta-browser-toolbar{flex:none}
-#app.beta-mode #beta-panel .beta-activity{flex:none;max-height:clamp(100px,19vh,170px);overflow:auto}
-#app.beta-mode #beta-panel .beta-work-preview{flex:1;min-height:100px;margin:8px 0;overflow:auto}
-#app.beta-mode #beta-panel .beta-browser-frame{flex:1;min-height:0;height:auto}
-#app.beta-mode #beta-panel .beta-note{flex:none;margin:4px 0;font-size:10px}
-@media(max-width:900px){
-#app.beta-mode>.wrap{padding:4px 8px 8px}
-#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr);gap:0;height:100%}
-#app.beta-mode #beta-panel .beta-sidebar{grid-column:1;grid-row:1;flex-direction:row;align-items:center;gap:5px;padding:5px 0;border:0;border-bottom:1px solid rgba(255,255,255,.08);overflow-x:auto}
-#app.beta-mode #beta-panel .beta-sidebar .beta-brand,#app.beta-mode #beta-panel .beta-sidebar-section,#app.beta-mode #beta-panel .beta-sidebar-recent{display:none}
-#app.beta-mode #beta-panel .beta-sidebar #beta-clear{width:auto;min-width:max-content;min-height:36px;padding:7px 10px}
-#app.beta-mode #beta-panel .beta-nav{flex-direction:row;min-width:max-content;width:auto}
-#app.beta-mode #beta-panel .beta-nav button{width:auto;min-height:36px;padding:7px 12px}
-#app.beta-mode #beta-panel .beta-header{grid-column:1;grid-row:2;justify-content:flex-start;padding:7px 0}
-#app.beta-mode #beta-panel .beta-model-control{width:100%;max-width:none;min-width:0}
-#app.beta-mode #beta-panel .beta-view.active{grid-column:1!important;grid-row:3;min-height:0}
-#app.beta-mode #beta-panel .beta-workspace.beta-split-mode #beta-browser-view{display:none!important}
-#app.beta-mode #beta-panel #beta-chat-view.active{border:0;padding:0}
-#app.beta-mode #beta-panel #beta-browser-view.active,#app.beta-mode #beta-panel #beta-integrations-view.active{overflow:auto}
-#app.beta-mode #beta-panel .beta-chat-stage{padding:8px 0 4px}
-#app.beta-mode #beta-panel .beta-message{max-width:98%;font-size:14px}
-#app.beta-mode #beta-panel .beta-composer{padding:11px 12px;border-radius:18px}
-#app.beta-mode #beta-panel .beta-browser{padding:8px 0}
-#app.beta-mode #beta-panel .beta-browser-frame{flex:none;height:45svh}
-}
-`; document.head.append(betaViewportStyle); const betaApp=$('#app'); if(betaApp){const syncBetaViewport=()=>{const active=betaApp.classList.contains('beta-mode');document.documentElement.classList.toggle('beta-fullscreen',active);if(active&&window.scrollY)window.scrollTo(0,0)};new MutationObserver(syncBetaViewport).observe(betaApp,{attributes:true,attributeFilter:['class']});syncBetaViewport()} const projectMapStyle = document.createElement('style'); projectMapStyle.textContent = `#beta-panel .beta-private-map{width:min(1040px,100%);margin:0 auto 18px;background:linear-gradient(135deg,#1a1111,#101010);border-color:#562626}#beta-panel .beta-map-details{margin-top:12px;border-top:1px solid #3b2424;padding-top:10px;color:#f5eaea}#beta-panel .beta-map-details summary{cursor:pointer;color:#ffb4b4;font-size:12px}#beta-panel .beta-map-details pre{max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border:1px solid #382323;border-radius:10px;background:#0b0b0b;color:#ddd;font:11px/1.5 ui-monospace,monospace}`;
+  document.head.append(workspaceStyle);
+  const projectMapStyle = document.createElement('style');
+  projectMapStyle.textContent = `#beta-panel .beta-private-map{width:min(1040px,100%);margin:0 auto 18px;background:linear-gradient(135deg,#1a1111,#101010);border-color:#562626}#beta-panel .beta-map-details{margin-top:12px;border-top:1px solid #3b2424;padding-top:10px;color:#f5eaea}#beta-panel .beta-map-details summary{cursor:pointer;color:#ffb4b4;font-size:12px}#beta-panel .beta-map-details pre{max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border:1px solid #382323;border-radius:10px;background:#0b0b0b;color:#ddd;font:11px/1.5 ui-monospace,monospace}`;
   document.head.append(projectMapStyle);
-
-  const betaCleanStyle = document.createElement('style');
-  betaCleanStyle.textContent = `
-#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{grid-template-columns:240px minmax(0,1fr) minmax(320px,380px);grid-template-rows:auto minmax(0,1fr);gap:0;background:#171717;border-radius:16px;border:1px solid rgba(255,255,255,.06)}
-#app.beta-mode #beta-panel .beta-sidebar{background:#121212;border-right:1px solid rgba(255,255,255,.06);padding:14px 10px;gap:6px;border-radius:16px 0 0 16px}
-#app.beta-mode #beta-panel .beta-sidebar #beta-clear{background:transparent;border:1px solid rgba(255,255,255,.12);font-size:13px}
-#app.beta-mode #beta-panel .beta-sidebar #beta-clear:hover{background:#242424}
-#app.beta-mode #beta-panel .beta-nav button{font-size:14px;color:#cfcfcf}
-#app.beta-mode #beta-panel .beta-nav button.active{background:#262626;color:#fff;box-shadow:inset 3px 0 0 #e0353b}
-#app.beta-mode #beta-panel .beta-sidebar-section{font-size:11px;color:#8a8a8a;margin-top:18px}
-#app.beta-mode #beta-panel .beta-sidebar-recent{background:#222;font-size:13px}
-#app.beta-mode #beta-panel .beta-header{grid-column:2/4;padding:10px 18px;border-bottom:1px solid rgba(255,255,255,.06);justify-content:center;background:#171717}
-#app.beta-mode #beta-panel .beta-model-control{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 10px;width:min(720px,100%);max-width:720px;min-width:0}
-#app.beta-mode #beta-panel #beta-model-select{grid-column:1;background:#212121;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:9px 12px;font-size:13px}
-#app.beta-mode #beta-panel .beta-model-probe{grid-column:2;grid-row:1;align-self:center;background:#212121;border-color:rgba(255,255,255,.14);padding:8px 12px;font-size:11px}
-#app.beta-mode #beta-panel .beta-model-health,#app.beta-mode #beta-panel .beta-model-count{grid-column:1/-1;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#app.beta-mode #beta-panel #beta-chat-view.active{border-right:1px solid rgba(255,255,255,.06);padding:0}
-#app.beta-mode #beta-panel .beta-chat-stage{width:100%;padding:0 0 14px}
-#app.beta-mode #beta-panel .beta-messages{width:100%;max-width:none;padding:24px max(18px,calc((100% - 760px)/2)) 24px;gap:22px;scrollbar-width:thin;scrollbar-color:#3a3a3a transparent}
-#app.beta-mode #beta-panel .beta-chat-stage form,#app.beta-mode #beta-panel .beta-status-row,#app.beta-mode #beta-panel .beta-count,#app.beta-mode #beta-panel .beta-status{width:min(760px,calc(100% - 36px));margin-left:auto;margin-right:auto}
-#app.beta-mode #beta-panel .beta-prompt-title{font-size:28px;font-weight:600;color:#f2f2f2}
-#app.beta-mode #beta-panel .beta-message{position:relative;max-width:100%;padding:0;background:transparent!important;border:0!important;color:#ececec;font-size:15px;line-height:1.7}
-#app.beta-mode #beta-panel .beta-message strong{color:#9a9a9a!important;font-size:12px;font-weight:600;margin-bottom:6px}
-#app.beta-mode #beta-panel .beta-message.assistant{padding-right:70px}
-#app.beta-mode #beta-panel .beta-message.user{max-width:min(78%,600px);padding:11px 16px;background:#2f2f2f!important;border-radius:20px;color:#fff}
-#app.beta-mode #beta-panel .beta-message.user strong{display:none}
-#app.beta-mode #beta-panel .beta-message.failed{outline:1px solid #8a2a2a}
-#app.beta-mode #beta-panel .beta-message-model{color:#7d7d7d;font-size:11px}
-#app.beta-mode #beta-panel .beta-copy-btn{position:absolute;top:0;right:0;padding:4px 10px;font-size:11px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#212121;color:#d8d8d8;cursor:pointer;opacity:.7;transition:opacity .15s,background .15s}
-#app.beta-mode #beta-panel .beta-copy-btn:hover{opacity:1;background:#2c2c2c}
-#app.beta-mode #beta-panel .beta-proposal{margin-top:14px;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:#1f1f1f;white-space:normal;transition:opacity .25s,transform .25s}
-#app.beta-mode #beta-panel .beta-proposal pre{max-height:220px;overflow:auto;background:#141414;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px;font-size:12px;color:#ddd}
-#app.beta-mode #beta-panel .beta-proposal small{display:block;color:#8f8f8f;margin:8px 0}
-#app.beta-mode #beta-panel .beta-proposal-controls{display:flex;gap:8px}
-#app.beta-mode #beta-panel .beta-proposal-leaving{opacity:0;transform:translateY(-6px)}
-#app.beta-mode #beta-panel .beta-composer{background:#262626!important;border:1px solid rgba(255,255,255,.1)!important;border-radius:24px;box-shadow:0 8px 28px rgba(0,0,0,.35)}
-#app.beta-mode #beta-panel .beta-compose textarea{min-height:48px;font-size:15px}
-#app.beta-mode #beta-panel .beta-tools label{background:transparent;border:1px solid rgba(255,255,255,.12);color:#cfcfcf}
-#app.beta-mode #beta-panel #beta-send{width:38px;height:38px;border-radius:50%;padding:0}
-#app.beta-mode #beta-panel .beta-count{color:#7a7a7a;text-align:center}
-#app.beta-mode #beta-panel .beta-status-row{justify-content:center!important}
-#app.beta-mode #beta-panel #beta-browser-view.active{padding:0 14px;background:#141414;border-radius:0 0 16px 0;overflow:auto}
-#app.beta-mode #beta-panel .beta-activity,#app.beta-mode #beta-panel .beta-work-preview{background:#1b1b1b!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:14px}
-@media(max-width:1100px){#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{grid-template-columns:200px minmax(0,1fr) 300px}}
-@media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{display:flex;flex-direction:column;overflow:auto}#app.beta-mode #beta-panel .beta-sidebar{border-right:0;border-bottom:1px solid rgba(255,255,255,.06);border-radius:16px 16px 0 0}#app.beta-mode #beta-panel .beta-message.assistant{padding-right:0;padding-top:26px}#app.beta-mode #beta-panel .beta-model-control{grid-template-columns:1fr}#app.beta-mode #beta-panel .beta-model-probe{grid-column:1;grid-row:auto}}
-`;
-  document.head.append(betaCleanStyle);
-
-  // Compact header: model chip (opens centered picker) + activity drawer toggle.
-  const betaTopStyle = document.createElement('style');
-  betaTopStyle.textContent = `
-#app.beta-mode #beta-panel .beta-workspace,#app.beta-mode #beta-panel .beta-workspace.beta-split-mode{position:relative;grid-template-columns:240px minmax(0,1fr)!important;grid-template-rows:auto minmax(0,1fr)!important}
-#app.beta-mode #beta-panel .beta-header{grid-column:2!important;justify-content:flex-end!important;gap:8px;padding:8px 14px!important;min-height:0}
-#app.beta-mode #beta-panel #beta-chat-view.active{grid-column:2!important;border-right:0!important}
-#app.beta-mode #beta-panel .beta-workspace:not(.beta-split-mode) #beta-browser-view.active{grid-column:2!important;position:static}
-#app.beta-mode #beta-panel #beta-integrations-view.active{grid-column:2!important}
-#app.beta-mode #beta-panel .beta-workspace.beta-split-mode #beta-browser-view{display:none!important}
-#app.beta-mode #beta-panel .beta-workspace.beta-split-mode.beta-activity-open #beta-browser-view{display:flex!important;position:absolute;top:0;right:0;bottom:0;width:min(400px,92%);z-index:30;flex-direction:column;padding:12px 14px!important;background:#141414;border-left:1px solid rgba(255,255,255,.1);border-radius:0 16px 16px 0;box-shadow:-18px 0 40px rgba(0,0,0,.5);overflow:auto;animation:betaSlide .2s ease}
-@keyframes betaSlide{from{transform:translateX(30px);opacity:0}to{transform:none;opacity:1}}
-#app.beta-mode #beta-panel .beta-drawer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;color:#f2f2f2;font-weight:700;font-size:14px}
-#app.beta-mode #beta-panel .beta-workspace:not(.beta-split-mode) .beta-drawer-head{display:none}
-#app.beta-mode #beta-panel .beta-x{width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:#222;color:#eee;font-size:16px;cursor:pointer}
-#app.beta-mode #beta-panel .beta-chip{display:inline-flex;align-items:center;gap:6px;max-width:320px;padding:7px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:#212121;color:#e8e8e8;font-size:12px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#app.beta-mode #beta-panel .beta-chip:hover{background:#2b2b2b}
-#app.beta-mode #beta-panel .beta-chip span{overflow:hidden;text-overflow:ellipsis}
-#app.beta-mode #beta-panel .beta-workspace.beta-activity-open .beta-chip-activity{background:#3a1416;border-color:#7a2a2a}
-.beta-model-modal{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(3px)}
-.beta-model-modal.open{display:flex}
-.beta-model-card{width:min(640px,92vw);max-height:86vh;overflow:auto;padding:22px;border-radius:18px;background:#1b1b1b;border:1px solid rgba(255,255,255,.12);box-shadow:0 30px 80px rgba(0,0,0,.6);color:#eee}
-.beta-model-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-size:17px;font-weight:700}
-.beta-model-card .beta-model-control{display:flex!important;flex-direction:column!important;gap:10px!important;width:100%!important;max-width:none!important;min-width:0!important;font-size:12px}
-.beta-model-card #beta-model-select{width:100%;padding:10px 12px;border-radius:12px;background:#121212;color:#fff;border:1px solid rgba(255,255,255,.14);font-size:14px}
-.beta-model-card #beta-model-select[size]{height:auto;max-height:52vh}
-.beta-model-card #beta-model-select option{padding:8px 10px;border-radius:8px}
-.beta-model-card .beta-model-health,.beta-model-card .beta-model-count,.beta-model-card .beta-model-note{display:block!important;white-space:normal!important;font-size:12px}
-.beta-model-card .beta-model-probe{align-self:flex-start;padding:8px 14px;border-radius:10px;background:#262626;color:#eee;border:1px solid rgba(255,255,255,.14);cursor:pointer}
-.beta-model-card .beta-x{width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:#222;color:#eee;font-size:16px;cursor:pointer}
-@media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace.beta-split-mode.beta-activity-open #beta-browser-view{position:fixed;width:100%;border-radius:0}}
-`;
-  betaTopStyle.textContent += `
-#app.beta-mode #beta-panel .beta-sidebar-recent{display:flex;flex-direction:column;gap:2px;padding:0!important;background:transparent!important;overflow:auto;min-height:0;flex:1}
-#app.beta-mode #beta-panel .beta-thread{display:flex;align-items:center;border-radius:9px}
-#app.beta-mode #beta-panel .beta-thread:hover{background:#1f1f1f}
-#app.beta-mode #beta-panel .beta-thread.active{background:#262626}
-#app.beta-mode #beta-panel .beta-thread-open{flex:1;min-width:0;text-align:left;padding:9px 10px;background:transparent;border:0;color:#d9d9d9;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
-#app.beta-mode #beta-panel .beta-thread.active .beta-thread-open{color:#fff}
-#app.beta-mode #beta-panel .beta-thread-del{flex:none;width:26px;height:26px;margin-right:4px;border:0;border-radius:6px;background:transparent;color:#888;font-size:11px;cursor:pointer;opacity:0}
-#app.beta-mode #beta-panel .beta-thread:hover .beta-thread-del,#app.beta-mode #beta-panel .beta-thread.active .beta-thread-del{opacity:1}
-#app.beta-mode #beta-panel .beta-thread-del:hover{background:#3a1416;color:#ff9a9a}
-#app.beta-mode #beta-panel .beta-steps{margin:0 0 10px;color:#9b9b9b;font-size:13px}
-#app.beta-mode #beta-panel .beta-steps summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
-#app.beta-mode #beta-panel .beta-steps summary::before{content:'›';display:inline-block;transition:transform .15s;font-size:15px}
-#app.beta-mode #beta-panel .beta-steps[open] summary::before{transform:rotate(90deg)}
-#app.beta-mode #beta-panel .beta-steps ul,#app.beta-mode #beta-panel .beta-live-steps{list-style:none;margin:8px 0 4px;padding:0 0 0 4px;display:flex;flex-direction:column;gap:6px;white-space:normal}
-#app.beta-mode #beta-panel .beta-steps li,#app.beta-mode #beta-panel .beta-live-steps li{position:relative;padding-left:22px;color:#a8a8a8;font-size:13px;line-height:1.45}
-#app.beta-mode #beta-panel .beta-steps li::before,#app.beta-mode #beta-panel .beta-live-steps li[data-state=done]::before{content:'✓';position:absolute;left:2px;top:0;color:#6fcf8f;font-size:12px}
-#app.beta-mode #beta-panel .beta-live-steps li[data-state=active]{color:#ececec}
-#app.beta-mode #beta-panel .beta-live-steps li[data-state=active]::before{content:'';position:absolute;left:2px;top:4px;width:10px;height:10px;border-radius:50%;border:2px solid #e0353b;border-top-color:transparent;animation:betaSpin .8s linear infinite}
-@keyframes betaSpin{to{transform:rotate(360deg)}}
-#app.beta-mode #beta-panel .beta-working>p{color:#7d7d7d;font-size:13px;animation:betaPulse 1.4s ease-in-out infinite}
-@keyframes betaPulse{50%{opacity:.45}}
-`;
-  document.head.append(betaTopStyle);
-
-  const modelModal = document.createElement('div');
-  modelModal.className = 'beta-model-modal';
-  modelModal.setAttribute('role', 'dialog');
-  modelModal.setAttribute('aria-modal', 'true');
-  const modelCard = document.createElement('div');
-  modelCard.className = 'beta-model-card';
-  const modelCardHead = document.createElement('div');
-  modelCardHead.className = 'beta-model-card-head';
-  const modelCardTitle = document.createElement('span');
-  modelCardTitle.textContent = 'Elegir modelo de IA';
-  const modelClose = document.createElement('button');
-  modelClose.type = 'button'; modelClose.className = 'beta-x'; modelClose.textContent = '✕'; modelClose.setAttribute('aria-label', 'Cerrar');
-  modelCardHead.append(modelCardTitle, modelClose);
-  modelCard.append(modelCardHead, modelControl);
-  modelModal.append(modelCard);
-  document.body.append(modelModal);
-
-  const modelChip = document.createElement('button');
-  modelChip.type = 'button'; modelChip.className = 'beta-chip'; modelChip.title = 'Cambiar modelo de IA';
-  const modelChipText = document.createElement('span');
-  modelChip.append(modelChipText, document.createTextNode(' ▾'));
-  const activityChip = document.createElement('button');
-  activityChip.type = 'button'; activityChip.className = 'beta-chip beta-chip-activity'; activityChip.textContent = 'Actividad';
-  activityChip.title = 'Ver qué está haciendo Beta';
-  betaHeader.append(modelChip, activityChip);
-
-  const syncChip = () => {
-    const opt = modelSelect.options[modelSelect.selectedIndex];
-    modelChipText.textContent = opt ? opt.textContent.split('·').slice(0, 2).join('·').trim() : 'Modelo de IA';
-  };
-  new MutationObserver(syncChip).observe(modelSelect, { childList: true, subtree: true, attributes: true });
-  modelSelect.addEventListener('change', () => { syncChip(); closeModelModal(); });
-  syncChip();
-
-  function openModelModal() {
-    modelSelect.size = Math.min(Math.max(modelSelect.options.length, 2), 12);
-    modelModal.classList.add('open');
-    modelSelect.focus();
-  }
-  function closeModelModal() { modelModal.classList.remove('open'); }
-  modelChip.addEventListener('click', openModelModal);
-  modelProbe.addEventListener('click', closeModelModal);
-  modelClose.addEventListener('click', closeModelModal);
-  modelModal.addEventListener('click', (e) => { if (e.target === modelModal) closeModelModal(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModelModal(); betaWorkspace.classList.remove('beta-activity-open'); } });
-
-  const browserView = $('#beta-browser-view');
-  const drawerHead = document.createElement('div');
-  drawerHead.className = 'beta-drawer-head';
-  const drawerTitle = document.createElement('span');
-  drawerTitle.textContent = 'Qué está haciendo Beta';
-  const drawerClose = document.createElement('button');
-  drawerClose.type = 'button'; drawerClose.className = 'beta-x'; drawerClose.textContent = '✕'; drawerClose.setAttribute('aria-label', 'Cerrar actividad');
-  drawerHead.append(drawerTitle, drawerClose);
-  browserView?.prepend(drawerHead);
-  const toggleActivity = (force) => {
-    if (!betaWorkspace.classList.contains('beta-split-mode')) selectBetaView('chat');
-    betaWorkspace.classList.toggle('beta-activity-open', force);
-  };
-  activityChip.addEventListener('click', () => toggleActivity());
-  drawerClose.addEventListener('click', () => toggleActivity(false));
-  $('#beta-show-activity')?.addEventListener('click', (e) => { e.preventDefault(); e.stopImmediatePropagation(); toggleActivity(true); }, true);
 
   function activity(message, state = 'active') {
     if (!activityList) return;
@@ -578,113 +292,11 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     status.dataset.state = kind;
   }
 
-  let currentThreadId = '';
-  let threads = [];
-  function threadsKey() { return `mediachafa-beta-threads:${ownerId}`; }
-  function storageKey() { return `mediachafa-beta-chat:${ownerId}:${currentThreadId}`; }
-  function newThreadId() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
-  function saveThreads() { try { localStorage.setItem(threadsKey(), JSON.stringify(threads)); localStorage.setItem(threadsKey() + ':active', currentThreadId); } catch {} }
-  function titleFrom(text) {
-    const clean = String(text || '').replace(/\[(Imagen|Audio):[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();
-    if (!clean) return 'Chat sin título';
-    const t = clean.replace(/^(hola|buenas|hey|che)[,!.\s]+/i, '') || clean;
-    return (t.charAt(0).toUpperCase() + t.slice(1)).slice(0, 42) + (t.length > 42 ? '…' : '');
-  }
-  function ensureThreads() {
-    try { threads = JSON.parse(localStorage.getItem(threadsKey()) || '[]'); } catch { threads = []; }
-    if (!Array.isArray(threads)) threads = [];
-    if (!threads.length) {
-      const id = newThreadId();
-      let legacy = null;
-      try { legacy = localStorage.getItem(`mediachafa-beta-chat:${ownerId}`); } catch {}
-      let title = 'Nuevo chat';
-      if (legacy) {
-        try { const arr = JSON.parse(legacy); const first = arr.find(m => m.role === 'user'); if (first) title = titleFrom(first.content); localStorage.setItem(`mediachafa-beta-chat:${ownerId}:${id}`, legacy); localStorage.removeItem(`mediachafa-beta-chat:${ownerId}`); } catch {}
-      }
-      threads = [{ id, title, updatedAt: Date.now() }];
-    }
-    let active = '';
-    try { active = localStorage.getItem(threadsKey() + ':active') || ''; } catch {}
-    currentThreadId = threads.some(t => t.id === active) ? active : threads[0].id;
-    saveThreads();
-  }
-  function renderThreadList() {
-    const rows = [...threads].sort((a, b) => b.updatedAt - a.updatedAt).map(thread => {
-      const row = document.createElement('div');
-      row.className = 'beta-thread' + (thread.id === currentThreadId ? ' active' : '');
-      const open = document.createElement('button');
-      open.type = 'button'; open.className = 'beta-thread-open'; open.textContent = thread.title; open.title = thread.title;
-      open.addEventListener('click', () => switchThread(thread.id));
-      const del = document.createElement('button');
-      del.type = 'button'; del.className = 'beta-thread-del'; del.textContent = '✕'; del.title = 'Borrar chat'; del.setAttribute('aria-label', `Borrar ${thread.title}`);
-      del.addEventListener('click', () => deleteThread(thread.id));
-      row.append(open, del);
-      return row;
-    });
-    betaSidebarRecent.replaceChildren(...rows);
-  }
-  function switchThread(id) {
-    if (sendButton.disabled) { setStatus('Esperá a que Beta termine de responder para cambiar de chat.', 'error'); return; }
-    currentThreadId = id;
-    saveThreads();
-    restoreHistory();
-    selectBetaView('chat');
-    input.focus();
-  }
-  function createThread() {
-    if (sendButton.disabled) { setStatus('Esperá a que Beta termine de responder.', 'error'); return; }
-    const empty = threads.find(t => t.title === 'Nuevo chat');
-    if (empty) { switchThread(empty.id); return; }
-    const thread = { id: newThreadId(), title: 'Nuevo chat', updatedAt: Date.now() };
-    threads.push(thread);
-    switchThread(thread.id);
-    setStatus('Nuevo chat listo.');
-  }
-  function deleteThread(id) {
-    const thread = threads.find(t => t.id === id);
-    if (!thread || !window.confirm(`¿Borrar el chat "${thread.title}" de este dispositivo?`)) return;
-    try { localStorage.removeItem(`mediachafa-beta-chat:${ownerId}:${id}`); } catch {}
-    threads = threads.filter(t => t.id !== id);
-    if (!threads.length) threads.push({ id: newThreadId(), title: 'Nuevo chat', updatedAt: Date.now() });
-    if (currentThreadId === id) currentThreadId = [...threads].sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
-    saveThreads();
-    restoreHistory();
-  }
+  function storageKey() { return `mediachafa-beta-chat:${ownerId}`; }
 
   function saveHistory() {
     if (!ownerId) return;
-    const recent = history.slice(-30);
-    let photos = 0;
-    const slim = (keep) => recent.slice().reverse().map(item => {
-      if (!item.report) return item;
-      photos += 1;
-      return photos <= keep ? item : { ...item, report: { ...item.report, images: [] } };
-    }).reverse();
-    for (const keep of [4, 1, 0]) {
-      photos = 0;
-      try { localStorage.setItem(storageKey(), JSON.stringify(slim(keep))); break; } catch {}
-    }
-    const thread = threads.find(t => t.id === currentThreadId);
-    if (thread) {
-      if (thread.title === 'Nuevo chat') { const first = history.find(m => m.role === 'user'); if (first) thread.title = titleFrom(first.content); }
-      thread.updatedAt = Date.now();
-      saveThreads();
-      renderThreadList();
-    }
-  }
-
-  function attachSteps(node, steps, open = false) {
-    if (!steps?.length) return;
-    const details = document.createElement('details');
-    details.className = 'beta-steps';
-    details.open = open;
-    const summary = document.createElement('summary');
-    summary.textContent = `Beta trabajó en ${steps.length} paso${steps.length === 1 ? '' : 's'}`;
-    const list = document.createElement('ul');
-    for (const step of steps) { const li = document.createElement('li'); li.textContent = step; list.append(li); }
-    details.append(summary, list);
-    const body = node.querySelector('p');
-    node.insertBefore(details, body);
+    try { localStorage.setItem(storageKey(), JSON.stringify(history.slice(-30))); } catch {}
   }
 
   function addMessage(role, content, modelName = '') {
@@ -695,28 +307,6 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const body = document.createElement('p');
     body.textContent = content;
     article.append(heading, body);
-    if (role === 'assistant') {
-      const copyBtn = document.createElement('button');
-      copyBtn.type = 'button';
-      copyBtn.className = 'beta-copy-btn';
-      copyBtn.title = 'Copiar mensaje';
-      copyBtn.setAttribute('aria-label', 'Copiar mensaje');
-      copyBtn.textContent = 'Copiar';
-      copyBtn.addEventListener('click', async () => {
-        const text = body.textContent || '';
-        try {
-          await navigator.clipboard.writeText(text);
-        } catch {
-          const ta = document.createElement('textarea');
-          ta.value = text; document.body.append(ta); ta.select();
-          try { document.execCommand('copy'); } catch {}
-          ta.remove();
-        }
-        copyBtn.textContent = 'Copiado';
-        setTimeout(() => { copyBtn.textContent = 'Copiar'; }, 1500);
-      });
-      article.append(copyBtn);
-    }
     if (role === 'assistant' && modelName) {
       const modelBadge = document.createElement('small');
       modelBadge.className = 'beta-message-model';
@@ -729,52 +319,52 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     return article;
   }
 
-  function resolveProposal(actionId, card) {
-    for (const item of history) {
-      if (Array.isArray(item.proposals)) item.proposals = item.proposals.filter(p => p.id !== actionId);
+  function attachPlan(messageNode, plan) {
+    if (!Array.isArray(plan) || !plan.length) return;
+    const details = document.createElement('details');
+    details.className = 'beta-plan';
+    const summary = document.createElement('summary');
+    summary.textContent = `Plan de trabajo · ${plan.length} paso${plan.length === 1 ? '' : 's'}`;
+    const list = document.createElement('ol');
+    for (const step of plan) {
+      const item = document.createElement('li');
+      item.textContent = step;
+      list.append(item);
     }
-    saveHistory();
-    setTimeout(() => { card.classList.add('beta-proposal-leaving'); setTimeout(() => card.remove(), 260); }, 1400);
+    details.append(summary, list);
+    messageNode.append(details);
   }
 
   function renderProposals(messageNode, proposals, expiresInSeconds = 600) {
-    const runners = [];
-    let bulkBar;
-    if ((proposals || []).length >= 2) {
-      bulkBar = document.createElement('div');
-      bulkBar.className = 'beta-proposal beta-bulk-approve';
-      const info = document.createElement('p');
-      info.textContent = `Beta preparó ${proposals.length} pasos para completar tu pedido. Podés revisarlos abajo y aprobarlos todos juntos: se ejecutan en orden y se frena si alguno falla.`;
-      const bulkControls = document.createElement('div');
-      bulkControls.className = 'beta-proposal-controls';
-      const all = document.createElement('button');
-      all.type = 'button';
-      all.className = 'add-btn beta-action-approve-all';
-      all.textContent = `Aprobar todo en orden (${proposals.length})`;
-      const bulkResult = document.createElement('span');
-      bulkResult.className = 'beta-action-result';
-      bulkControls.append(all);
-      bulkBar.append(info, bulkControls, bulkResult);
-      messageNode.append(bulkBar);
-      all.addEventListener('click', async () => {
-        const pending = runners.filter((runner) => !runner.done());
-        if (!pending.length) return;
-        if (!window.confirm(`Se van a ejecutar ${pending.length} paso(s) en orden:\n\n${pending.map((runner, i) => `${i + 1}. ${runner.label}`).join('\n')}\n\n¿Continuar?`)) return;
-        all.disabled = true;
-        for (let i = 0; i < pending.length; i++) {
-          bulkResult.textContent = `Ejecutando paso ${i + 1} de ${pending.length}…`;
-          bulkResult.dataset.state = '';
-          const ok = await pending[i].run();
+    const approvalTasks = [];
+    if ((proposals || []).length > 1) {
+      const batch = document.createElement('section');
+      batch.className = 'beta-proposal beta-batch-approve';
+      const description = document.createElement('p');
+      description.textContent = `Beta preparó ${proposals.length} acciones. Podés aprobarlas en orden con una sola confirmación; si una falla, las siguientes no se ejecutan. Los borrados siguen pidiendo confirmación exacta.`;
+      const approveAll = document.createElement('button');
+      approveAll.type = 'button';
+      approveAll.className = 'add-btn';
+      approveAll.textContent = `Aprobar todo en orden (${proposals.length})`;
+      const batchStatus = document.createElement('span');
+      batchStatus.className = 'beta-action-result';
+      batch.append(description, approveAll, batchStatus);
+      messageNode.append(batch);
+      approveAll.addEventListener('click', async () => {
+        if (!window.confirm(`Se ejecutarán ${approvalTasks.length} acciones en orden:\n\n${proposals.map((item, index) => `${index + 1}. ${item.summary}`).join('\n')}\n\n¿Continuar?`)) return;
+        approveAll.disabled = true;
+        for (let index = 0; index < approvalTasks.length; index++) {
+          batchStatus.textContent = `Ejecutando paso ${index + 1} de ${approvalTasks.length}…`;
+          const ok = await approvalTasks[index]();
           if (!ok) {
-            bulkResult.textContent = `Se frenó en el paso ${i + 1}: revisá el error en esa tarjeta. Los pasos siguientes no se ejecutaron.`;
-            bulkResult.dataset.state = 'error';
-            all.disabled = false;
+            batchStatus.textContent = `Se detuvo en el paso ${index + 1}. Revisá el resultado de esa acción; las siguientes no se ejecutaron.`;
+            batchStatus.dataset.state = 'error';
+            approveAll.disabled = false;
             return;
           }
         }
-        bulkResult.textContent = `Listo: se completaron los ${pending.length} pasos.`;
-        bulkResult.dataset.state = 'done';
-        setTimeout(() => { bulkBar.classList.add('beta-proposal-leaving'); setTimeout(() => bulkBar.remove(), 260); }, 2500);
+        batchStatus.textContent = `Completado: ${approvalTasks.length} acciones ejecutadas.`;
+        batchStatus.dataset.state = 'done';
       });
     }
     for (const proposal of proposals || []) {
@@ -791,7 +381,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       if (proposal.repository || proposal.path || proposal.name) {
         const target = document.createElement('p');
         target.className = 'beta-proposal-target';
-        target.textContent = [proposal.repository ? `Repositorio: ${proposal.repository}` : '', proposal.path ? `Ruta: ${proposal.path}` : '', proposal.name ? `Nombre: ${proposal.name}` : '', proposal.visibility ? `Visibilidad: ${proposal.visibility === 'public' ? 'pública' : 'privada'}` : '', proposal.fileCount ? `Archivos: ${proposal.fileCount}` : ''].filter(Boolean).join(' · ');
+        target.textContent = [proposal.repository ? `Repositorio: ${proposal.repository}` : '', proposal.path ? `Ruta: ${proposal.path}` : '', proposal.name ? `Nombre: ${proposal.name}` : ''].filter(Boolean).join(' · ');
         card.append(target);
       }
       if (Array.isArray(proposal.affectedPaths) && proposal.affectedPaths.length) {
@@ -804,6 +394,17 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         const pre = document.createElement('pre');
         pre.textContent = detail;
         card.append(pre);
+      }
+      if (Array.isArray(proposal.files)) {
+        for (const file of proposal.files) {
+          const filePreview = document.createElement('details');
+          const fileName = document.createElement('summary');
+          fileName.textContent = file.path;
+          const fileContent = document.createElement('pre');
+          fileContent.textContent = file.content;
+          filePreview.append(fileName, fileContent);
+          card.append(filePreview);
+        }
       }
       const warning = document.createElement('small');
       warning.textContent = destructive
@@ -824,8 +425,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       result.className = 'beta-action-result';
       controls.append(approve, reject);
       card.append(controls, result);
-      let finished = false;
-      const runApprove = async () => {
+      const runApproval = async () => {
+        if (approve.disabled) return result.dataset.state === 'done';
         if (destructive) {
           const exactTarget = proposal.type === 'delete_repository' ? proposal.repository : `${proposal.repository}:${proposal.path}`;
           const typedTarget = window.prompt(`Borrado destructivo de GitHub. Escribí exactamente:\n${exactTarget}\n\nSi confirmás, no hay botón para deshacer desde Beta.`, '');
@@ -837,8 +438,6 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         }
         approve.disabled = reject.disabled = true;
         result.textContent = 'Enviando al proveedor…';
-        let visualPrep = null;
-        try { visualPrep = window.MediaChafaVisualCheck?.prepare(proposal) || null; } catch { visualPrep = null; }
         activity(`Preparando aprobación de ${proposal.provider}: ${proposal.summary}`);
         selectBetaView('chat');
         try {
@@ -857,33 +456,25 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           if (data.url) result.append(' ', link);
           activity(`${proposal.provider}: ${data.message || 'Cambio aplicado.'}`, 'done');
           showWorkPreview(data.message || 'Cambio aplicado.', 'done', `${proposal.provider} · ${proposal.type.replaceAll('_', ' ')}`, data.url || '');
-          const doneText = `${data.message || 'Cambio aplicado.'}${data.url ? `\n${data.url}` : ''}`;
-          addMessage('assistant', doneText);
-          history.push({ role: 'assistant', content: doneText });
-          finished = true;
-          resolveProposal(proposal.id, card);
-          queueVisualReview(visualPrep, data);
+          addMessage('assistant', `${data.message || 'Cambio aplicado.'}${data.url ? `\n${data.url}` : ''}`);
           return true;
         } catch (error) {
           result.textContent = error.message;
           result.dataset.state = 'error';
           approve.disabled = false;
-          if (/venci|expir|no existe|not found|ya fue|already/i.test(error.message || '')) resolveProposal(proposal.id, card);
           activity(`La acción en ${proposal.provider} no se completó: ${error.message}`, 'error');
           showWorkPreview(error.message, 'error', `${proposal.provider} · ${proposal.type.replaceAll('_', ' ')}`);
           return false;
         }
       };
-      approve.addEventListener('click', () => { runApprove(); });
-      runners.push({ run: runApprove, done: () => finished, label: proposal.summary.slice(0, 140) });
+      approve.addEventListener('click', () => { void runApproval(); });
+      approvalTasks.push(runApproval);
       reject.addEventListener('click', async () => {
         approve.disabled = reject.disabled = true;
         try {
           const data = await api(`/actions/${encodeURIComponent(proposal.id)}/reject`, { method: 'POST', body: '{}' });
           result.textContent = data.message || 'Cambio denegado.';
-          finished = true;
           activity(`${proposal.provider}: propuesta denegada.`, 'done');
-          resolveProposal(proposal.id, card);
         } catch (error) {
           result.textContent = error.message;
           result.dataset.state = 'error';
@@ -895,167 +486,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     messagesNode.scrollTop = messagesNode.scrollHeight;
   }
 
-  // Después de aplicar un cambio: espera la publicación, saca fotos, prueba la página y
-  // le pide al modelo elegido que explique qué cambió (con la foto si el modelo ve imágenes).
-  let reviewQueue = Promise.resolve();
-  function queueVisualReview(prep, result) {
-    if (!prep || !window.MediaChafaVisualCheck) return;
-    reviewQueue = reviewQueue.then(() => runVisualReview(prep, result)).catch(() => {});
-  }
-
-  // Galería "Antes y después" dentro de Navegador: guarda los últimos 6 cambios.
-  const changesBox = document.createElement('section');
-  changesBox.className = 'beta-changes';
-  changesBox.id = 'beta-changes';
-  const changesTitle = document.createElement('h3');
-  changesTitle.textContent = 'Antes y después de cada cambio';
-  const changesNote = document.createElement('p');
-  changesNote.textContent = 'Luz roja: cómo estaba antes. Luz verde: cómo quedó. Se guardan los últimos 6 cambios aprobados.';
-  const changesList = document.createElement('div');
-  changesBox.append(changesTitle, changesNote, changesList);
-  browserFrame.parentElement.insertBefore(changesBox, browserFrame);
-
-  function changesKey() { return `mediachafa-beta-changes:${ownerId}`; }
-  function loadChanges() {
-    try { const saved = JSON.parse(localStorage.getItem(changesKey()) || '[]'); return Array.isArray(saved) ? saved : []; } catch { return []; }
-  }
-  function saveChange(report) {
-    let list = [{ ...report, diffText: undefined }, ...loadChanges().filter(item => item.id !== report.id)].slice(0, 6);
-    while (list.length) {
-      try { localStorage.setItem(changesKey(), JSON.stringify(list)); return; } catch {}
-      if (list.length > 1) { list = list.slice(0, -1); continue; }
-      list = [{ ...list[0], images: (list[0].images || []).slice(0, 2) }];
-      try { localStorage.setItem(changesKey(), JSON.stringify(list)); } catch {}
-      return;
-    }
-  }
-  function renderChanges() {
-    const list = loadChanges();
-    if (!list.length) {
-      const empty = document.createElement('p');
-      empty.className = 'muted';
-      empty.textContent = 'Todavía no hay cambios aprobados. Cuando apruebes uno, acá vas a ver la foto de antes y la de después.';
-      changesList.replaceChildren(empty);
-      return;
-    }
-    changesList.replaceChildren(...list.map(report => {
-      const item = document.createElement('div');
-      item.className = 'beta-change-item';
-      item.id = `beta-change-${report.id}`;
-      const when = document.createElement('small');
-      when.textContent = new Date(report.at || Date.now()).toLocaleString();
-      item.append(when);
-      window.MediaChafaVisualCheck?.renderReport(item, report);
-      return item;
-    }));
-  }
-  function addChangesButton(node, report) {
-    if (!report?.id) return;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'secondary beta-see-changes';
-    button.textContent = 'Ver antes y después en Navegador';
-    button.addEventListener('click', () => {
-      selectBetaView('browser');
-      renderChanges();
-      (document.getElementById(`beta-change-${report.id}`) || changesBox).scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-    node.append(button);
-  }
-
-  // Pide la explicación a la IA elegida; si no responde, prueba con las nuestras
-  // (MediaChafa IA Rápida, Pro y Código). Si ninguna responde, queda la explicación básica.
-  function explainCandidates() {
-    const usable = model => model && (model.unlimited || Number(model.remaining) > 0);
-    const chosen = modelCatalog.find(item => item.id === modelSelect.value);
-    const ours = ['rapida', 'pro', 'codigo'].map(variant => modelCatalog.find(item => item.id === `mediachafa::${variant}`) || { id: `mediachafa::${variant}`, name: `MediaChafa IA ${variant === 'rapida' ? 'Rápida' : variant === 'pro' ? 'Pro' : 'Código'}`, unlimited: true, vision: true });
-    const seen = new Set();
-    return [chosen, ...ours].filter(model => usable(model) && !seen.has(model.id) && seen.add(model.id));
-  }
-
-  async function askModelToExplain(model, report) {
-    const shot = [...report.images].reverse().find(image => image.kind === 'after')?.src;
-    const sendImage = Boolean(shot && model.vision);
-    const checks = report.checks.map(check => `${check.ok === true ? 'OK' : check.ok === false ? 'FALLÓ' : 'Nota'}: ${check.label}`).join(' ; ');
-    const message = `[Comprobación automática de MediaChafa después de un cambio aprobado. No propongas acciones nuevas: actions debe ir vacío.]\n${report.summary}\nANTES (luz roja): ${report.before?.title || ''} — ${(report.before?.lines || []).filter(Boolean).join(' · ')}\nDESPUÉS (luz verde): ${report.after?.title || ''} — ${(report.after?.lines || []).filter(Boolean).join(' · ')}\nExplicación básica: ${report.whatChanged || ''}\nPruebas: ${checks}\n${report.diffText ? `Líneas que cambiaron:\n${report.diffText.slice(0, 3200)}\n` : ''}${sendImage ? 'Te adjunto la foto de después.' : 'No hay foto adjunta para vos; el dueño igual ve las fotos.'}\nExplicale al dueño en 2 a 4 frases simples qué cambió: cómo estaba antes y cómo quedó ahora. Si alguna prueba falló, decí qué hay que revisar.`;
-    const auth = await currentSession();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60000);
-    try {
-      const response = await fetch(`${API}/chat`, {
-        method: 'POST',
-        signal: controller.signal,
-        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, history: [], image: sendImage ? { data: shot } : undefined, model: model.id }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (data.modelId) updateModelUsage(data.modelId, data);
-      const text = String(data.answer || '').trim();
-      if (!response.ok || !text) return null;
-      return { text, modelName: data.modelName || model.name || '', sawImage: sendImage };
-    } finally { clearTimeout(timer); }
-  }
-
-  async function explainReport(report) {
-    for (const model of explainCandidates()) {
-      const explained = await askModelToExplain(model, report).catch(() => null);
-      if (explained) return explained;
-    }
-    return null;
-  }
-
-  function showWorkReport(report) {
-    showWorkPreview(`${report.explanation || report.summary}\n\nMirá la foto de antes (luz roja) y la de después (luz verde) abajo, en "Antes y después de cada cambio".`, report.ok ? 'done' : 'error', report.title, report.url || '');
-  }
-
-  async function runVisualReview(prep, result) {
-    const checker = window.MediaChafaVisualCheck;
-    workPreview.querySelector(':scope > .beta-visual-report')?.remove();
-    const holder = addMessage('assistant', 'Comprobando el cambio: armo la foto de antes y la de después…');
-    holder.classList.add('beta-working');
-    holder.querySelector('.beta-copy-btn')?.remove();
-    const body = holder.querySelector('p');
-    let lastActivity = '';
-    const step = (message) => {
-      body.textContent = message;
-      setStatus(message);
-      const kind = message.replace(/[0-9]+ s$/, '');
-      if (kind !== lastActivity) { lastActivity = kind; activity(message); } else showWorkPreview(message, 'active', 'Beta está comprobando el cambio');
-    };
-    try {
-      const report = await checker.review(prep, step, result || {});
-      step('Pidiéndole a la IA que explique lo que cambió…');
-      const explained = await explainReport(report).catch(() => null);
-      report.explanation = explained?.text
-        ? explained.text
-        : `${report.whatChanged || report.summary}\n\n${report.ok ? 'Todas las pruebas pasaron.' : 'Alguna prueba falló: revisala abajo.'}`;
-      holder.remove();
-      const node = addMessage('assistant', report.explanation, explained?.modelName || '');
-      checker.renderReport(node, report);
-      addChangesButton(node, report);
-      saveChange(report);
-      renderChanges();
-      activity(report.ok ? 'Cambio comprobado: fotos de antes y después listas en Navegador.' : 'Cambio aplicado, pero una prueba falló. Mirá el detalle en el chat.', report.ok ? 'done' : 'error');
-      showWorkReport(report);
-      setStatus(report.ok ? 'Cambio comprobado.' : 'Una prueba falló; revisá el detalle.', report.ok ? 'idle' : 'error');
-      history.push({ role: 'assistant', content: report.explanation, modelName: explained?.modelName || '', report: { ...report, diffText: undefined } });
-      history = history.slice(-30);
-      saveHistory();
-    } catch (error) {
-      holder.remove();
-      activity(`No pude comprobar el cambio con fotos: ${error?.message || 'error desconocido'}`, 'error');
-      setStatus('No pude comprobar el cambio con fotos.', 'error');
-    }
-  }
-
   function restoreHistory() {
     if (!ownerId) return;
-    if (!currentThreadId) ensureThreads();
-    renderThreadList();
-    try { renderChanges(); } catch {}
-    history = [];
-    messagesNode.replaceChildren();
-    stage.classList.remove('has-messages');
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey()) || '[]');
       if (!Array.isArray(saved)) return;
@@ -1063,9 +495,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       messagesNode.replaceChildren();
       for (const item of history) {
         const message = addMessage(item.role, item.content, item.modelName);
-        if (item.role === 'assistant' && Array.isArray(item.steps)) attachSteps(message, item.steps);
-        if (item.role === 'assistant' && Array.isArray(item.proposals)) renderProposals(message, item.proposals);
-        if (item.role === 'assistant' && item.report && window.MediaChafaVisualCheck) { window.MediaChafaVisualCheck.renderReport(message, item.report); addChangesButton(message, item.report); }
+        if (item.role === 'assistant') {
+          attachPlan(message, item.plan);
+          if (Array.isArray(item.proposals)) renderProposals(message, item.proposals);
+        }
       }
       if (!history.length) stage.classList.remove('has-messages');
     } catch { history = []; }
@@ -1093,12 +526,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   async function refreshQuota() {
     try {
       await currentSession();
+      modeSelect.value = savedMode();
       const data = await api('/status');
       modelCatalog = Array.isArray(data.models) ? data.models : [];
       restoreModelHealth();
       providerQuotas = data.quotas || {};
       renderModelOptions();
-      renderKeylessUsage();
       if (!modelCatalog.length) {
         const detail = Object.values(data.catalogErrors || {})[0];
         setStatus(detail || 'Conectá al menos una API gratuita en Integraciones para cargar modelos.', detail ? 'error' : '');
@@ -1106,6 +539,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       else setStatus('Sesión conectada. El chat se guarda en este dispositivo.');
       restoreHistory();
       await loadIntegrations();
+      await restoreAgentExecution();
     } catch (error) {
       setStatus(error.message || 'No se pudo comprobar la sesión.', 'error');
     }
@@ -1134,14 +568,418 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     attachmentLabel(pendingAudio, '#beta-audio-name');
   });
 
+  const savedMode = () => {
+    try {
+      const value = localStorage.getItem(`mediachafa-beta-mode:${ownerId}`);
+      return ['normal', 'autonomous'].includes(value) ? value : 'normal';
+    } catch { return 'normal'; }
+  };
+  modeSelect.value = savedMode();
+  modeSelect.addEventListener('change', () => {
+    try { if (ownerId) localStorage.setItem(`mediachafa-beta-mode:${ownerId}`, modeSelect.value); } catch {}
+  });
+
+  function updateSendButton() {
+    if (activeRun) {
+      sendButton.textContent = input.value.trim() ? 'Pausar + sumar' : 'Pausar';
+      sendButton.setAttribute('aria-label', input.value.trim() ? 'Pausar y agregar indicaciones' : 'Pausar ejecución');
+    } else if (pausedRequest) {
+      sendButton.textContent = input.value.trim() ? 'Continuar + sumar' : 'Continuar';
+      sendButton.setAttribute('aria-label', input.value.trim() ? 'Agregar indicaciones y continuar la ejecución' : 'Continuar la ejecución pausada');
+    } else {
+      sendButton.textContent = '↑';
+      sendButton.setAttribute('aria-label', 'Enviar mensaje');
+    }
+  }
+  input.addEventListener('input', updateSendButton);
+
+  function clearAttachments() {
+    pendingImage = pendingAudio = undefined;
+    imageInput.value = audioInput.value = '';
+    attachmentLabel(undefined, '#beta-image-name');
+    attachmentLabel(undefined, '#beta-audio-name');
+  }
+
+  function appendToRequest(job, addition, imageFile, audioFile) {
+    if (job.message.length + addition.length > 6000) throw new Error('El pedido combinado supera el límite de 6000 caracteres. Quitá parte de las indicaciones nuevas.');
+    if (imageFile && job.imageFile) throw new Error('Esta ejecución ya tiene una imagen adjunta. Enviá la imagen nueva en otro mensaje.');
+    if (audioFile && job.audioFile) throw new Error('Esta ejecución ya tiene un audio adjunto. Enviá el audio nuevo en otro mensaje.');
+    const model = modelCatalog.find((item) => item.id === job.modelId);
+    if (imageFile && !model?.vision) throw new Error('El modelo seleccionado no admite imágenes. Elegí un modelo con visión antes de iniciar la ejecución.');
+    if (audioFile && !model?.audio) throw new Error('El modelo seleccionado no admite audio. Elegí un modelo compatible antes de iniciar la ejecución.');
+    job.message = [job.message, addition].filter(Boolean).join('\n\n');
+    if (imageFile) job.imageFile = imageFile;
+    if (audioFile) job.audioFile = audioFile;
+    job.displayText = `${job.message || (job.imageFile ? 'Analizá la imagen adjunta.' : 'Analizá el audio adjunto.')}${job.imageFile ? `\n[Imagen: ${job.imageFile.name}]` : ''}${job.audioFile ? `\n[Audio: ${job.audioFile.name}]` : ''}`;
+    job.userMessage.querySelector('p').textContent = job.displayText;
+  }
+
+  function agentExecutionStorageKey() {
+    return `mediachafa-beta-agent:${ownerId}`;
+  }
+
+  function saveAgentExecution(job) {
+    try {
+      if (job?.executionId) localStorage.setItem(agentExecutionStorageKey(), JSON.stringify({ executionId: job.executionId, modelId: job.modelId, message: job.message }));
+    } catch {}
+  }
+
+  function clearAgentExecution() {
+    try { localStorage.removeItem(agentExecutionStorageKey()); } catch {}
+  }
+
+  const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+  async function runAutonomousRequest(job) {
+    const controller = new AbortController();
+    const run = { controller, job };
+    activeRun = run;
+    pausedRequest = null;
+    updateSendButton();
+    modelSelect.disabled = modeSelect.disabled = true;
+    const progressMessage = addMessage('assistant', 'Iniciando agente autónomo…');
+    progressMessage.classList.add('beta-working');
+    progressMessage.querySelector('.beta-copy-btn')?.remove();
+    const progressBody = progressMessage.querySelector('p');
+    const steps = document.createElement('ol');
+    steps.className = 'beta-live-steps';
+    progressMessage.insertBefore(steps, progressBody);
+    const updateProgress = (message) => {
+      const step = document.createElement('li');
+      step.textContent = message;
+      steps.append(step);
+      progressBody.textContent = message;
+      setStatus(message);
+      activity(message);
+      messagesNode.scrollTop = messagesNode.scrollHeight;
+    };
+    try {
+      await currentSession();
+      if (job.imageFile || job.audioFile) throw new Error('El agente autónomo acepta texto en esta etapa. Usá el modo Normal para adjuntar imagen o audio.');
+      if (!job.executionId) {
+        updateProgress('Creando una ejecución persistente y una rama aislada…');
+        const started = await api('/agent/start', {
+          method: 'POST',
+          signal: controller.signal,
+          body: JSON.stringify({ message: job.message, model: job.modelId, mode: 'autonomous' }),
+        });
+        job.executionId = started.executionId;
+        saveAgentExecution(job);
+        updateProgress(`Ejecución ${job.executionId} · rama ${started.branch}. Sin acceso a producción.`);
+        if (job.pauseAfterStart) {
+          job.pauseAfterStart = false;
+          await api(`/agent/${encodeURIComponent(job.executionId)}/pause`, { method: 'POST', body: JSON.stringify({ message: job.pauseInstruction || '' }) });
+        }
+      } else {
+        let current = await api(`/agent/${encodeURIComponent(job.executionId)}`);
+        while (current.status === 'pausing' || current.status === 'step_in_progress') {
+          await wait(500);
+          current = await api(`/agent/${encodeURIComponent(job.executionId)}`);
+        }
+        if (current.status === 'paused') {
+          const instruction = job.resumeInstruction || '';
+          job.resumeInstruction = '';
+          await api(`/agent/${encodeURIComponent(job.executionId)}/resume`, { method: 'POST', body: JSON.stringify({ message: instruction }) });
+        }
+        saveAgentExecution(job);
+      }
+
+      let state;
+      let lastToolFingerprint = '';
+      for (let requestCount = 0; requestCount <= 2 * 10; requestCount++) {
+        if (controller.signal.aborted) throw new DOMException('Ejecución pausada.', 'AbortError');
+        state = await api(`/agent/${encodeURIComponent(job.executionId)}/step`, { method: 'POST', signal: controller.signal, body: '{}' });
+        if (state.lastToolResult) {
+          const fingerprint = `${state.toolCalls}:${state.lastToolResult.name}:${JSON.stringify(state.lastToolResult).slice(0, 100)}`;
+          if (fingerprint !== lastToolFingerprint) {
+            lastToolFingerprint = fingerprint;
+            updateProgress(`${state.lastToolResult.ok ? 'Herramienta completada' : 'Herramienta con error'}: ${state.lastToolResult.name}. Ronda ${state.rounds}/${state.maxRounds}, herramienta ${state.toolCalls}/${state.maxTools}.`);
+          }
+          if (['github_check_status', 'vercel_preview_status'].includes(state.lastToolResult.name) && ['queued', 'in_progress', 'BUILDING', 'INITIALIZING'].includes(state.lastToolResult.result?.status || state.lastToolResult.result?.readyState)) {
+            updateProgress('Esperando la finalización de la verificación remota…');
+            await wait(5000);
+          }
+        } else {
+          updateProgress(`Razonando sobre el siguiente paso · ronda ${state.rounds}/${state.maxRounds}.`);
+        }
+        if (state.status === 'running') continue;
+        if (state.status === 'step_in_progress') {
+          updateProgress('Otra solicitud está procesando el siguiente paso de esta ejecución…');
+          await wait(1000);
+          continue;
+        }
+        if (state.status === 'pausing') {
+          await wait(500);
+          continue;
+        }
+        break;
+      }
+
+      if (!state) throw new Error('El agente no devolvió estado de ejecución.');
+      progressMessage.remove();
+      if (state.status === 'paused') {
+        pausedRequest = job;
+        setStatus('Ejecución pausada. Los resultados y cambios ya completados quedaron guardados; pulsá Continuar para seguir.', 'idle');
+        activity('Ejecución pausada y estado persistido en el servidor.', 'done');
+        showWorkPreview(`Ejecución ${state.executionId} pausada. ${state.rounds} rondas y ${state.toolCalls} herramientas conservadas.`, 'active', 'Agente autónomo');
+      } else if (state.status === 'completed') {
+        const verification = state.verified ? 'Verificación automatizada: aprobada.' : state.lastChecksSucceeded ? 'Las pruebas del workflow pasaron.' : 'No se confirmó que las verificaciones hayan pasado.';
+        const answer = `${state.answer || 'La ejecución terminó.'}${state.summary ? `\n\n${state.summary}` : ''}\n\n${verification}\nRama de trabajo: ${state.branch || 'sin cambios de código'}${state.commitSha ? ` · commit ${state.commitSha.slice(0, 10)}` : ''}${state.vercelDeployment?.url ? `\nPreview: ${state.vercelDeployment.url}` : ''}\nConsumo estimado: ${state.estimatedTokens || 0} tokens · USD ${Number(state.estimatedCostUsd || 0).toFixed(4)} (límite USD 0).`;
+        history.push(
+          { role: 'user', content: job.displayText },
+          { role: 'assistant', content: answer, modelName: job.modelName, mode: 'autonomous', plan: steps.innerText.split('\n').filter(Boolean) },
+        );
+        history = history.slice(-30);
+        saveHistory();
+        const answerNode = addMessage('assistant', answer, job.modelName);
+        attachPlan(answerNode, steps.innerText.split('\n').filter(Boolean));
+        clearAgentExecution();
+        await refreshQuota();
+        setStatus(state.verified ? 'Agente finalizó y las verificaciones pasaron.' : 'Agente finalizó; revisá el estado de verificación antes de integrar los cambios.', state.verified ? 'idle' : 'error');
+        activity(`Ejecución finalizada en ${state.rounds} rondas y ${state.toolCalls} herramientas.`, 'done');
+      } else {
+        const reason = state.error || `La ejecución terminó en estado ${state.status}.`;
+        addMessage('assistant', `El agente no pudo completar la tarea: ${reason}\n\nLos cambios permanecen en la rama ${state.branch || 'de trabajo'}; producción no fue modificada.`);
+        clearAgentExecution();
+        setStatus(reason, 'error');
+        activity(`Ejecución detenida: ${reason}`, 'error');
+      }
+    } catch (error) {
+      progressMessage.remove();
+      if (pausedRequest) return;
+      job.userMessage.classList.add('failed');
+      setStatus(error?.message || 'No se pudo ejecutar el agente.', 'error');
+      activity(`La ejecución autónoma terminó con error: ${error?.message || 'error desconocido'}.`, 'error');
+      if (!job.executionId) clearAgentExecution();
+    } finally {
+      if (activeRun === run) {
+        activeRun = null;
+        modelSelect.disabled = modeSelect.disabled = Boolean(pausedRequest);
+        updateSendButton();
+      }
+    }
+  }
+
+  async function restoreAgentExecution() {
+    if (activeRun || pausedRequest || !ownerId) return;
+    try {
+      const data = await api('/agent');
+      const state = (data.executions || []).find((item) => ['running', 'pausing', 'paused'].includes(item.status));
+      if (!state) { clearAgentExecution(); return; }
+      let userNode = null;
+      const job = {
+        executionId: state.executionId,
+        message: state.initialMessage || '',
+        displayText: state.initialMessage || '',
+        modelId: state.modelId,
+        modelName: state.modelName,
+        mode: 'autonomous',
+        previousHistory: [],
+        userMessage: userNode,
+      };
+      job.userMessage = addMessage('user', `[Ejecución recuperada] ${job.displayText}`);
+      saveAgentExecution(job);
+      if (state.status === 'paused') {
+        pausedRequest = job;
+        setStatus(`Ejecución ${state.executionId} pausada; estado recuperado del servidor.`, 'idle');
+        updateSendButton();
+      } else {
+        activity(`Recuperando la ejecución autónoma ${state.executionId}.`);
+        void runAutonomousRequest(job);
+      }
+    } catch (error) {
+      setStatus(`No pude recuperar la ejecución autónoma: ${error.message}`, 'error');
+    }
+  }
+
+  async function runRequest(job) {
+    if (job.mode === 'autonomous') return runAutonomousRequest(job);
+    const controller = new AbortController();
+    const run = { controller, job };
+    activeRun = run;
+    pausedRequest = null;
+    updateSendButton();
+    modelSelect.disabled = modeSelect.disabled = true;
+    const progressMessage = addMessage('assistant', 'Preparando la ejecución…');
+    progressMessage.classList.add('beta-working');
+    progressMessage.querySelector('.beta-copy-btn')?.remove();
+    const progressBody = progressMessage.querySelector('p');
+    const steps = document.createElement('ol');
+    steps.className = 'beta-live-steps';
+    progressMessage.insertBefore(steps, progressBody);
+    const updateProgress = (message) => {
+      const step = document.createElement('li');
+      step.textContent = message;
+      steps.append(step);
+      progressBody.textContent = message;
+      setStatus(message);
+      activity(message);
+      messagesNode.scrollTop = messagesNode.scrollHeight;
+    };
+    try {
+      const auth = await currentSession();
+      updateProgress(job.mode === 'autonomous' ? 'Inspeccionando el contexto y preparando el plan…' : 'Preparando el contexto…');
+      const image = job.imageFile ? { data: await fileToBase64(job.imageFile) } : undefined;
+      const audio = job.audioFile ? { data: (await fileToBase64(job.audioFile)).split(',')[1], mime: job.audioFile.type || 'audio/mpeg' } : undefined;
+      if (controller.signal.aborted) throw new DOMException('Ejecución pausada.', 'AbortError');
+      updateProgress('Enviando la consulta al modelo seleccionado…');
+      const response = await fetch(`${API}/chat`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: job.message || (job.imageFile ? 'Analizá la imagen adjunta.' : 'Analizá el audio adjunto.'), history: job.previousHistory, image, audio, model: job.modelId, mode: job.mode }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (controller.signal.aborted) throw new DOMException('Ejecución pausada.', 'AbortError');
+      if (data.modelId) {
+        usedToday = Number(data.usedToday ?? usedToday);
+        remaining = Number(data.remaining ?? Math.max(0, dailyLimit - usedToday));
+        updateModelUsage(data.modelId, data);
+      }
+      if (!response.ok) throw new Error(data.error || `Beta respondió ${response.status}.`);
+      recordModelHealth(job.modelId, true);
+      const preparationErrors = Array.isArray(data.proposalErrors) ? data.proposalErrors : [];
+      const answer = preparationErrors.length
+        ? `${data.answer}\n\nNo pude preparar una o más acciones:\n• ${preparationErrors.join('\n• ')}`
+        : data.answer;
+      const plan = Array.isArray(data.plan) && data.plan.length
+        ? data.plan
+        : (data.proposals || []).map((proposal) => proposal.summary);
+      history.push(
+        { role: 'user', content: job.displayText },
+        { role: 'assistant', content: answer, modelName: data.modelName, mode: data.mode || job.mode, plan, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds },
+      );
+      history = history.slice(-30);
+      saveHistory();
+      progressMessage.remove();
+      const answerNode = addMessage('assistant', answer, data.modelName);
+      attachPlan(answerNode, plan);
+      renderProposals(answerNode, data.proposals, data.expiresInSeconds);
+      renderModelOptions();
+      if (data.proposals?.length) {
+        activity(`${data.proposals.length} propuesta(s) preparadas. Todavía no se aplicó ningún cambio.`, 'done');
+        setStatus(data.proposals.length > 1 ? 'Plan listo: revisá las vistas previas y aprobá todas las acciones juntas o por separado.' : 'Beta preparó un cambio; revisá la vista previa y aprobalo.');
+      } else {
+        setStatus(preparationErrors.length ? 'La consulta terminó; revisá los permisos indicados.' : 'Respuesta recibida.', preparationErrors.length ? 'error' : 'idle');
+      }
+      activity('Respuesta recibida y mostrada en el chat.', 'done');
+      clearAttachments();
+    } catch (error) {
+      progressMessage.remove();
+      if (controller.signal.aborted) {
+        if (job.restartAfterAbort) {
+          job.restartAfterAbort = false;
+          activity('Incorporé tus indicaciones; retomando la tarea completa.');
+          void runRequest(job);
+        } else {
+          pausedRequest = job;
+          setStatus('Ejecución pausada. Continuar vuelve a enviar el pedido y puede consumir otra consulta del proveedor.', 'idle');
+          activity('Ejecución pausada por vos.', 'done');
+        }
+        return;
+      }
+      job.userMessage.classList.add('failed');
+      history.push({ role: 'user', content: job.displayText });
+      history = history.slice(-30);
+      saveHistory();
+      recordModelHealth(job.modelId, false, error?.message || 'Error de conexión');
+      activity(`La consulta terminó con error: ${error?.message || 'error desconocido'}.`, 'error');
+      setStatus(error?.message || 'No se pudo enviar el mensaje. El texto sigue en el chat; podés reintentar.', 'error');
+    } finally {
+      if (activeRun === run) {
+        activeRun = null;
+        modelSelect.disabled = modeSelect.disabled = Boolean(pausedRequest);
+        updateSendButton();
+      }
+    }
+  }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const addition = input.value.trim();
+    const imageFile = pendingImage;
+    const audioFile = pendingAudio;
+    input.value = '';
+    try {
+      if (activeRun) {
+        if (activeRun.job.mode === 'autonomous') {
+          if (imageFile || audioFile) throw new Error('No se pueden agregar adjuntos durante una ejecución autónoma; enviá las indicaciones como texto.');
+          if (addition) appendToRequest(activeRun.job, addition);
+          if (!activeRun.job.executionId) {
+            activeRun.job.pauseAfterStart = true;
+            activeRun.job.pauseInstruction = addition;
+            setStatus('Pausaré la ejecución al terminar de crear su estado persistente…');
+            return;
+          }
+          await api(`/agent/${encodeURIComponent(activeRun.job.executionId)}/pause`, { method: 'POST', body: JSON.stringify({ message: addition }) });
+          setStatus('Pausando el agente entre herramientas; los resultados completados quedan guardados.');
+          activity('Solicitaste pausar la ejecución autónoma y conservar el estado.');
+          return;
+        }
+        if (addition || imageFile || audioFile) {
+          appendToRequest(activeRun.job, addition, imageFile, audioFile);
+          clearAttachments();
+          activeRun.job.restartAfterAbort = true;
+          setStatus('Pausando para incorporar tus indicaciones…');
+          activity('Pausando la consulta para integrar nuevas indicaciones.');
+        } else {
+          activeRun.job.restartAfterAbort = false;
+        }
+        activeRun.controller.abort();
+        return;
+      }
+      if (pausedRequest) {
+        if (pausedRequest.mode === 'autonomous') {
+          if (imageFile || audioFile) throw new Error('El agente autónomo no admite adjuntos en esta etapa.');
+          if (addition) {
+            appendToRequest(pausedRequest, addition);
+            pausedRequest.resumeInstruction = addition;
+          }
+          clearAttachments();
+          void runRequest(pausedRequest);
+          return;
+        }
+        if (addition || imageFile || audioFile) appendToRequest(pausedRequest, addition, imageFile, audioFile);
+        clearAttachments();
+        void runRequest(pausedRequest);
+        return;
+      }
+      if (!addition && !imageFile && !audioFile) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
+      const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
+      if (!selectedModel) { setStatus('Elegí un modelo de IA disponible en el selector.', 'error'); return; }
+      if (Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
+      if (imageFile && !selectedModel.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
+      if (audioFile && !selectedModel.audio) { setStatus('Este modelo no admite audio. Elegí uno que indique audio.', 'error'); return; }
+      if (modeSelect.value === 'autonomous' && (imageFile || audioFile)) { setStatus('El agente autónomo acepta texto en esta etapa. Usá el modo Normal para adjuntar imagen o audio.', 'error'); return; }
+      const message = addition || (imageFile ? 'Analizá la imagen adjunta.' : 'Transcribí y analizá el audio adjunto.');
+      const displayText = `${message}${imageFile ? `\n[Imagen: ${imageFile.name}]` : ''}${audioFile ? `\n[Audio: ${audioFile.name}]` : ''}`;
+      const job = {
+        message, displayText, imageFile, audioFile,
+        previousHistory: history.slice(-8),
+        modelId: selectedModel.id,
+        modelName: selectedModel.name,
+        mode: modeSelect.value,
+        userMessage: addMessage('user', displayText),
+      };
+      clearAttachments();
+      void runRequest(job);
+    } catch (error) {
+    input.value = addition;
+    setStatus(error.message || 'No se pudo preparar la ejecución.', 'error');
+    } finally {
+      updateSendButton();
+    }
+  }, true);
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const prompt = input.value.trim();
     if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
     const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
-    if (!selectedModel) { setStatus('Elegí un modelo de IA disponible en el selector.', 'error'); return; }
-    if (!selectedModel.unlimited && Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
+    if (!selectedModel) { setStatus('Conectá OpenRouter y elegí un modelo gratuito disponible.', 'error'); return; }
+    if (Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
     if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
     if (pendingAudio && !selectedModel?.audio) { setStatus('Este modelo no admite audio. Elegí uno que indique audio.', 'error'); return; }
     input.value = '';
@@ -1155,21 +993,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const userMessage = addMessage('user', displayText);
     const progressMessage = addMessage('assistant', 'Validando tu sesión…');
     const progressBody = progressMessage.querySelector('p');
-    progressMessage.classList.add('beta-working');
-    progressMessage.querySelector('.beta-copy-btn')?.remove();
-    const steps = ['Validando tu sesión…'];
-    const liveList = document.createElement('ul');
-    liveList.className = 'beta-live-steps';
-    progressMessage.insertBefore(liveList, progressBody);
-    const paintSteps = () => {
-      liveList.replaceChildren(...steps.map((step, i) => { const li = document.createElement('li'); li.dataset.state = i === steps.length - 1 ? 'active' : 'done'; li.textContent = step; return li; }));
-      progressBody.textContent = 'Trabajando…';
-      messagesNode.scrollTop = messagesNode.scrollHeight;
-    };
-    paintSteps();
-    const updateProgress = (message) => { steps.push(message); paintSteps(); setStatus(message); activity(message); };
+    const updateProgress = (message) => { progressBody.textContent = message; setStatus(message); activity(message); };
     try {
       const auth = await currentSession();
+      modeSelect.value = savedMode();
       updateProgress('Preparando adjuntos…');
       const image = pendingImage ? { data: await fileToBase64(pendingImage) } : undefined;
       const audio = pendingAudio ? { data: (await fileToBase64(pendingAudio)).split(',')[1], mime: pendingAudio.type || 'audio/mpeg' } : undefined;
@@ -1194,16 +1021,15 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const preparationErrors = Array.isArray(data.proposalErrors) ? data.proposalErrors : [];
       const answerBase = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
       const answer = preparationErrors.length ? `${answerBase}\n\nNo pude preparar una o más acciones:\n• ${preparationErrors.join('\n• ')}` : answerBase;
-      history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer, modelName: data.modelName, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds, steps: [...steps, 'Respuesta recibida'] });
+      history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer, modelName: data.modelName, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds });
       history = history.slice(-30);
       saveHistory();
       progressMessage.remove();
       const answerNode = addMessage('assistant', answer, data.modelName);
-      attachSteps(answerNode, [...steps, 'Respuesta recibida']);
       renderProposals(answerNode, data.proposals, data.expiresInSeconds);
       if (data.proposals?.length) {
         activity(`${data.proposals.length} propuesta(s) preparadas. Todavía no se aplicó ningún cambio.`, 'done');
-        setStatus(data.proposals.length > 1 ? 'Beta preparó todos los pasos; revisalos y aprobalos juntos o uno por uno.' : 'Beta preparó un cambio; revisalo y aprobalo.');
+        setStatus('Beta preparó cambios; revisalos y aprobá cada uno por separado.');
       }
       renderModelOptions();
       if (!data.proposals?.length) setStatus(preparationErrors.length ? 'La consulta terminó; revisá los permisos indicados para GitHub.' : 'Respuesta recibida.', preparationErrors.length ? 'error' : 'idle');
@@ -1230,8 +1056,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (!sendButton.disabled) form.requestSubmit(sendButton);
   });
 
-  $('#beta-clear').addEventListener('click', (event) => { event.stopImmediatePropagation(); createThread(); }, true);
   $('#beta-clear').addEventListener('click', () => {
+    if (activeRun || pausedRequest) { setStatus('Pausá o terminá la ejecución antes de iniciar otro chat.', 'error'); return; }
     history = [];
     messagesNode.replaceChildren();
     stage.classList.remove('has-messages');
@@ -1242,7 +1068,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   async function loadIntegrations() {
     try {
       const data = await api('/integrations/status');
-      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter', 'groq', 'cohere', 'gemini']) {
+      for (const provider of ['github', 'supabase', 'cloudflare', 'vercel', 'openrouter', 'groq', 'cohere', 'gemini']) {
         const record = data.integrations?.[provider] || {};
         const node = $(`#beta-connection-${provider}`);
         const disconnect = $(`[data-beta-disconnect="${provider}"]`);
@@ -1255,11 +1081,11 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       if (resources.github) details.push(`GitHub: ${resources.github.repository}${resources.github.defaultBranch ? ` (${resources.github.defaultBranch})` : ''}`);
       if (resources.supabase) details.push(`Supabase: ${resources.supabase.length} proyectos disponibles`);
       if (resources.cloudflare) details.push(`Cloudflare: ${resources.cloudflare.length} Workers disponibles`);
+      if (resources.vercel) details.push(`Vercel: ${resources.vercel.length} proyectos disponibles`);
       $('#beta-resource-summary').textContent = details.join(' · ') || 'Conectá un servicio para que Beta pueda consultar sus recursos.';
       await loadPrivateProjectMap(false);
-      await loadGithubPages(Boolean(data.integrations?.github?.connected));
     } catch (error) {
-      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter', 'groq', 'cohere', 'gemini']) { const node = $(`#beta-connection-${provider}`); if (node) node.textContent = error.message; }
+      for (const provider of ['github', 'supabase', 'cloudflare', 'vercel', 'openrouter', 'groq', 'cohere', 'gemini']) { const node = $(`#beta-connection-${provider}`); if (node) node.textContent = error.message; }
     }
   }
 
@@ -1267,7 +1093,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const statusNode = $('#beta-map-status');
     const detailsNode = $('#beta-map-details');
     const contentNode = $('#beta-map-content');
-    const card = statusNode?.closest('.beta-private-map'); if (!statusNode || !contentNode || !card) return; const auth = await window.mediaChafaBetaAuth?.(); if (!auth?.owner || auth.anonymous) { card.hidden = true; return; } card.hidden = false;
+    if (!statusNode || !contentNode) return;
     statusNode.textContent = refresh ? 'Actualizando el inventario privado…' : 'Cargando mapa privado…';
     try {
       const data = await api(`/project-map${refresh ? '?refresh=1' : ''}`);
@@ -1302,83 +1128,6 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       statusNode.dataset.state = 'error';
     }
   }
-  let pagesRepositories = [];
-  function setPagesStatus(message, state = 'idle') {
-    const node = $('#beta-connection-pages'); if (!node) return;
-    node.textContent = message; node.dataset.state = state;
-  }
-  async function loadGithubPages(githubConnected = true) {
-    const list = $('#beta-pages-sites'); const repoSelect = $('#beta-pages-repo');
-    if (!list || !repoSelect) return;
-    if (!githubConnected) { list.replaceChildren(); repoSelect.replaceChildren(); setPagesStatus('Conectá GitHub arriba para usar GitHub Pages.'); return; }
-    setPagesStatus('Consultando tus sitios de GitHub Pages…');
-    try {
-      const data = await api('/integrations/pages');
-      if (!data.connected) { setPagesStatus('Conectá GitHub arriba para usar GitHub Pages.'); return; }
-      pagesRepositories = data.repositories || [];
-      const previous = repoSelect.value;
-      repoSelect.replaceChildren(...pagesRepositories.map((repo) => {
-        const option = document.createElement('option'); option.value = repo.name;
-        option.textContent = `${repo.name}${repo.private ? ' · privado' : ''}${repo.hasPages ? ' · ya publicado' : ''}`;
-        return option;
-      }));
-      if (previous && pagesRepositories.some((repo) => repo.name === previous)) repoSelect.value = previous;
-      syncPagesBranch();
-      list.replaceChildren(...(data.sites || []).map((site) => {
-        const item = document.createElement('li');
-        const name = document.createElement('strong'); name.textContent = site.repository.replace(/^knmollpy\//, '');
-        item.append(name);
-        if (site.url) { const link = document.createElement('a'); link.href = site.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = site.url; item.append(link); }
-        const meta = document.createElement('small');
-        meta.textContent = site.error ? site.error : [site.status ? `estado: ${site.status}` : '', site.branch ? `rama ${site.branch}${site.folder ? ` ${site.folder}` : ''}` : '', site.buildType === 'workflow' ? 'con GitHub Actions' : ''].filter(Boolean).join(' · ');
-        item.append(meta);
-        if (!site.error) {
-          const rebuild = document.createElement('button'); rebuild.type = 'button'; rebuild.className = 'secondary'; rebuild.textContent = 'Volver a publicar';
-          rebuild.addEventListener('click', () => runPagesAction({ provider: 'github', type: 'pages_build', repository: site.repository }, `¿Volver a publicar el sitio de ${site.repository}?`, rebuild));
-          item.append(rebuild);
-        }
-        return item;
-      }));
-      const count = (data.sites || []).length;
-      setPagesStatus(count ? `Conectado · ${count} sitio${count === 1 ? '' : 's'} publicado${count === 1 ? '' : 's'}` : 'Conectado · todavía no tenés sitios publicados', 'connected');
-    } catch (error) {
-      setPagesStatus(/Ruta de integraciones no encontrada|404/.test(error.message) ? 'El servidor de Beta todavía no tiene GitHub Pages. Esperá a que se actualice.' : error.message, 'error');
-    }
-  }
-  function syncPagesBranch() {
-    const repo = pagesRepositories.find((item) => item.name === $('#beta-pages-repo')?.value);
-    const branchInput = $('#beta-pages-branch');
-    if (repo && branchInput) branchInput.value = repo.defaultBranch || 'main';
-  }
-  async function runPagesAction(action, question, button) {
-    if (!window.confirm(question)) return;
-    if (button) button.disabled = true;
-    setPagesStatus('Preparando la publicación…');
-    try {
-      const proposal = await api('/actions/propose', { method: 'POST', body: JSON.stringify({ actions: [action] }) });
-      const prepared = proposal.proposals?.[0];
-      if (!prepared) throw new Error(proposal.failures?.[0] || 'Beta no aceptó la publicación. Revisá que GitHub esté conectado y los datos sean correctos.');
-      activity(`GitHub Pages: ${prepared.summary}`);
-      const result = await api(`/actions/${encodeURIComponent(prepared.id)}/approve`, { method: 'POST', body: '{}' });
-      activity(`GitHub Pages: ${result.message || 'Listo.'}`, 'done');
-      setPagesStatus(result.message || 'Listo.', 'connected');
-      if (result.url) showWorkPreview(result.message || 'Listo.', 'done', 'GitHub Pages', result.url);
-      setTimeout(() => loadGithubPages(true), 1500);
-    } catch (error) {
-      activity(`GitHub Pages no se completó: ${error.message}`, 'error');
-      setPagesStatus(error.message, 'error');
-    } finally { if (button) button.disabled = false; }
-  }
-  $('#beta-pages-repo')?.addEventListener('change', syncPagesBranch);
-  $('#beta-pages-refresh')?.addEventListener('click', () => loadGithubPages(true));
-  $('#beta-pages-publish')?.addEventListener('click', (event) => {
-    const repository = $('#beta-pages-repo')?.value;
-    const branch = $('#beta-pages-branch')?.value.trim();
-    const folder = $('#beta-pages-folder')?.value || '/';
-    if (!repository) { setPagesStatus('Elegí un repositorio.', 'error'); return; }
-    if (!/^[A-Za-z0-9._\/-]{1,100}$/.test(branch || '')) { setPagesStatus('Escribí una rama válida, por ejemplo main.', 'error'); $('#beta-pages-branch')?.focus(); return; }
-    runPagesAction({ provider: 'github', type: 'enable_pages', repository, branch, folder }, `¿Publicar ${repository} con GitHub Pages desde la rama ${branch}, carpeta ${folder}?`, event.currentTarget);
-  });
   $('#beta-map-refresh')?.addEventListener('click', () => loadPrivateProjectMap(true));
 
   document.querySelectorAll('[data-beta-connect]').forEach(button => button.addEventListener('click', async () => {
@@ -1434,88 +1183,4 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   });
   selectBetaView('chat');
   void refreshQuota();
-})();
-
-// Pantalla completa de Beta + arreglo del panel "Actividad".
-(() => {
-  if (window.MEDIA_NATIVE_APP === true || window.Capacitor?.isNativePlatform?.()) return;
-  const app = document.querySelector('#app');
-  const brand = document.querySelector('#beta-panel .beta-brand');
-  if (!app || !brand) return;
-  const style = document.createElement('style');
-  style.textContent = `
-#app.beta-mode #beta-panel .beta-workspace.beta-split-mode.beta-activity-open #beta-browser-view{grid-column:1/-1!important;grid-row:1/-1!important;justify-self:end;left:auto}
-#app.beta-mode #beta-panel .beta-brand{display:flex;align-items:center}
-#app.beta-mode #beta-panel .beta-expand{margin-left:auto;flex:none;width:30px;height:30px;display:inline-grid;place-items:center;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:transparent;color:#cfcfcf;cursor:pointer;padding:0}
-#app.beta-mode #beta-panel .beta-expand:hover{background:#262626;color:#fff}
-#app.beta-mode #beta-panel .beta-expand svg{width:16px;height:16px}
-#app.beta-mode.beta-expanded .topbar,#app.beta-mode.beta-expanded .welcome,#app.beta-mode.beta-expanded .storage{display:none!important}
-#app.beta-mode.beta-expanded .wrap{padding:0!important;margin:0!important;max-width:none!important}
-#app.beta-mode.beta-expanded #beta-panel{position:fixed!important;inset:0!important;z-index:900;height:100svh!important;min-height:0!important;margin:0!important;padding:0!important}
-#app.beta-mode.beta-expanded #beta-panel .beta-workspace{height:100svh!important;min-height:0!important;border-radius:0!important;border:0!important}
-`;
-  document.head.append(style);
-  const icons = {
-    expand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>',
-    shrink: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>'
-  };
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.id = 'beta-expand';
-  button.className = 'beta-expand';
-  brand.append(button);
-  const paint = () => {
-    const on = app.classList.contains('beta-expanded');
-    button.innerHTML = on ? icons.shrink : icons.expand;
-    button.title = on ? 'Salir de pantalla completa' : 'Agrandar pantalla';
-    button.setAttribute('aria-label', button.title);
-    button.setAttribute('aria-pressed', String(on));
-  };
-  const setExpanded = (on) => { app.classList.toggle('beta-expanded', on); paint(); };
-  button.addEventListener('click', () => setExpanded(!app.classList.contains('beta-expanded')));
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && app.classList.contains('beta-expanded') && !document.querySelector('.beta-model-modal.open, .beta-workspace.beta-activity-open')) setExpanded(false);
-  });
-  new MutationObserver(() => { if (!app.classList.contains('beta-mode') && app.classList.contains('beta-expanded')) setExpanded(false); })
-    .observe(app, { attributes: true, attributeFilter: ['class'] });
-  paint();
-})();
-
-// Chat más limpio: modelo en la barra lateral, sin línea superior, caja de texto compacta.
-(() => {
-  if (window.MEDIA_NATIVE_APP === true || window.Capacitor?.isNativePlatform?.()) return;
-  const q = (s) => document.querySelector(s);
-  const header = q('#beta-panel .beta-header');
-  const sidebar = q('#beta-panel .beta-sidebar');
-  const nav = sidebar?.querySelector('.beta-nav');
-  const modelChip = header?.querySelector('.beta-chip:not(.beta-chip-activity)');
-  if (modelChip && sidebar) { modelChip.classList.add('beta-side-model'); sidebar.insertBefore(modelChip, nav || null); }
-  const showActivity = q('#beta-show-activity');
-  const tools = q('#beta-form .beta-tools');
-  if (showActivity && tools) { showActivity.textContent = 'Actividad'; showActivity.className = 'secondary beta-tool-activity'; tools.append(showActivity); }
-  const input = q('#beta-input');
-  if (input) {
-    input.rows = 1;
-    const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 140) + 'px'; };
-    input.addEventListener('input', grow);
-    q('#beta-form')?.addEventListener('submit', () => setTimeout(grow, 0));
-    new MutationObserver(grow).observe(input, { attributes: true, attributeFilter: ['value'] });
-  }
-  const style = document.createElement('style');
-  style.textContent = `
-#app.beta-mode #beta-panel .beta-header{display:none!important}
-#app.beta-mode #beta-panel #beta-chat-view.active,#app.beta-mode #beta-panel #beta-integrations-view.active,#app.beta-mode #beta-panel .beta-workspace:not(.beta-split-mode) #beta-browser-view.active{grid-row:1/-1!important}
-#app.beta-mode #beta-panel .beta-count{display:none!important}
-#app.beta-mode #beta-panel .beta-sidebar .beta-side-model{display:flex;width:100%;max-width:none;justify-content:space-between;margin:2px 0 6px;padding:9px 12px;border-radius:10px;font-size:12px}
-#app.beta-mode #beta-panel .beta-composer{padding:8px 10px 8px 14px!important;border-radius:18px!important}
-#app.beta-mode #beta-panel .beta-compose{display:flex!important;flex-direction:column;gap:4px}
-#app.beta-mode #beta-panel .beta-compose textarea{min-height:24px!important;height:24px;max-height:140px!important;resize:none!important;padding:4px 2px!important;font-size:14px!important;line-height:1.45;overflow-y:auto}
-#app.beta-mode #beta-panel .beta-compose-bottom{gap:6px!important}
-#app.beta-mode #beta-panel .beta-tools .secondary,#app.beta-mode #beta-panel .beta-tools label{min-height:28px!important;padding:3px 10px!important;font-size:11px!important}
-#app.beta-mode #beta-panel #beta-send{width:32px!important;height:32px!important;min-height:0!important;padding:0!important}
-#app.beta-mode #beta-panel .beta-status-row{justify-content:center!important;margin-top:4px}
-#app.beta-mode #beta-panel .beta-status{margin:2px 0 0!important;font-size:11px!important}
-#app.beta-mode #beta-panel .beta-chat-stage{padding-bottom:10px!important}
-`;
-  document.head.append(style);
 })();

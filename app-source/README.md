@@ -41,3 +41,26 @@ El dueño ofrece **20 GB de almacenamiento por US$ 5 con acceso permanente**, su
 ## Tecnología
 
 La aplicación web y Android usa Capacitor; Supabase gestiona autenticación y datos, y Cloudflare R2 y Google Drive se pueden usar como destinos de almacenamiento. El catálogo de PS4 muestra los enlaces que configura el dueño.
+
+## Beta: agente autónomo
+
+El modo **Normal** conserva el chat de un turno y las propuestas de acciones revisables. El modo **Autónomo** usa un ciclo backend: el modelo pide una herramienta, el Worker ejecuta esa herramienta, guarda el resultado y vuelve a consultar al modelo. No depende de una respuesta del modelo que simplemente afirme haber ejecutado algo.
+
+### Herramientas disponibles en el ciclo autónomo
+
+- **GitHub:** listar rutas, leer y buscar archivos, y escribir archivos completos bajo `app-source/`. Las escrituras crean commits solo en una rama aislada `beta-agent/<execution-id>`; el agente no tiene herramienta para borrar ni escribir en `main`.
+- **Web:** leer páginas HTTPS públicas y devolver texto limitado al modelo. No controla el navegador visual ni ejecuta JavaScript de las páginas.
+- **Pruebas:** iniciar el workflow `beta-agent-tests.yml` y consultar el resultado para el commit de la rama. El token de GitHub necesita permisos de lectura/escritura de Contents y Actions: write para iniciar manualmente el workflow. Las pruebas deben estar presentes en la rama predeterminada del repositorio para que GitHub permita `workflow_dispatch`.
+- **Vercel:** si se conecta un token, crear un deployment con `target: preview`, consultar el estado del build y hacer un GET a la URL de Preview. El agente no tiene una herramienta de promoción o despliegue a producción.
+
+El workflow ejecuta comprobaciones de sintaxis de JavaScript y `npm run test:beta-agent` en `app-source`. El agente puede usar errores de esas pruebas para proponer correcciones adicionales, con un máximo de 8 rondas, 20 llamadas a herramientas, 30.000 tokens estimados y 15 minutos por ejecución. El modo autónomo acepta únicamente modelos `:free` de OpenRouter cuya cuenta y cuota gratuita se verifican en cada consulta; no usa fallback a otro modelo. El coste configurado para esas llamadas es USD 0.
+
+### Pausa, estado y límites
+
+Las ejecuciones, resultados de herramientas, rama y contador de límites se guardan en el KV `BETA_LIMITS` durante 24 horas. **Pausar** guarda las instrucciones nuevas y espera que termine la operación en curso; después se puede continuar desde el estado guardado, sin repetir herramientas ya completadas. Al recargar la página, Beta consulta y recupera las ejecuciones recientes del dueño.
+
+La pausa actúa entre operaciones; no revierte una petición externa que ya empezó. El backend usa el lease de KV para evitar que el cliente inicie a la vez dos pasos en la misma ejecución, pero KV no ofrece transacciones ni exclusión distribuida estricta. Antes de habilitar varias sesiones simultáneas o tareas críticas, conviene mover el coordinador a Durable Objects.
+
+El agente no ejecuta shell en el Worker. Las pruebas remotas requieren que el workflow esté instalado y permitido por GitHub Actions. Un deployment de Preview requiere que el proyecto Vercel esté vinculado a `knmollpy/mediachafa-transfer-` y que el token tenga acceso a ese proyecto. El agente no ejecuta SQL, cambios de Supabase, operaciones de Cloudflare, borrados, merges ni operaciones de producción. Los commits permanecen en la rama `beta-agent/*`; revisalos y hacé el merge manualmente.
+
+Para correr localmente las pruebas nuevas: `cd app-source && npm run test:beta-agent`. El cambio del Worker necesita desplegarse manualmente en el servicio Cloudflare Beta y sus integraciones GitHub/Vercel deben configurarse en **Integraciones** antes de usarlo. Esta implementación no despliega producción.
