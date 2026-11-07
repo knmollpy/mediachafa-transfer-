@@ -1,3 +1,97 @@
+// Reglas del modo Autónomo de Beta (sin acceso al DOM, para poder probarlas solas).
+(() => {
+  const LIVE_REPO = 'knmollpy/mediachafa-transfer-';
+  const AUTO_TYPES = new Set(['create_repository', 'write_file', 'write_files', 'enable_pages', 'pages_build', 'create_worker']);
+  const TAGS = { SIGO: 'continue', PREGUNTA: 'question', LISTO: 'done' };
+  const OWN_MODEL_TURNS = 30;
+  const OTHER_MODEL_TURNS = 12;
+
+  // Las IAs MediaChafa no tienen límite de consultas; las demás no gastan más de lo que queda.
+  function turnLimit(model) {
+    if (model?.unlimited) return OWN_MODEL_TURNS;
+    const remaining = Number(model?.remaining);
+    return Math.max(1, Math.min(OTHER_MODEL_TURNS, Number.isFinite(remaining) ? remaining : 6));
+  }
+
+  function newState(goal, model) {
+    return { goal: String(goal || '').slice(0, 6000), modelId: model.id, turn: 0, maxTurns: turnLimit(model), loopHistory: [], links: [], emptyStreak: 0 };
+  }
+
+  function classifyAnswer(answer) {
+    const text = String(answer || '').trim();
+    const match = text.match(/^[\s*_#>"'«]*(SIGO|PREGUNTA|LISTO)[\s*_"'»]*[:：\-–—]\s*/i);
+    if (!match) return { kind: 'unknown', text };
+    return { kind: TAGS[match[1].toUpperCase()], text: text.slice(match[0].length).trim() || text };
+  }
+
+  // Borrados, SQL, tipos desconocidos y cualquier cambio en la web en vivo esperan al dueño.
+  function needsOwnerApproval(proposal) {
+    if (!proposal || !AUTO_TYPES.has(String(proposal.type || ''))) return true;
+    if (proposal.type === 'create_repository') return false;
+    if (proposal.provider === 'github' && String(proposal.repository || LIVE_REPO).toLowerCase() === LIVE_REPO) return true;
+    return false;
+  }
+
+  function shouldRetry(status, attempt, model) {
+    if (model?.unlimited) return attempt < 2 && (!status || status === 429 || status >= 500);
+    return attempt < 1 && (!status || status >= 500);
+  }
+
+  function decideNext({ classified, proposalsCount, failed, emptyStreak = 0 }) {
+    if (classified.kind === 'question') return { kind: 'question', emptyStreak: 0 };
+    if (classified.kind === 'done' && !failed) return { kind: 'done', emptyStreak: 0 };
+    if (proposalsCount || failed) return { kind: 'continue', emptyStreak: 0 };
+    if (classified.kind === 'unknown' && /\?\s*$/.test(classified.text)) return { kind: 'question', emptyStreak: 0 };
+    if (emptyStreak + 1 >= 3) return { kind: 'stalled', emptyStreak: 0 };
+    return { kind: 'nudge', emptyStreak: emptyStreak + 1 };
+  }
+
+  function protocol(state) {
+    return `[MODO AUTÓNOMO DE MEDIACHAFA · turno ${state.turn} de ${state.maxTurns}]
+Trabajá sola hasta terminar TODO el pedido; no te frenes después de un paso ni pidas permiso para seguir. En cada turno devolvé en "actions" todas las acciones del próximo paso (podés mandar varias, en orden). Las acciones normales se aprueban y ejecutan solas y en el turno siguiente recibís su resultado real: nunca digas que algo se hizo antes de verlo en los resultados. Borrados, SQL y cambios en ${LIVE_REPO} (la web en vivo) esperan la aprobación del dueño.
+"answer" tiene que empezar con UNA etiqueta:
+- "SIGO: ..." cuando mandás acciones y todavía falta trabajo.
+- "PREGUNTA: ..." solo si falta un dato imprescindible que no podés decidir vos (nombres, colores, textos y detalles menores decidilos vos).
+- "LISTO: ..." cuando ya viste en los resultados que todo quedó hecho; incluí un resumen corto y los links finales.
+Acciones válidas (usá exactamente estos campos; no inventes otros tipos):
+{"provider":"github","type":"create_repository","name":"nombre-repo","description":"...","visibility":"public"}
+{"provider":"github","type":"write_files","repository":"knmollpy/nombre-repo","files":[{"path":"index.html","content":"archivo completo"}],"message":"mensaje de commit"}
+{"provider":"github","type":"enable_pages","repository":"knmollpy/nombre-repo","branch":"main","folder":"/"}
+{"provider":"cloudflare","type":"create_worker","name":"nombre-worker","content":"código completo"}
+Para una página web pública: create_repository con visibility "public", después write_files con todos los archivos y por último enable_pages; queda en https://knmollpy.github.io/nombre-repo/. Escribí código completo y funcional, sin "..." ni partes pendientes; si es muy largo, repartilo en varios turnos.`;
+  }
+
+  function buildTurnMessage(state, message) {
+    if (!message) return `${protocol(state)}\n\nPEDIDO DEL DUEÑO:\n${state.goal}`;
+    return `${protocol(state)}\n\nPEDIDO ORIGINAL (no lo pierdas de vista): ${state.goal.slice(0, 2000)}\n\n${message}`;
+  }
+
+  function compactUserTurn(state, message) {
+    return message ? `Turno ${state.turn}. ${message}` : `PEDIDO DEL DUEÑO: ${state.goal}`;
+  }
+
+  function nudgeMessage(results, answer) {
+    return `${results.length ? `RESULTADOS REALES DEL TURNO ANTERIOR:\n${results.join('\n')}\n\n` : ''}No llegó ninguna acción válida en "actions"${answer ? ` (dijiste: "${String(answer).slice(0, 300)}")` : ''}. Si ya terminaste respondé "LISTO: ...", si te falta un dato imprescindible respondé "PREGUNTA: ...", y si no, devolvé ahora las acciones del próximo paso con los tipos y campos exactos de la lista.`;
+  }
+
+  function linksBlock(state, text = '') {
+    const links = [...new Set(state.links || [])].filter(link => !String(text).includes(link));
+    return links.length ? `\n\nLinks:\n${links.join('\n')}` : '';
+  }
+
+  function finalMessage(outcome, state) {
+    const text = String(outcome.text || '').trim();
+    if (outcome.kind === 'done') return `${text || 'Listo, terminé el pedido.'}${linksBlock(state, text)}`;
+    if (outcome.kind === 'question') return `${text}\n\n(Respondé acá y sigo trabajando sola.)`;
+    if (outcome.kind === 'stalled') return `No encontré más pasos para hacer. Si falta algo, decime qué y sigo.${linksBlock(state)}`;
+    if (outcome.kind === 'stopped') return `Me detuve como pediste. Escribí "seguí" para continuar desde donde quedé.${linksBlock(state)}`;
+    if (outcome.kind === 'error') return `Me frené por un error: ${text}\n\nEscribí "seguí" y reintento desde donde quedé.${linksBlock(state)}`;
+    return `Hice ${state.turn} turnos y llegué al límite de esta tanda. Escribí "seguí" y continúo desde donde quedé.${linksBlock(state)}`;
+  }
+
+  window.MediaChafaBetaAgent = { LIVE_REPO, turnLimit, newState, classifyAnswer, needsOwnerApproval, shouldRetry, decideNext, buildTurnMessage, compactUserTurn, nudgeMessage, finalMessage };
+})();
+
 (() => {
   if (window.MEDIA_NATIVE_APP === true || window.Capacitor?.isNativePlatform?.()) return;
 
@@ -764,7 +858,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     setTimeout(() => { card.classList.add('beta-proposal-leaving'); setTimeout(() => card.remove(), 260); }, 1400);
   }
 
-  function renderProposals(messageNode, proposals, expiresInSeconds = 600) {
+  function renderProposals(messageNode, proposals, expiresInSeconds = 600, hooks = {}) {
     const runners = [];
     let bulkBar;
     if ((proposals || []).length >= 2) {
@@ -890,6 +984,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           finished = true;
           resolveProposal(proposal.id, card);
           queueVisualReview(visualPrep, data);
+          hooks.onResult?.(proposal, { ok: true, message: data.message || 'Cambio aplicado.', url: data.url || '' });
           return true;
         } catch (error) {
           result.textContent = error.message;
@@ -898,11 +993,11 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           if (/venci|expir|no existe|not found|ya fue|already/i.test(error.message || '')) resolveProposal(proposal.id, card);
           activity(`La acción en ${proposal.provider} no se completó: ${error.message}`, 'error');
           showWorkPreview(error.message, 'error', `${proposal.provider} · ${proposal.type.replaceAll('_', ' ')}`);
+          hooks.onResult?.(proposal, { ok: false, error: error.message || 'No se pudo aplicar el cambio.' });
           return false;
         }
       };
-      approve.addEventListener('click', () => { runApprove(); });
-      runners.push({ run: runApprove, done: () => finished, label: proposal.summary.slice(0, 140) });
+      approve.addEventListener('click', () => { runApprove(); });      runners.push({ run: runApprove, done: () => finished, label: proposal.summary.slice(0, 140) });
       reject.addEventListener('click', async () => {
         approve.disabled = reject.disabled = true;
         try {
@@ -911,6 +1006,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           finished = true;
           activity(`${proposal.provider}: propuesta denegada.`, 'done');
           resolveProposal(proposal.id, card);
+          hooks.onResult?.(proposal, { ok: false, denied: true, error: 'El dueño denegó esta acción.' });
         } catch (error) {
           result.textContent = error.message;
           result.dataset.state = 'error';
@@ -1161,9 +1257,215 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     attachmentLabel(pendingAudio, '#beta-audio-name');
   });
 
+  // ===== Modo Autónomo =====
+  // Beta trabaja en varios turnos seguidos: prepara acciones, ejecuta solas las que no son
+  // peligrosas, le pasa los resultados reales al modelo y sigue hasta terminar. Solo se frena
+  // para hacerte una pregunta necesaria, para pedirte aprobación de algo delicado
+  // (borrados, SQL o cambios en la web en vivo de MediaChafa) o si tocás "Detener".
+  const agent = window.MediaChafaBetaAgent;
+  const modeSelect = $('#beta-mode');
+  const pendingAgentRuns = {};
+  let autonomousRun = null;
+  const stopButton = document.createElement('button');
+  stopButton.type = 'button';
+  stopButton.className = 'secondary beta-agent-stop hidden';
+  stopButton.textContent = 'Detener';
+  stopButton.title = 'Detener el modo autónomo';
+  $('#beta-form .beta-tools')?.append(stopButton);
+  stopButton.addEventListener('click', () => {
+    if (!autonomousRun) return;
+    autonomousRun.stopped = true;
+    autonomousRun.controller.abort();
+    autonomousRun.waiting?.({ ok: false, stopped: true, error: 'Detenido por el dueño.' });
+    setStatus('Deteniendo el modo autónomo…');
+  });
+  try {
+    const savedMode = localStorage.getItem('mediachafa-beta-mode');
+    if (modeSelect && savedMode && [...modeSelect.options].some(option => option.value === savedMode)) modeSelect.value = savedMode;
+  } catch {}
+  modeSelect?.addEventListener('change', () => { try { localStorage.setItem('mediachafa-beta-mode', modeSelect.value); } catch {} });
+
+  async function agentChat(state, run, message, attachments = {}) {
+    const auth = await currentSession();
+    const response = await fetch(`${API}/chat`, {
+      method: 'POST',
+      signal: run.controller.signal,
+      headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, history: state.loopHistory.slice(-8), model: state.modelId, mode: 'autonomous', ...attachments }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (data.modelId) updateModelUsage(data.modelId, data);
+    if (!response.ok) {
+      const error = new Error(data.error || `Beta respondió ${response.status}.`);
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  }
+
+  function waitMs(ms, run) {
+    return new Promise(resolve => {
+      const timer = setTimeout(resolve, ms);
+      run.controller.signal.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+    });
+  }
+
+  function askOwnerToApprove(proposal, run, expiresInSeconds) {
+    return new Promise(resolve => {
+      const node = addMessage('assistant', `Necesito tu aprobación antes de seguir: ${proposal.summary}`);
+      node.querySelector('.beta-copy-btn')?.remove();
+      let settled = false;
+      const finish = (outcome) => { if (settled) return; settled = true; run.waiting = null; resolve(outcome); };
+      run.waiting = finish;
+      renderProposals(node, [proposal], expiresInSeconds, { onResult: (_proposal, outcome) => finish(outcome) });
+      setStatus('Beta está esperando tu aprobación para seguir trabajando.');
+      activity('Esperando tu aprobación para seguir.', 'active');
+    });
+  }
+
+  async function autoApprove(proposal) {
+    try {
+      const data = await api(`/actions/${encodeURIComponent(proposal.id)}/approve`, { method: 'POST', body: '{}' });
+      return { ok: true, message: data.message || 'Listo.', url: data.url || '' };
+    } catch (error) {
+      return { ok: false, error: error.message || 'No se pudo aplicar el cambio.' };
+    }
+  }
+
+  async function runAutonomous({ state, firstMessage, attachments, model }) {
+    const run = { stopped: false, controller: new AbortController(), waiting: null };
+    autonomousRun = run;
+    sendButton.disabled = true;
+    stopButton.classList.remove('hidden');
+    const progress = addMessage('assistant', 'Trabajando en modo autónomo…');
+    progress.classList.add('beta-working');
+    progress.querySelector('.beta-copy-btn')?.remove();
+    const progressBody = progress.querySelector('p');
+    const liveList = document.createElement('ul');
+    liveList.className = 'beta-live-steps';
+    progress.insertBefore(liveList, progressBody);
+    const steps = [];
+    const step = (text, kind = 'active') => {
+      steps.push(text);
+      liveList.replaceChildren(...steps.slice(-14).map((item, i, list) => { const li = document.createElement('li'); li.dataset.state = i === list.length - 1 && kind === 'active' ? 'active' : 'done'; li.textContent = item; return li; }));
+      progressBody.textContent = `Modo autónomo · turno ${state.turn} de ${state.maxTurns}`;
+      setStatus(text);
+      activity(text, kind === 'error' ? 'error' : 'active');
+      messagesNode.scrollTop = messagesNode.scrollHeight;
+    };
+    let message = firstMessage;
+    let outcome = { kind: 'limit', text: '' };
+    let lastModelName = model?.name || '';
+    try {
+      while (state.turn < state.maxTurns) {
+        if (run.stopped) { outcome = { kind: 'stopped', text: '' }; break; }
+        state.turn += 1;
+        step(`Turno ${state.turn}: pensando el próximo paso…`);
+        let data;
+        for (let attempt = 0; ; attempt++) {
+          try { data = await agentChat(state, run, agent.buildTurnMessage(state, message), state.turn === 1 && attempt === 0 ? attachments : {}); break; }
+          catch (error) {
+            if (run.stopped || error.name === 'AbortError') throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
+            if (!agent.shouldRetry(error.status, attempt, model)) throw error;
+            step(`El modelo no respondió (${error.status || 'sin conexión'}); reintento en unos segundos…`);
+            await waitMs(attempt === 0 ? 4000 : 10000, run);
+          }
+        }
+        if (data.modelName) lastModelName = data.modelName;
+        const classified = agent.classifyAnswer(data.answer);
+        const proposals = Array.isArray(data.proposals) ? data.proposals : [];
+        if (classified.text) step(`Turno ${state.turn}: ${classified.text.slice(0, 220)}`, 'done');
+        const results = [];
+        for (const error of data.proposalErrors || []) results.push(`❌ No se pudo preparar una acción: ${error}`);
+        let failed = false;
+        for (let i = 0; i < proposals.length; i++) {
+          const proposal = proposals[i];
+          const label = `${proposal.provider} · ${String(proposal.type || '').replaceAll('_', ' ')}`;
+          if (failed) { results.push(`⏸ ${label}: no se ejecutó porque falló un paso anterior.`); continue; }
+          let result;
+          if (agent.needsOwnerApproval(proposal)) {
+            step(`Esperando tu aprobación: ${proposal.summary.slice(0, 160)}`);
+            result = await askOwnerToApprove(proposal, run, data.expiresInSeconds || 600);
+            if (result.stopped) throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
+          } else {
+            step(`Ejecutando: ${proposal.summary.slice(0, 160)}`);
+            result = await autoApprove(proposal);
+          }
+          if (result.ok) {
+            if (result.url) state.links.push(result.url);
+            results.push(`✅ ${label}: ${result.message}${result.url ? ` (${result.url})` : ''}`);
+            step(`✓ ${result.message}`, 'done');
+          } else {
+            failed = !result.denied;
+            results.push(`${result.denied ? '⛔' : '❌'} ${label}: ${result.error}`);
+            step(`${result.denied ? 'Denegado' : 'Falló'}: ${result.error}`, result.denied ? 'done' : 'error');
+          }
+        }
+        const decision = agent.decideNext({ classified, proposalsCount: proposals.length, failed, emptyStreak: state.emptyStreak });
+        state.emptyStreak = decision.emptyStreak;
+        const summary = proposals.map(item => item.summary).join(' | ').slice(0, 1200);
+        state.loopHistory.push({ role: 'user', content: agent.compactUserTurn(state, message).slice(0, 3000) });
+        state.loopHistory.push({ role: 'assistant', content: `${data.answer || ''}${summary ? `\nAcciones: ${summary}` : ''}`.slice(0, 3000) });
+        state.loopHistory = state.loopHistory.slice(-12);
+        if (['question', 'done', 'stalled'].includes(decision.kind)) { outcome = { kind: decision.kind, text: classified.text || data.answer || '' }; break; }
+        message = decision.kind === 'nudge'
+          ? agent.nudgeMessage(results, data.answer)
+          : `RESULTADOS REALES DEL TURNO ANTERIOR:\n${results.length ? results.join('\n') : '(no hubo acciones)'}\n\nSeguí con el próximo paso del pedido.`;
+      }
+    } catch (error) {
+      outcome = error.stopped || run.stopped ? { kind: 'stopped', text: '' } : { kind: 'error', text: error.message || 'Error desconocido.' };
+    } finally {
+      autonomousRun = null;
+      run.waiting = null;
+      stopButton.classList.add('hidden');
+      sendButton.disabled = false;
+    }
+    progress.remove();
+    const finalText = agent.finalMessage(outcome, state);
+    if (outcome.kind === 'done') delete pendingAgentRuns[currentThreadId];
+    else pendingAgentRuns[currentThreadId] = { ...state, nextMessageAfterQuestion: outcome.kind === 'question' };
+    const node = addMessage('assistant', finalText, lastModelName);
+    attachSteps(node, steps);
+    history.push({ role: 'assistant', content: finalText, modelName: lastModelName, steps: steps.slice(-40) });
+    history = history.slice(-30);
+    saveHistory();
+    renderModelOptions();
+    const statusText = { done: 'Beta terminó el pedido.', stalled: 'Beta no encontró más pasos; decile qué falta si hace falta algo más.', question: 'Beta te hizo una pregunta: respondé y sigue sola.', stopped: 'Modo autónomo detenido. Escribí "seguí" para continuar.', limit: 'Beta llegó al límite de turnos. Escribí "seguí" para continuar.', error: 'El modo autónomo se frenó por un error. Escribí "seguí" para reintentar.' }[outcome.kind];
+    setStatus(statusText, outcome.kind === 'error' ? 'error' : 'idle');
+    activity(statusText, outcome.kind === 'error' ? 'error' : 'done');
+  }
+
+  async function startAutonomousFromForm({ userText, displayText, selectedModel }) {
+    addMessage('user', displayText);
+    history.push({ role: 'user', content: displayText });
+    saveHistory();
+    let attachments = {};
+    try {
+      if (pendingImage) attachments.image = { data: await fileToBase64(pendingImage) };
+      if (pendingAudio) attachments.audio = { data: (await fileToBase64(pendingAudio)).split(',')[1], mime: pendingAudio.type || 'audio/mpeg' };
+    } catch (error) { setStatus(error.message, 'error'); return; }
+    pendingImage = pendingAudio = undefined;
+    imageInput.value = audioInput.value = '';
+    attachmentLabel(undefined, '#beta-image-name');
+    attachmentLabel(undefined, '#beta-audio-name');
+    const pending = pendingAgentRuns[currentThreadId];
+    let state;
+    let firstMessage;
+    if (pending) {
+      state = { ...pending, modelId: selectedModel.id, maxTurns: pending.turn + agent.turnLimit(selectedModel), emptyStreak: 0 };
+      firstMessage = pending.nextMessageAfterQuestion ? `RESPUESTA DEL DUEÑO A TU PREGUNTA:\n${userText}` : `INDICACIÓN DEL DUEÑO PARA CONTINUAR:\n${userText}`;
+    } else {
+      state = agent.newState(userText, selectedModel);
+      firstMessage = null;
+    }
+    delete pendingAgentRuns[currentThreadId];
+    await runAutonomous({ state, firstMessage, attachments, model: selectedModel });
+  }
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     event.stopPropagation();
+    if (autonomousRun) { setStatus('Beta está trabajando. Tocá "Detener" si querés frenarla.', 'error'); return; }
     const prompt = input.value.trim();
     if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
     const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
@@ -1171,6 +1473,13 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (!selectedModel.unlimited && Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
     if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
     if (pendingAudio && !selectedModel?.audio) { setStatus('Este modelo no admite audio. Elegí uno que indique audio.', 'error'); return; }
+    if (modeSelect?.value === 'autonomous' && agent) {
+      input.value = '';
+      const goalText = prompt || (pendingImage ? 'Analizá la imagen adjunta.' : 'Transcribí y analizá el audio adjunto.');
+      const goalDisplay = `${goalText}${pendingImage ? `\n[Imagen: ${pendingImage.name}]` : ''}${pendingAudio ? `\n[Audio: ${pendingAudio.name}]` : ''}`;
+      await startAutonomousFromForm({ userText: goalText, displayText: goalDisplay, selectedModel });
+      return;
+    }
     input.value = '';
     sendButton.disabled = true;
     setStatus('Validando sesión…');
