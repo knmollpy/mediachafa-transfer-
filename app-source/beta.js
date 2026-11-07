@@ -862,7 +862,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           history.push({ role: 'assistant', content: doneText });
           finished = true;
           resolveProposal(proposal.id, card);
-          queueVisualReview(visualPrep);
+          queueVisualReview(visualPrep, data);
           return true;
         } catch (error) {
           result.textContent = error.message;
@@ -898,39 +898,120 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   // Después de aplicar un cambio: espera la publicación, saca fotos, prueba la página y
   // le pide al modelo elegido que explique qué cambió (con la foto si el modelo ve imágenes).
   let reviewQueue = Promise.resolve();
-  function queueVisualReview(prep) {
+  function queueVisualReview(prep, result) {
     if (!prep || !window.MediaChafaVisualCheck) return;
-    reviewQueue = reviewQueue.then(() => runVisualReview(prep)).catch(() => {});
+    reviewQueue = reviewQueue.then(() => runVisualReview(prep, result)).catch(() => {});
+  }
+
+  // Galería "Antes y después" dentro de Navegador: guarda los últimos 6 cambios.
+  const changesBox = document.createElement('section');
+  changesBox.className = 'beta-changes';
+  changesBox.id = 'beta-changes';
+  const changesTitle = document.createElement('h3');
+  changesTitle.textContent = 'Antes y después de cada cambio';
+  const changesNote = document.createElement('p');
+  changesNote.textContent = 'Luz roja: cómo estaba antes. Luz verde: cómo quedó. Se guardan los últimos 6 cambios aprobados.';
+  const changesList = document.createElement('div');
+  changesBox.append(changesTitle, changesNote, changesList);
+  browserFrame.parentElement.insertBefore(changesBox, browserFrame);
+
+  function changesKey() { return `mediachafa-beta-changes:${ownerId}`; }
+  function loadChanges() {
+    try { const saved = JSON.parse(localStorage.getItem(changesKey()) || '[]'); return Array.isArray(saved) ? saved : []; } catch { return []; }
+  }
+  function saveChange(report) {
+    let list = [{ ...report, diffText: undefined }, ...loadChanges().filter(item => item.id !== report.id)].slice(0, 6);
+    while (list.length) {
+      try { localStorage.setItem(changesKey(), JSON.stringify(list)); return; } catch {}
+      if (list.length > 1) { list = list.slice(0, -1); continue; }
+      list = [{ ...list[0], images: (list[0].images || []).slice(0, 2) }];
+      try { localStorage.setItem(changesKey(), JSON.stringify(list)); } catch {}
+      return;
+    }
+  }
+  function renderChanges() {
+    const list = loadChanges();
+    if (!list.length) {
+      const empty = document.createElement('p');
+      empty.className = 'muted';
+      empty.textContent = 'Todavía no hay cambios aprobados. Cuando apruebes uno, acá vas a ver la foto de antes y la de después.';
+      changesList.replaceChildren(empty);
+      return;
+    }
+    changesList.replaceChildren(...list.map(report => {
+      const item = document.createElement('div');
+      item.className = 'beta-change-item';
+      item.id = `beta-change-${report.id}`;
+      const when = document.createElement('small');
+      when.textContent = new Date(report.at || Date.now()).toLocaleString();
+      item.append(when);
+      window.MediaChafaVisualCheck?.renderReport(item, report);
+      return item;
+    }));
+  }
+  function addChangesButton(node, report) {
+    if (!report?.id) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary beta-see-changes';
+    button.textContent = 'Ver antes y después en Navegador';
+    button.addEventListener('click', () => {
+      selectBetaView('browser');
+      renderChanges();
+      (document.getElementById(`beta-change-${report.id}`) || changesBox).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    node.append(button);
+  }
+
+  // Pide la explicación a la IA elegida; si no responde, prueba con las nuestras
+  // (MediaChafa IA Rápida, Pro y Código). Si ninguna responde, queda la explicación básica.
+  function explainCandidates() {
+    const usable = model => model && (model.unlimited || Number(model.remaining) > 0);
+    const chosen = modelCatalog.find(item => item.id === modelSelect.value);
+    const ours = ['rapida', 'pro', 'codigo'].map(variant => modelCatalog.find(item => item.id === `mediachafa::${variant}`) || { id: `mediachafa::${variant}`, name: `MediaChafa IA ${variant === 'rapida' ? 'Rápida' : variant === 'pro' ? 'Pro' : 'Código'}`, unlimited: true, vision: true });
+    const seen = new Set();
+    return [chosen, ...ours].filter(model => usable(model) && !seen.has(model.id) && seen.add(model.id));
+  }
+
+  async function askModelToExplain(model, report) {
+    const shot = [...report.images].reverse().find(image => image.kind === 'after')?.src;
+    const sendImage = Boolean(shot && model.vision);
+    const checks = report.checks.map(check => `${check.ok === true ? 'OK' : check.ok === false ? 'FALLÓ' : 'Nota'}: ${check.label}`).join(' ; ');
+    const message = `[Comprobación automática de MediaChafa después de un cambio aprobado. No propongas acciones nuevas: actions debe ir vacío.]\n${report.summary}\nANTES (luz roja): ${report.before?.title || ''} — ${(report.before?.lines || []).filter(Boolean).join(' · ')}\nDESPUÉS (luz verde): ${report.after?.title || ''} — ${(report.after?.lines || []).filter(Boolean).join(' · ')}\nExplicación básica: ${report.whatChanged || ''}\nPruebas: ${checks}\n${report.diffText ? `Líneas que cambiaron:\n${report.diffText.slice(0, 3200)}\n` : ''}${sendImage ? 'Te adjunto la foto de después.' : 'No hay foto adjunta para vos; el dueño igual ve las fotos.'}\nExplicale al dueño en 2 a 4 frases simples qué cambió: cómo estaba antes y cómo quedó ahora. Si alguna prueba falló, decí qué hay que revisar.`;
+    const auth = await currentSession();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    try {
+      const response = await fetch(`${API}/chat`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history: [], image: sendImage ? { data: shot } : undefined, model: model.id }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (data.modelId) updateModelUsage(data.modelId, data);
+      const text = String(data.answer || '').trim();
+      if (!response.ok || !text) return null;
+      return { text, modelName: data.modelName || model.name || '', sawImage: sendImage };
+    } finally { clearTimeout(timer); }
   }
 
   async function explainReport(report) {
-    const model = modelCatalog.find(item => item.id === modelSelect.value);
-    if (!model || (!model.unlimited && Number(model.remaining) <= 0)) return null;
-    const shot = report.images.find(image => image.label.startsWith('Después'))?.src;
-    const sendImage = Boolean(shot && model.vision);
-    const checks = report.checks.map(check => `${check.ok === true ? 'OK' : check.ok === false ? 'FALLÓ' : 'Nota'}: ${check.label}`).join(' ; ');
-    const message = `[Comprobación automática de MediaChafa después de un cambio aprobado. No propongas acciones nuevas: actions debe ir vacío.]\n${report.summary}\nPruebas: ${checks}\nLíneas que cambiaron:\n${report.diffText.slice(0, 3200)}\n${sendImage ? 'Te adjunto la foto de la página después del cambio.' : 'No hay foto adjunta para vos; la página igual le muestra las fotos al dueño.'}\nExplicale al dueño en 2 a 4 frases simples qué cambió y cómo queda ahora en la página. Si alguna prueba falló, decí qué hay que revisar.`;
-    const auth = await currentSession();
-    const response = await fetch(`${API}/chat`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history: [], image: sendImage ? { data: shot } : undefined, model: model.id }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (data.modelId) updateModelUsage(data.modelId, data);
-    if (!response.ok || !data.answer) return null;
-    return { text: String(data.answer).trim(), modelName: data.modelName || model.name || '' , sawImage: sendImage };
+    for (const model of explainCandidates()) {
+      const explained = await askModelToExplain(model, report).catch(() => null);
+      if (explained) return explained;
+    }
+    return null;
   }
 
   function showWorkReport(report) {
-    showWorkPreview(report.explanation || report.summary, report.ok ? 'done' : 'error', report.title, '');
-    window.MediaChafaVisualCheck?.renderReport(workPreview, report);
+    showWorkPreview(`${report.explanation || report.summary}\n\nMirá la foto de antes (luz roja) y la de después (luz verde) abajo, en "Antes y después de cada cambio".`, report.ok ? 'done' : 'error', report.title, report.url || '');
   }
 
-  async function runVisualReview(prep) {
+  async function runVisualReview(prep, result) {
     const checker = window.MediaChafaVisualCheck;
     workPreview.querySelector(':scope > .beta-visual-report')?.remove();
-    const holder = addMessage('assistant', 'Comprobando el cambio: espero que se publique, saco fotos y pruebo la página…');
+    const holder = addMessage('assistant', 'Comprobando el cambio: armo la foto de antes y la de después…');
     holder.classList.add('beta-working');
     holder.querySelector('.beta-copy-btn')?.remove();
     const body = holder.querySelector('p');
@@ -942,16 +1023,19 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       if (kind !== lastActivity) { lastActivity = kind; activity(message); } else showWorkPreview(message, 'active', 'Beta está comprobando el cambio');
     };
     try {
-      const report = await checker.review(prep, step);
+      const report = await checker.review(prep, step, result || {});
       step('Pidiéndole a la IA que explique lo que cambió…');
       const explained = await explainReport(report).catch(() => null);
       report.explanation = explained?.text
-        ? `${explained.text}${explained.sawImage ? '' : '\n\n(Este modelo no ve imágenes: explicó con el código y las pruebas.)'}`
-        : `${report.summary}\n\n${report.ok ? 'Todas las pruebas pasaron.' : 'Alguna prueba falló: revisala abajo.'}`;
+        ? explained.text
+        : `${report.whatChanged || report.summary}\n\n${report.ok ? 'Todas las pruebas pasaron.' : 'Alguna prueba falló: revisala abajo.'}`;
       holder.remove();
       const node = addMessage('assistant', report.explanation, explained?.modelName || '');
       checker.renderReport(node, report);
-      activity(report.ok ? 'Cambio comprobado: fotos y pruebas listas en el chat.' : 'Cambio aplicado, pero una prueba falló. Mirá el detalle en el chat.', report.ok ? 'done' : 'error');
+      addChangesButton(node, report);
+      saveChange(report);
+      renderChanges();
+      activity(report.ok ? 'Cambio comprobado: fotos de antes y después listas en Navegador.' : 'Cambio aplicado, pero una prueba falló. Mirá el detalle en el chat.', report.ok ? 'done' : 'error');
       showWorkReport(report);
       setStatus(report.ok ? 'Cambio comprobado.' : 'Una prueba falló; revisá el detalle.', report.ok ? 'idle' : 'error');
       history.push({ role: 'assistant', content: report.explanation, modelName: explained?.modelName || '', report: { ...report, diffText: undefined } });
@@ -968,6 +1052,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (!ownerId) return;
     if (!currentThreadId) ensureThreads();
     renderThreadList();
+    try { renderChanges(); } catch {}
     history = [];
     messagesNode.replaceChildren();
     stage.classList.remove('has-messages');
@@ -980,7 +1065,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         const message = addMessage(item.role, item.content, item.modelName);
         if (item.role === 'assistant' && Array.isArray(item.steps)) attachSteps(message, item.steps);
         if (item.role === 'assistant' && Array.isArray(item.proposals)) renderProposals(message, item.proposals);
-        if (item.role === 'assistant' && item.report && window.MediaChafaVisualCheck) window.MediaChafaVisualCheck.renderReport(message, item.report);
+        if (item.role === 'assistant' && item.report && window.MediaChafaVisualCheck) { window.MediaChafaVisualCheck.renderReport(message, item.report); addChangesButton(message, item.report); }
       }
       if (!history.length) stage.classList.remove('has-messages');
     } catch { history = []; }

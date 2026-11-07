@@ -16,7 +16,7 @@
   let shotLib;
 
   const style = document.createElement('style');
-  style.textContent = `.beta-visual-report{margin-top:10px;padding:12px;border:1px solid #512020;border-radius:14px;background:#160c0c;white-space:normal}.beta-visual-report h4{margin:0 0 6px;font-size:13px;color:#ff8a8a}.beta-visual-report p{margin:0 0 8px;font-size:13px;line-height:1.5;white-space:pre-wrap}.beta-visual-shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:8px 0}.beta-visual-shots figure{margin:0}.beta-visual-shots figure.wide{grid-column:1/-1}.beta-visual-shots img{display:block;width:100%;border:1px solid #3a1a1a;border-radius:10px;cursor:zoom-in;background:#0b0b0b}.beta-visual-shots figcaption{margin-top:4px;font-size:11px;color:#c9a3a3}.beta-visual-checks{list-style:none;margin:6px 0 0;padding:0;font-size:12px;line-height:1.6}.beta-visual-checks li[data-ok="true"]::before{content:"✓ ";color:#6ee7a8}.beta-visual-checks li[data-ok="false"]::before{content:"✕ ";color:#ff7b7b}.beta-visual-checks li[data-ok="info"]::before{content:"• ";color:#c9a3a3}.beta-visual-files{font-size:11px;color:#c9a3a3}.beta-visual-zoom{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:24px;background:#000d;cursor:zoom-out}.beta-visual-zoom img{max-width:100%;max-height:100%;border-radius:10px}`;
+  style.textContent = `.beta-visual-report{margin-top:10px;padding:12px;border:1px solid #512020;border-radius:14px;background:#160c0c;white-space:normal}.beta-visual-report h4{margin:0 0 6px;font-size:13px;color:#ff8a8a}.beta-visual-report p{margin:0 0 8px;font-size:13px;line-height:1.5;white-space:pre-wrap}.beta-visual-shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:8px 0}.beta-visual-shots figure{margin:0}.beta-visual-shots figure.wide{grid-column:1/-1}.beta-visual-shots img{display:block;width:100%;border:1px solid #3a1a1a;border-radius:10px;cursor:zoom-in;background:#0b0b0b}.beta-visual-shots figcaption{margin-top:4px;font-size:11px;color:#c9a3a3}.beta-visual-checks{list-style:none;margin:6px 0 0;padding:0;font-size:12px;line-height:1.6}.beta-visual-checks li[data-ok="true"]::before{content:"✓ ";color:#6ee7a8}.beta-visual-checks li[data-ok="false"]::before{content:"✕ ";color:#ff7b7b}.beta-visual-checks li[data-ok="info"]::before{content:"• ";color:#c9a3a3}.beta-visual-files{font-size:11px;color:#c9a3a3}.beta-visual-what{margin:8px 0 4px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#f1d0d0}.beta-visual-shots figure[data-light="before"] img{border:3px solid #ff4d4d;box-shadow:0 0 14px #ff4d4d55}.beta-visual-shots figure[data-light="after"] img{border:3px solid #2ee88a;box-shadow:0 0 14px #2ee88a55}.beta-visual-shots figure[data-light="before"] figcaption{color:#ff9a9a}.beta-visual-shots figure[data-light="after"] figcaption{color:#8ff0bf}.beta-changes{width:100%;margin:0 0 12px;padding:12px 15px;border:1px solid #482020;border-radius:12px;background:#101010}.beta-changes>h3{margin:0 0 4px;font-size:14px}.beta-changes>p{margin:0 0 8px;color:#bfa9a9;font-size:12px}.beta-change-item{margin-top:12px}.beta-change-item>small{color:#bfa9a9;font-size:11px}.beta-see-changes{margin-top:8px;min-height:32px;padding:6px 12px;border-radius:999px;font-size:12px}.beta-visual-zoom{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:24px;background:#000d;cursor:zoom-out}.beta-visual-zoom img{max-width:100%;max-height:100%;border-radius:10px}`;
   document.head.append(style);
 
   // ---------- Qué cambió ----------
@@ -196,11 +196,116 @@
     return result;
   }
 
+  // ---------- Fotos ANTES (luz roja) y DESPUÉS (luz verde) ----------
+  // Las arma la página sola, sin depender de ninguna IA, para cualquier tipo de cambio.
+  const LIGHT = { before: { color: '#ff4d4d', bg: '#1c0909', label: 'ANTES · luz roja', sub: 'Cómo estaba antes del cambio' }, after: { color: '#2ee88a', bg: '#06170e', label: 'DESPUÉS · luz verde', sub: 'Cómo quedó después del cambio' } };
+
+  function wrapText(ctx, text, maxW) {
+    const out = [];
+    for (const para of String(text ?? '').split('\n')) {
+      let line = '';
+      for (const word of para.split(/\s+/)) {
+        const test = line ? `${line} ${word}` : word;
+        if (ctx.measureText(test).width > maxW && line) { out.push(line); line = word; } else line = test;
+      }
+      out.push(line);
+    }
+    return out;
+  }
+
+  function drawLight(ctx, x, y, r, color) {
+    ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = 28; ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawStateCard(kind, title, lines) {
+    const L = LIGHT[kind], W = 960, H = 540, PAD = 44;
+    const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = L.bg; ctx.fillRect(0, 0, W, H);
+    ctx.lineWidth = 10; ctx.strokeStyle = L.color; ctx.strokeRect(5, 5, W - 10, H - 10);
+    drawLight(ctx, PAD + 18, PAD + 18, 18, L.color);
+    ctx.fillStyle = L.color; ctx.font = 'bold 24px system-ui, sans-serif'; ctx.fillText(L.label, PAD + 52, PAD + 26);
+    ctx.fillStyle = '#b9b9b9'; ctx.font = '16px system-ui, sans-serif'; ctx.fillText(L.sub, PAD + 52, PAD + 50);
+    let y = PAD + 120;
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 34px system-ui, sans-serif';
+    for (const line of wrapText(ctx, title, W - PAD * 2).slice(0, 3)) { ctx.fillText(line, PAD, y); y += 44; }
+    y += 12; ctx.fillStyle = '#dddddd'; ctx.font = '21px system-ui, sans-serif';
+    const body = lines.filter(Boolean).flatMap((line) => wrapText(ctx, `• ${line}`, W - PAD * 2));
+    for (const line of body.slice(0, 8)) { ctx.fillText(line, PAD, y); y += 31; }
+    if (body.length > 8) ctx.fillText('…', PAD, y);
+    ctx.fillStyle = '#8a8a8a'; ctx.font = '15px system-ui, sans-serif';
+    ctx.fillText(`MediaChafa · Beta · ${new Date().toLocaleString()}`, PAD, H - 26);
+    return canvas.toDataURL('image/jpeg', 0.85);
+  }
+
+  // Pone el marco rojo o verde alrededor de una captura real de la página.
+  async function frameShot(src, kind) {
+    try {
+      const L = LIGHT[kind], img = new Image(); img.src = src; await img.decode();
+      const pad = 12, top = 48, W = img.width + pad * 2, H = img.height + top + pad;
+      const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = L.bg; ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(img, pad, top);
+      ctx.lineWidth = 8; ctx.strokeStyle = L.color; ctx.strokeRect(4, 4, W - 8, H - 8);
+      drawLight(ctx, pad + 20, 25, 11, L.color);
+      ctx.fillStyle = L.color; ctx.font = 'bold 18px system-ui, sans-serif'; ctx.fillText(`${L.label} · captura real de la página`, pad + 42, 31);
+      return canvas.toDataURL('image/jpeg', 0.82);
+    } catch { return src; }
+  }
+
+  function describeAction(prep, result, files) {
+    const p = prep.proposal || {}, url = result?.url || '', msg = String(result?.message || '').trim();
+    const owner = (/github\.com\/([^/?#]+)/.exec(url) || [])[1] || String(p.repository || SITE_REPO).split('/')[0];
+    const repo = p.repository || (p.name ? `${owner}/${p.name}` : '');
+    const visibility = p.visibility === 'public' || p.private === false ? 'público' : 'privado';
+    const fileLines = (fn) => (files || []).slice(0, 6).map(fn);
+    switch (p.type) {
+      case 'create_repository': {
+        const full = `${owner}/${p.name}`;
+        return { before: { title: `${full} no existía`, lines: ['No había ningún repositorio con ese nombre en tu GitHub.'] },
+          after: { title: `Repositorio ${visibility} creado, con README`, lines: [full, p.description ? `Descripción: ${p.description}` : '', url] },
+          basic: `Antes, ${full} no existía en tu GitHub. Ahora es un repositorio ${visibility} nuevo, con un archivo README inicial${p.description ? ` y la descripción "${p.description}"` : ''}.` };
+      }
+      case 'write_file': case 'write_files': {
+        const n = files?.length || 0, added = files.reduce((s, f) => s + f.added, 0), removed = files.reduce((s, f) => s + f.removed, 0);
+        return { before: { title: `${repo}: ${n} archivo(s) antes del cambio`, lines: fileLines((f) => `${f.path}: ${f.status === 'nuevo' ? 'no existía' : 'versión anterior'}`) },
+          after: { title: `${n} archivo(s) guardado(s) en ${repo}`, lines: fileLines((f) => `${f.path}: ${f.status} (+${f.added} −${f.removed})`) },
+          basic: `Se ${n === 1 ? 'guardó 1 archivo' : `guardaron ${n} archivos`} en ${repo}: ${files.map((f) => `${f.path} (${f.status})`).join(', ')}. En total se agregaron ${added} líneas y se quitaron ${removed}.` };
+      }
+      case 'delete_path': {
+        const n = files?.length || 0;
+        return { before: { title: `Existían ${n} archivo(s) en ${repo}:${p.path}`, lines: fileLines((f) => f.path) },
+          after: { title: `${n} archivo(s) borrado(s)`, lines: [`${repo}:${p.path} ya no está.`, msg] },
+          basic: `Antes había ${n} archivo(s) en ${p.path} dentro de ${repo}. Ahora están borrados en un solo cambio.` };
+      }
+      case 'delete_repository':
+        return { before: { title: `${repo} existía`, lines: ['El repositorio estaba en tu GitHub.'] }, after: { title: `${repo} fue eliminado`, lines: [msg] }, basic: `Antes, ${repo} existía en tu GitHub. Ahora fue eliminado.` };
+      case 'enable_pages':
+        return { before: { title: `${repo} sin publicar así`, lines: ['GitHub Pages no tenía esta configuración.'] },
+          after: { title: 'GitHub Pages publicado', lines: [`Rama ${p.branch || 'main'}, carpeta ${p.folder || '/'}`, 'Puede tardar 1-2 minutos en verse.', url] },
+          basic: `Antes, ${repo} no se publicaba con esta configuración. Ahora GitHub Pages lo publica desde la rama ${p.branch || 'main'}, carpeta ${p.folder || '/'}.` };
+      case 'pages_build':
+        return { before: { title: 'Publicación anterior', lines: [`El sitio de ${repo} mostraba la versión anterior.`] }, after: { title: 'Nueva publicación pedida', lines: [msg, url] }, basic: `Se pidió volver a publicar el sitio de ${repo}; en 1-2 minutos muestra la versión nueva.` };
+      case 'sql': {
+        const query = String(p.query || '').split('\n').filter(Boolean).slice(0, 4);
+        return { before: { title: 'Base de datos antes de la consulta', lines: ['Estado previo a ejecutar:', ...query] }, after: { title: 'Consulta ejecutada', lines: [msg] }, basic: `Se ejecutó una consulta en la base de datos: ${p.description || query.join(' ').slice(0, 200)}.` };
+      }
+      case 'create_worker':
+        return { before: { title: `El Worker ${p.name} no existía`, lines: ['No había ningún Worker con ese nombre en Cloudflare.'] }, after: { title: `Worker ${p.name} creado`, lines: [url] }, basic: `Antes no existía el Worker ${p.name}. Ahora está creado en tu Cloudflare.` };
+      default:
+        return { before: { title: 'Antes del cambio', lines: [p.summary || ''] }, after: { title: msg || 'Cambio aplicado', lines: [url] }, basic: `${p.summary || 'Se aplicó el cambio.'} ${msg}`.trim() };
+    }
+  }
+
   // ---------- Flujo completo ----------
   // prepare() se llama justo antes de aprobar: guarda cómo estaba todo (texto y foto).
   function prepare(proposal) {
+    if (!proposal) return null;
     const change = changeFromProposal(proposal);
-    if (!change) return null;
+    if (!change) return { proposal, change: null, visible: [], pageUrl: '', openBeta: false, befores: {}, beforeTexts: Promise.resolve(), beforeShot: Promise.resolve(null) };
     const visible = pageFiles(change);
     const htmlFile = visible.find((file) => /\.html?$/i.test(file.path) && !file.deleted);
     const pageUrl = htmlFile ? (htmlFile.path === 'index.html' ? '/' : servedUrl(htmlFile.path)) : '/';
@@ -226,15 +331,17 @@
     return { ok: false, seconds: Math.round(DEPLOY_TIMEOUT_MS / 1000) };
   }
 
-  async function review(prep, onStep) {
+  async function review(prep, onStep, result = {}) {
     const { proposal, change } = prep;
     const checks = [];
     const images = [];
-    onStep?.('Comparando el código antes y después del cambio…');
+    onStep?.('Armando las fotos de antes y después del cambio…');
     await prep.beforeTexts;
-    const files = summarizeFiles(change, prep.befores);
+    const files = change ? summarizeFiles(change, prep.befores) : [];
     const totalAdded = files.reduce((sum, file) => sum + file.added, 0), totalRemoved = files.reduce((sum, file) => sum + file.removed, 0);
-    const diffImage = drawDiffImage(files);
+    const story = describeAction(prep, result, files);
+    images.push({ label: `Antes · ${story.before.title}`, src: drawStateCard('before', story.before.title, story.before.lines), kind: 'before' });
+    images.push({ label: `Después · ${story.after.title}`, src: drawStateCard('after', story.after.title, story.after.lines), kind: 'after' });
     let deployed = null, after = null;
     if (prep.visible.length) {
       const before = await prep.beforeShot;
@@ -251,19 +358,19 @@
       } catch (error) {
         checks.push({ ok: false, label: `No pude sacar la foto del resultado: ${error.message}` });
       }
-      if (before?.images?.[0]) images.push({ label: `Antes · ${prep.pageUrl}`, src: before.images[0] });
-      if (after?.images?.[0]) images.push({ label: `Después · ${prep.pageUrl}`, src: after.images[0] });
-      if (before?.images?.[1]) images.push({ label: 'Antes · pestaña Beta', src: before.images[1] });
-      if (after?.images?.[1]) images.push({ label: 'Después · pestaña Beta', src: after.images[1] });
+      if (before?.images?.[0]) images.push({ label: `Antes · página ${prep.pageUrl}`, src: await frameShot(before.images[0], 'before'), kind: 'before' });
+      if (after?.images?.[0]) images.push({ label: `Después · página ${prep.pageUrl}`, src: await frameShot(after.images[0], 'after'), kind: 'after' });
+      if (before?.images?.[1]) images.push({ label: 'Antes · pestaña Beta', src: await frameShot(before.images[1], 'before'), kind: 'before' });
+      if (after?.images?.[1]) images.push({ label: 'Después · pestaña Beta', src: await frameShot(after.images[1], 'after'), kind: 'after' });
     } else {
-      checks.push({ ok: 'info', label: isSite(change) ? 'Estos archivos no cambian lo que se ve en la página (por ejemplo servidor, base de datos o app Android), así que no hay foto de la página.' : `El cambio es en ${change.repository}, no en tu página, así que no hay foto de la página.` });
+      checks.push({ ok: true, label: result?.message ? `El servicio confirmó: ${result.message}` : 'El servicio confirmó el cambio.' });
     }
-    images.push({ label: 'Cambios en el código', src: diffImage });
+    if (files.length) images.push({ label: 'Cambios en el código', src: drawDiffImage(files), kind: 'code' });
     const fileList = files.map((file) => `${file.path} (${file.status}, +${file.added} −${file.removed})`).join(', ');
     const failed = checks.some((check) => check.ok === false);
-    const summary = `${proposal.summary || 'Cambio aplicado.'}\n\nArchivos: ${fileList}.`;
+    const summary = `${proposal.summary || 'Cambio aplicado.'}${fileList ? `\n\nArchivos: ${fileList}.` : ''}`;
     const diffText = files.map((file) => `${file.path}:\n${file.rows.filter((row) => row.t !== '=').slice(0, 25).map((row) => `${row.t} ${String(row.s).slice(0, 220)}`).join('\n')}`).join('\n\n').slice(0, 5000);
-    return { at: Date.now(), title: failed ? 'Cambio aplicado, pero algo no anduvo' : 'Cambio aplicado y comprobado', summary, explanation: '', files: files.map(({ rows, ...rest }) => rest), totalAdded, totalRemoved, checks, images, ok: !failed, pageUrl: prep.visible.length ? prep.pageUrl : '', diffText };
+    return { id: `c${Date.now()}`, at: Date.now(), title: failed ? 'Cambio aplicado, pero algo no anduvo' : 'Cambio aplicado y comprobado', summary, whatChanged: story.basic, before: story.before, after: story.after, explanation: '', files: files.map(({ rows, ...rest }) => rest), totalAdded, totalRemoved, checks, images, ok: !failed, pageUrl: prep.visible.length ? prep.pageUrl : '', url: result?.url || '', diffText };
   }
 
   function zoom(src) {
@@ -280,13 +387,15 @@
     const box = document.createElement('section');
     box.className = 'beta-visual-report';
     const title = document.createElement('h4'); title.textContent = report.title || 'Comprobación visual';
-    const text = document.createElement('p'); text.textContent = report.explanation || report.summary || '';
-    box.append(title, text);
+    const whatTitle = document.createElement('h5'); whatTitle.className = 'beta-visual-what'; whatTitle.textContent = 'Qué cambió';
+    const text = document.createElement('p'); text.textContent = report.explanation || report.whatChanged || report.summary || '';
+    box.append(title, whatTitle, text);
     if (report.images?.length) {
       const grid = document.createElement('div'); grid.className = 'beta-visual-shots';
       for (const image of report.images) {
         const figure = document.createElement('figure');
-        if (image.label === 'Cambios en el código') figure.className = 'wide';
+        if (image.kind === 'code' || image.label === 'Cambios en el código') figure.className = 'wide';
+        if (image.kind) figure.dataset.light = image.kind;
         const img = document.createElement('img'); img.src = image.src; img.alt = image.label; img.loading = 'lazy';
         img.addEventListener('click', () => zoom(image.src));
         const caption = document.createElement('figcaption'); caption.textContent = image.label;
