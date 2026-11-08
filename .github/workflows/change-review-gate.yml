@@ -58,9 +58,40 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  independent-review:
+  vercel-preview:
     if: startsWith(github.head_ref, 'beta-agent/')
     needs: [tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      statuses: read
+    steps:
+      - name: Wait for Vercel Preview to report success
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            STATE="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/statuses" --jq '[.[] | select(.context == "Vercel")][0].state // ""')"
+            if [ "$STATE" = "success" ]; then
+              echo "Vercel Preview informó success para el commit revisado."
+              exit 0
+            fi
+            if [ "$STATE" = "failure" ] || [ "$STATE" = "error" ]; then
+              echo "Vercel Preview falló; publicación bloqueada."
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "Vercel no confirmó Preview dentro del límite; publicación bloqueada."
+          exit 1
+
+  independent-review:
+    if: startsWith(github.head_ref, 'beta-agent/')
+    needs: [tests, vercel-preview]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -112,7 +143,7 @@ jobs:
 
   auto-publish:
     if: startsWith(github.head_ref, 'beta-agent/')
-    needs: [tests, independent-review]
+    needs: [tests, vercel-preview, independent-review]
     runs-on: ubuntu-latest
     permissions:
       contents: write
