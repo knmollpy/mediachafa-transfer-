@@ -299,7 +299,8 @@ Para una página web pública: create_repository con visibility "public", despu�
     try {
       const data = await workApi('/opportunities');
       const items = Array.isArray(data.opportunities) ? data.opportunities : [];
-      const discoveryStatus = $('#beta-opportunity-status');\n      if (discoveryStatus) { const d=data.discovery||{}; const ok=(d.sources||[]).filter(x=>x.ok).map(x=>x.source+' ('+x.count+')'); discoveryStatus.textContent=d.error ? 'No se pudo actualizar el feed: '+d.error : (d.refreshed ? 'Búsqueda automática actualizada · '+(ok.join(' · ')||'sin coincidencias') : 'Fuentes revisadas hace menos de una hora · actualización automática activa'); }
+      const discoveryStatus = $('#beta-opportunity-status');
+      if (discoveryStatus) { const d=data.discovery||{}; const ok=(d.sources||[]).filter(x=>x.ok).map(x=>x.source+' ('+x.count+')'); discoveryStatus.textContent=d.error ? 'No se pudo actualizar el feed: '+d.error : (d.refreshed ? 'Búsqueda automática actualizada · '+(ok.join(' · ')||'sin coincidencias') : 'Fuentes revisadas hace menos de una hora · actualización automática activa'); }
       const available = items.filter(item => ['new','saved'].includes(item.status));
       opportunityCount.textContent = available.length + ' disponibles';
       if (!items.length) { opportunityList.innerHTML = '<p class="beta-work-empty">Todavía no encontramos ofertas compatibles. La búsqueda automática volverá a revisar las fuentes disponibles.</p>'; return; }
