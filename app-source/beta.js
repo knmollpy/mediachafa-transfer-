@@ -2105,7 +2105,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       collaborationPanel.dataset.status = snapshot.status || 'active';
     };
     if (collaborationPanel) {
-      const style = document.createElement('style');
+      const style = document.getElementById('beta-live-collaboration-style') || document.createElement('style');
+      style.id = 'beta-live-collaboration-style';
       style.textContent = `
         #beta-panel .beta-live-collaboration{margin:10px 0 12px;padding:11px 12px;border:1px solid rgba(148,163,184,.22);border-radius:12px;background:rgba(15,23,42,.42);font-size:12px}
         #beta-panel .beta-live-collab-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:9px}
