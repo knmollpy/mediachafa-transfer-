@@ -327,9 +327,17 @@
             const oldIds = [...oldDoc.querySelectorAll('[id]')].map((node) => node.id).filter(Boolean);
             const newIds = new Set([...doc.querySelectorAll('[id]')].map((node) => node.id).filter(Boolean));
             const missing = oldIds.filter((id) => !newIds.has(id));
-            const criticalMissing = missing.filter((id) => /^(?:app|beta-panel|beta-chat-stage|beta-form|beta-input|beta-send|login|main|content|sidebar|file-list)$/i.test(id));
-            if (criticalMissing.length) checks.push({ ok: false, label: `${file.path}: desaparecerían elementos importantes existentes: ${criticalMissing.slice(0, 8).join(', ')}.` });
-            else if (missing.length) checks.push({ ok: 'info', label: `${file.path}: ${missing.length} ID(s) anteriores ya no aparecen; revisá que no se haya quitado una sección necesaria.` });
+            const signature = (node) => {
+              const tag = node.tagName.toLowerCase();
+              const identity = node.id || node.getAttribute('aria-label') || node.getAttribute('name') || node.getAttribute('href') || (node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+              return identity ? `${tag}:${identity}` : '';
+            };
+            const oldControls = [...oldDoc.querySelectorAll('button,a[href],input,select,textarea,[role="button"],[role="tab"]')].map(signature).filter(Boolean);
+            const newControls = new Set([...doc.querySelectorAll('button,a[href],input,select,textarea,[role="button"],[role="tab"]')].map(signature).filter(Boolean));
+            const missingControls = oldControls.filter((item) => !newControls.has(item));
+            if (missing.length) checks.push({ ok: false, label: `${file.path}: se quitarían ${missing.length} ID(s) que ya existían: ${missing.slice(0, 12).join(', ')}.` });
+            if (missingControls.length) checks.push({ ok: false, label: `${file.path}: desaparecerían ${missingControls.length} controles o enlaces existentes: ${missingControls.slice(0, 8).join(', ')}.` });
+            if (!missing.length && !missingControls.length) checks.push({ ok: true, label: `${file.path}: conserva los ID y controles anteriores.` });
           }
           checks.push({ ok: true, label: `${file.path}: estructura HTML válida.` });
         } catch (error) { checks.push({ ok: false, label: `${file.path}: ${error.message}.` }); }
