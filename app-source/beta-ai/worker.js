@@ -1467,7 +1467,7 @@ export default {
     const url = new URL(request.url);
     if (request.method === "POST" && url.pathname === "/internal/review-model") {
       const expected = String(env.CHANGE_REVIEW_SERVICE_TOKEN || "");
-      const supplied = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "");
+      const supplied = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
       if (!expected || supplied !== expected) return json({ error: "Servicio interno no autorizado." }, 403);
       if (!env.BETA_LIMITS || !env.TOKEN_ENCRYPTION_KEY) return json({ error: "El enrutador de modelos no está configurado." }, 503);
       try {
