@@ -1,6 +1,8 @@
 import { WorkflowEntrypoint } from "cloudflare:workers";
 
 const APP_ORIGIN = "https://mediachafa-transfer.vercel.app";
+const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
+const SUPABASE_KEY = "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
 const OWNER_EMAIL = "nxmollpy@gmail.com";
 const BETA_AI_ORIGIN = "https://mediachafa-beta-ai.nxmollpy.workers.dev";
 const TASK_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -59,8 +61,8 @@ function publicState(state) {
 async function authenticate(request, env) {
   const auth = request.headers.get("Authorization") || "";
   if (!/^Bearer\\s+\\S+$/i.test(auth)) return null;
-  const r = await fetch(env.SUPABASE_URL + "/auth/v1/user", {
-    headers: { apikey: env.SUPABASE_KEY, Authorization: auth }
+  const r = await fetch(SUPABASE_URL + "/auth/v1/user", {
+    headers: { apikey: SUPABASE_KEY, Authorization: auth }
   });
   if (!r.ok) return null;
   const user = await r.json();
@@ -68,10 +70,10 @@ async function authenticate(request, env) {
   return { user, auth };
 }
 async function supabaseRequest(env, path, auth, init = {}) {
-  return fetch(env.SUPABASE_URL + path, {
+  return fetch(SUPABASE_URL + path, {
     ...init,
     headers: {
-      apikey: env.SUPABASE_KEY,
+      apikey: SUPABASE_KEY,
       Authorization: auth,
       "Content-Type": "application/json",
       Accept: "application/json",
