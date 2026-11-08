@@ -19,6 +19,7 @@ on:
       - ".github/workflows/beta-agent-tests.yml"
   push:
     branches:
+      - main
       - "beta-agent/**"
     paths:
       - "app-source/beta-ai/**"
