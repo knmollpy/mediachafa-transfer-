@@ -51,7 +51,7 @@
 Trabajá sola hasta terminar TODO el pedido; no te frenes después de un paso ni pidas permiso para seguir. En cada turno devolvé en "actions" todas las acciones del próximo paso (podés mandar varias, en orden). Las acciones normales se aprueban y ejecutan solas y en el turno siguiente recibís su resultado real: nunca digas que algo se hizo antes de verlo en los resultados. Borrados, SQL y cambios en ${LIVE_REPO} (la web en vivo) esperan la aprobación del dueño.
 "answer" tiene que empezar con UNA etiqueta:
 - "SIGO: ..." cuando mandás acciones y todavía falta trabajo.
-- "PREGUNTA: ..." solo si falta un dato imprescindible que no podés decidir vos (nombres, colores, textos y detalles menores decidilos vos).
+- "PREGUNTA: ..." solo si falta una decisión imprescindible. En ese caso, escribí primero la pregunta en una línea y después entre 2 y 5 opciones concretas en líneas separadas con el formato "- Opción". Incluí opciones Sí/No cuando correspondan y una alternativa razonable. El usuario también podrá escribir una respuesta personalizada.
 - "LISTO: ..." cuando ya viste en los resultados que todo quedó hecho; incluí un resumen corto y los links finales.
 Acciones válidas (usá exactamente estos campos; no inventes otros tipos):
 {"provider":"github","type":"create_repository","name":"nombre-repo","description":"...","visibility":"public"}
@@ -1323,6 +1323,84 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     });
   }
 
+  function askOwnerQuestion(questionText, run) {
+    return new Promise(resolve => {
+      const lines = String(questionText || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      const question = (lines.shift() || '¿Cómo querés que continúe?').replace(/^PREGUNTA\s*[:：-]?\s*/i, '');
+      const options = lines
+        .map(line => line.replace(/^(?:[-*•]|\d+[.)])\s*/, '').replace(/^\[|\]$/g, '').trim())
+        .filter(line => line && line.length <= 180)
+        .slice(0, 5);
+      const defaults = ['Sí, hacelo', 'No, dejalo como está', 'Proponé otra alternativa'];
+      const choices = options.length ? options : defaults;
+      const node = addMessage('assistant', question);
+      node.classList.add('beta-interactive-question');
+      node.querySelector('.beta-copy-btn')?.remove();
+      const controls = document.createElement('div');
+      controls.className = 'beta-question-controls';
+      const optionRow = document.createElement('div');
+      optionRow.className = 'beta-question-options';
+      let settled = false;
+      const finish = (answer) => {
+        if (settled) return;
+        settled = true;
+        run.waiting = null;
+        for (const button of optionRow.querySelectorAll('button')) button.disabled = true;
+        customSend.disabled = true;
+        customInput.disabled = true;
+        const response = String(answer || '').trim();
+        if (response) {
+          addMessage('user', response);
+          history.push({ role: 'user', content: response });
+          history = history.slice(-30);
+          saveHistory();
+        }
+        resolve({ answer: response });
+      };
+      for (const choice of choices) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'secondary beta-question-option';
+        button.textContent = choice;
+        button.addEventListener('click', () => finish(choice));
+        optionRow.append(button);
+      }
+      const customInput = document.createElement('textarea');
+      customInput.className = 'beta-question-custom';
+      customInput.rows = 2;
+      customInput.maxLength = 2000;
+      customInput.placeholder = 'O escribí tu propia respuesta…';
+      const customSend = document.createElement('button');
+      customSend.type = 'button';
+      customSend.className = 'primary beta-question-send';
+      customSend.textContent = 'Enviar respuesta y continuar';
+      customSend.addEventListener('click', () => {
+        const value = customInput.value.trim();
+        if (value) finish(value);
+      });
+      customInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          customSend.click();
+        }
+      });
+      controls.append(optionRow, customInput, customSend);
+      node.append(controls);
+      run.waiting = (outcome) => {
+        if (settled) return;
+        settled = true;
+        run.waiting = null;
+        for (const button of optionRow.querySelectorAll('button')) button.disabled = true;
+        customSend.disabled = true;
+        customInput.disabled = true;
+        resolve(outcome?.stopped ? { stopped: true } : { answer: '' });
+      };
+      setStatus('Beta está esperando tu decisión. Elegí una opción o escribí tu propia respuesta.');
+      activity('Esperando tu respuesta para continuar.', 'active');
+      messagesNode.scrollTop = messagesNode.scrollHeight;
+    });
+  }
+
   async function autoApprove(proposal) {
     try {
       const data = await api(`/actions/${encodeURIComponent(proposal.id)}/approve`, { method: 'POST', body: '{}' });
@@ -1407,7 +1485,18 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         state.loopHistory.push({ role: 'user', content: agent.compactUserTurn(state, message).slice(0, 3000) });
         state.loopHistory.push({ role: 'assistant', content: `${data.answer || ''}${summary ? `\nAcciones: ${summary}` : ''}`.slice(0, 3000) });
         state.loopHistory = state.loopHistory.slice(-12);
-        if (['question', 'done', 'stalled'].includes(decision.kind)) { outcome = { kind: decision.kind, text: classified.text || data.answer || '' }; break; }
+        if (decision.kind === 'question') {
+          step('La IA necesita tu decisión para seguir. Elegí una opción o escribí tu respuesta…');
+          const reply = await askOwnerQuestion(classified.text || data.answer || '', run);
+          if (reply.stopped || run.stopped) { outcome = { kind: 'stopped', text: '' }; break; }
+          const ownerReply = String(reply.answer || '').trim();
+          state.loopHistory.push({ role: 'user', content: `RESPUESTA DEL DUEÑO A TU PREGUNTA: ${ownerReply}` });
+          state.loopHistory = state.loopHistory.slice(-12);
+          message = `RESPUESTA DEL DUEÑO A TU PREGUNTA:\n${ownerReply}\n\nContinuá automáticamente con el pedido original. No repitas la pregunta ya respondida.`;
+          step('Respuesta recibida. Continuando el trabajo…', 'done');
+          continue;
+        }
+        if (['done', 'stalled'].includes(decision.kind)) { outcome = { kind: decision.kind, text: classified.text || data.answer || '' }; break; }
         message = decision.kind === 'nudge'
           ? agent.nudgeMessage(results, data.answer)
           : `RESULTADOS REALES DEL TURNO ANTERIOR:\n${results.length ? results.join('\n') : '(no hubo acciones)'}\n\nSeguí con el próximo paso del pedido.`;
