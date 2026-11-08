@@ -1888,7 +1888,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   async function loadIntegrations() {
     try {
       const data = await api('/integrations/status');
-      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter', 'groq', 'cohere', 'gemini']) {
+      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter', 'groq', 'cohere', 'gemini', 'huggingface']) {
         const record = data.integrations?.[provider] || {};
         const node = $(`#beta-connection-${provider}`);
         const disconnect = $(`[data-beta-disconnect="${provider}"]`);
@@ -1902,10 +1902,11 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       if (resources.supabase) details.push(`Supabase: ${resources.supabase.length} proyectos disponibles`);
       if (resources.cloudflare) details.push(`Cloudflare: ${resources.cloudflare.length} Workers disponibles`);
       $('#beta-resource-summary').textContent = details.join(' · ') || 'Conectá un servicio para que Beta pueda consultar sus recursos.';
-      await loadPrivateProjectMap(false);
-      await loadGithubPages(Boolean(data.integrations?.github?.connected));
+      // No bloquear el estado de las integraciones por cargas secundarias.
+      void loadPrivateProjectMap(false);
+      void loadGithubPages(Boolean(data.integrations?.github?.connected));
     } catch (error) {
-      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter', 'groq', 'cohere', 'gemini']) { const node = $(`#beta-connection-${provider}`); if (node) node.textContent = error.message; }
+      for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter', 'groq', 'cohere', 'gemini', 'huggingface']) { const node = $(`#beta-connection-${provider}`); if (node) node.textContent = error.message; }
     }
   }
 
