@@ -313,7 +313,9 @@ Para una página web pública: create_repository con visibility "public", despu�
         const meta = document.createElement('div'); meta.className = 'beta-work-card-meta';
         [item.platform, item.estimated_reward == null ? 'Pago sin confirmar' : Number(item.estimated_reward).toFixed(2)+' '+item.currency, 'Elegibilidad: '+item.eligibility_status, 'Automatización: '+item.automation_status].forEach(value=>{const chip=document.createElement('span');chip.textContent=value;meta.append(chip);});
         card.append(meta);
-        if (item.url) { const link=document.createElement('a');link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Abrir oferta';link.style.cssText='display:inline-block;margin-top:9px;color:#93c5fd;font-size:12px';card.append(link); }
+        if (item.url) { const link=document.createElement('a');link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Ver oferta / postular';link.style.cssText='display:inline-block;margin-top:9px;margin-right:12px;color:#93c5fd;font-size:12px';card.append(link); }
+        const sourceUrl=item.source_data?.source_url;
+        if (sourceUrl && /^https:\/\//i.test(sourceUrl)) { const source=document.createElement('a');source.href=sourceUrl;source.target='_blank';source.rel='noopener noreferrer';source.textContent='Fuente: '+item.platform;source.style.cssText='display:inline-block;margin-top:9px;color:#a5b4fc;font-size:12px';card.append(source); }
         if (['new','saved'].includes(item.status)) {
           const actions=document.createElement('div');actions.className='beta-opportunity-actions';
           const assign=document.createElement('button');assign.type='button';assign.className='add-btn';assign.textContent='Asignar a MediaChafa Pro';
