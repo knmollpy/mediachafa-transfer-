@@ -1403,7 +1403,7 @@ export default {
         } catch (error) { catalogErrors[provider] = error.message; }
       }
       const freeQuota = quotas.openrouter || { connected: false, used: 0, limit: 0, remaining: 0 };
-      const own = MEDIACHAFA_ORDER.map((variant) => ({ id: `mediachafa::${variant}`, nativeId: variant, apiProvider: "mediachafa", name: MEDIACHAFA_MODELS[variant].name, provider: "OpenRouter Free", own: true, unlimited: false, vision: catalog.some((model) => model.vision), audio: false, thinkingLevel: MEDIACHAFA_MODELS[variant].thinkingLevel, usedToday: freeQuota.used, dailyLimit: freeQuota.limit, remaining: freeQuota.remaining || 0, quotaPeriod: "day" }));
+      const own = MEDIACHAFA_ORDER.map((variant) => ({ id: `mediachafa::${variant}`, nativeId: variant, apiProvider: "mediachafa", name: MEDIACHAFA_MODELS[variant].name, provider: "OpenRouter Free", own: true, unlimited: false, vision: models.some((model) => model.vision), audio: false, thinkingLevel: MEDIACHAFA_MODELS[variant].thinkingLevel, usedToday: freeQuota.used, dailyLimit: freeQuota.limit, remaining: freeQuota.remaining || 0, quotaPeriod: "day" }));
       models.unshift(...own);
       return json({ ok: true, models, quotas, catalogErrors, dailyLimit: DAILY_REQUEST_LIMIT, connectedProviders: Object.keys(quotas) }, 200, origin);
     }
