@@ -2221,49 +2221,63 @@ function parseTeamReview(text) {
   };
 }
 
-async function reviewWithPeer({ env, userId, variant, usedModels, messages, draft, image, promptText, maxTokens, fetchImpl, workersAiUsed, counterKey }) {
+async function reviewWithPeer({ env, userId, variant, usedModels, messages, draft, image, promptText, fetchImpl }) {
   const candidates = await mediachafaCandidates(env, userId, variant, Boolean(image));
-  const candidate = candidates.find((item) => {
-    const key = `${item.provider}:${item.nativeId}`;
-    return !usedModels.has(key) && (item.provider !== "workersai" || (env.AI && workersAiUsed < 30));
-  });
-  if (!candidate) return { ok: false, variant, error: "No hay un tercer modelo gratuito e independiente disponible." };
-  const key = `${candidate.provider}:${candidate.nativeId}`;
-  usedModels.add(key);
-  if (candidate.provider === "openrouter") {
-    try {
-      const quota = await openRouterQuota(candidate.token);
-      if (quota.used >= Math.min(DAILY_REQUEST_LIMIT, quota.providerLimit)) return { ok: false, variant, error: "Se agotó la cuota gratuita de OpenRouter." };
-    } catch {
-      return { ok: false, variant, error: "No se pudo verificar la cuota gratuita de OpenRouter." };
+  const attempts = [];
+  for (const candidate of candidates) {
+    const key = `${candidate.provider}:${candidate.nativeId}`;
+    if (usedModels.has(key)) continue;
+    usedModels.add(key);
+    if (candidate.provider === "openrouter") {
+      try {
+        const quota = await openRouterQuota(candidate.token);
+        if (quota.used >= Math.min(DAILY_REQUEST_LIMIT, quota.providerLimit)) {
+          attempts.push("OpenRouter: cuota gratuita agotada");
+          continue;
+        }
+      } catch {
+        attempts.push("OpenRouter: cuota gratuita no verificable");
+        continue;
+      }
     }
+    if (candidate.provider !== "workersai") {
+      const quota = await reserveRequest(env, userId, candidate.modelId);
+      if (!quota.allowed) {
+        attempts.push(`${candidate.provider}: cuota gratuita agotada`);
+        continue;
+      }
+    }
+    const reviewMessages = [
+      ...messages,
+      { role: "user", content: [
+        "REVISIÓN ENTRE AGENTES DE MEDIACHAFA",
+        "El agente coordinador ya preparó esta propuesta. Revisala de forma independiente; no la aceptes por cortesía.",
+        "PEDIDO ORIGINAL: " + promptText.slice(0, 10000),
+        "PROPUESTA DEL COORDINADOR: " + JSON.stringify(draft).slice(0, 18000),
+        "Verificá si responde al pedido, si las acciones son necesarias, seguras y coherentes, y si hay errores o regresiones previsibles.",
+        "No inventes pruebas ni ejecutes acciones. Si hay un riesgo relevante, decision=block. Solo aprobá si no encontrás problemas importantes.",
+        'Devolvé exclusivamente JSON: {"decision":"approve"|"block","confidence":0.0,"findings":[{"severity":"low|medium|high","detail":"..."}]}.'
+      ].join("\n\n") }
+    ];
+    const reviewHistory = reviewMessages.filter((item) => item.role !== "system");
+    let outcome;
+    try {
+      outcome = await callModel(env, candidate, reviewMessages, reviewHistory, "Revisá la propuesta compartida y devolvé el veredicto JSON solicitado.", image, 1100, fetchImpl);
+    } catch (error) {
+      outcome = { ok: false, status: 503, detail: String(error?.message || error) };
+    }
+    if (!outcome.ok) {
+      attempts.push(`${candidate.name}: HTTP ${outcome.status} ${String(outcome.detail || "").slice(0, 100)}`);
+      continue;
+    }
+    const review = parseTeamReview(outcome.text);
+    if (!review) {
+      attempts.push(`${candidate.name}: respuesta de revisión inválida`);
+      continue;
+    }
+    return { ok: true, variant, model: candidate.name, provider: candidate.provider, review };
   }
-  if (candidate.provider !== "workersai") {
-    const quota = await reserveRequest(env, userId, candidate.modelId);
-    if (!quota.allowed) return { ok: false, variant, error: `Se agotó la cuota gratuita de ${candidate.provider}.` };
-  }
-  const reviewMessages = [
-    ...messages,
-    { role: "user", content: [
-      "REVISIÓN ENTRE AGENTES DE MEDIACHAFA",
-      "El agente coordinador ya preparó esta propuesta. Revisala de forma independiente; no la aceptes por cortesía.",
-      "PEDIDO ORIGINAL: " + promptText.slice(0, 10000),
-      "PROPUESTA DEL COORDINADOR: " + JSON.stringify(draft).slice(0, 18000),
-      "Verificá si responde al pedido, si las acciones son necesarias, seguras y coherentes, y si hay errores o regresiones previsibles.",
-      "No inventes pruebas ni ejecutes acciones. Si hay un riesgo relevante, decision=block. Solo aprobá si no encontrás problemas importantes.",
-      'Devolvé exclusivamente JSON: {"decision":"approve"|"block","confidence":0.0,"findings":[{"severity":"low|medium|high","detail":"..."}]}.'
-    ].join("\n\n") }
-  ];
-  let outcome;
-  try {
-    outcome = await callModel(env, candidate, reviewMessages, messages.filter((item) => item.role !== "system"), promptText, image, 1100, fetchImpl);
-  } catch (error) {
-    outcome = { ok: false, status: 503, detail: String(error?.message || error) };
-  }
-  if (!outcome.ok) return { ok: false, variant, error: `${candidate.name}: HTTP ${outcome.status} ${String(outcome.detail || "").slice(0, 120)}` };
-  const review = parseTeamReview(outcome.text);
-  if (!review) return { ok: false, variant, error: `${candidate.name}: respuesta de revisión inválida.` };
-  return { ok: true, variant, model: candidate.name, provider: candidate.provider, review, usedWorkersAi: candidate.provider === "workersai" };
+  return { ok: false, variant, error: attempts.length ? attempts.slice(-4).join(" · ") : "No hay un modelo gratuito independiente disponible." };
 }
 
 async function mediachafaChat({ request, env, user, origin, payload, prompt, image, history, autonomous, variant }) {
@@ -2307,7 +2321,7 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
   const usedModels = new Set();
   for (const candidate of candidates) {
     if (request.signal.aborted) break;
-    if (candidate.provider === "workersai" && (!env.AI || workersAiUsed >= 30)) { attempts.push(`${candidate.name}: límite diario gratuito de seguridad alcanzado`); continue; }
+    if (candidate.provider === "workersai" && (!env.AI || false)) { attempts.push(`${candidate.name}: límite diario gratuito de seguridad alcanzado`); continue; }
     if (candidate.provider === "openrouter") {
       try { const q = await openRouterQuota(candidate.token); if (q.used >= Math.min(DAILY_REQUEST_LIMIT, q.providerLimit)) { attempts.push("OpenRouter: cuota del día agotada"); continue; } }
       catch (error) { attempts.push(`OpenRouter: ${error?.message || "no se pudo verificar"}`); continue; }
@@ -2333,11 +2347,9 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
       const draft = { answer: plan.answer, plan: plan.plan, actions: sanitizedActions };
       const peerVariants = MEDIACHAFA_ORDER.filter((name) => name !== variant);
       const peerResults = await Promise.all(peerVariants.map((peerVariant) =>
-        reviewWithPeer({ env, userId: user.id, variant: peerVariant, usedModels, messages, draft, image, promptText, maxTokens: 1100, fetchImpl, workersAiUsed, counterKey })
+        reviewWithPeer({ env, userId: user.id, variant: peerVariant, usedModels, messages, draft, image, promptText, maxTokens: 1100, fetchImpl })
       ));
-      workersAiUsed += peerResults.filter((item) => item.usedWorkersAi).length;
-      if (workersAiUsed > 0) await env.BETA_LIMITS.put(counterKey, String(workersAiUsed), { expirationTtl: 172800 });
-      const decision = teamReviewDecision(peerResults.filter((item) => item.ok).map((item) => item.review));
+            const decision = teamReviewDecision(peerResults.filter((item) => item.ok).map((item) => item.review));
       const peerFailures = peerResults.filter((item) => !item.ok).map((item) => item.error);
       if (peerFailures.length || !decision.approved) {
         const details = [...peerFailures, ...(decision.findings || []).map((item) => item.detail)].filter(Boolean).slice(0, 4);
