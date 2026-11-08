@@ -206,3 +206,32 @@ test("audio transcription is blocked rather than calling billable Workers AI", a
   assert.equal(aiCalls, 0);
   assert.equal(requests.length, 0);
 });
+test("publishes authenticated live progress for the six-agent collaboration", async () => {
+  installFetch();
+  const env = makeEnv();
+  await connectFreeOpenRouter(env);
+  const progressId = "progress-test-id-1234";
+  const res = await chat(env, "mediachafa::pro", { progressId });
+  const data = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(data.collaboration.enabled, true);
+  const raw = await env.BETA_LIMITS.get("beta-chat-progress:owner:" + progressId);
+  assert.ok(raw, "progress snapshot is saved in KV");
+  const snapshot = JSON.parse(raw);
+  assert.equal(snapshot.status, "completed");
+  assert.equal(snapshot.phase, "completed");
+  assert.ok(snapshot.participants.length >= 2);
+  assert.ok(snapshot.steps.some((step) => /propuestas independientes/i.test(step.label)));
+  assert.ok(snapshot.steps.some((step) => /revisiones cruzadas/i.test(step.label)));
+  const progressResponse = await worker.fetch(new Request(`${origin}/chat/progress?id=${progressId}`, {
+    headers: { Origin: origin, Authorization: "Bearer t" },
+  }), env);
+  assert.equal(progressResponse.status, 200);
+  const visible = await progressResponse.json();
+  assert.equal(visible.status, "completed");
+  assert.equal(visible.participants.length, snapshot.participants.length);
+  const invalid = await worker.fetch(new Request(`${origin}/chat/progress?id=bad`, {
+    headers: { Origin: origin, Authorization: "Bearer t" },
+  }), env);
+  assert.equal(invalid.status, 400);
+});
