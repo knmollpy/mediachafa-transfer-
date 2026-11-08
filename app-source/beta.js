@@ -167,6 +167,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     groq: { title: 'Groq · plan Free', url: 'https://console.groq.com/keys', link: 'Abrir claves de Groq', note: 'La cuenta conectada debe mantenerse en el plan Free. Beta solo ofrece modelos publicados en los límites gratuitos de tu cuenta y se detiene ante el límite del proveedor.' },
     cohere: { title: 'Cohere · clave Trial gratis', url: 'https://dashboard.cohere.com/api-keys', link: 'Abrir claves Trial', note: 'Usá una clave Trial de la cuenta gratuita; nunca una Production. Cohere indica un máximo de 1.000 llamadas al mes para claves Trial.' },
     gemini: { title: 'Google AI Studio · Free Tier', url: 'https://aistudio.google.com/apikey', link: 'Abrir AI Studio', note: 'Solo conectes una API key de un proyecto que AI Studio muestre como Free Tier y sin facturación vinculada. Beta permite únicamente modelos de una lista gratuita cerrada.' },
+    openai: { title: 'OpenAI Images · edición de imágenes', url: 'https://platform.openai.com/api-keys', link: 'Crear API key de OpenAI', note: 'Usa GPT Image 2.5 para editar imágenes con alta calidad y conservar detalles. La API se factura por uso y no está incluida en ChatGPT Plus ni en el plan gratuito. La clave se guarda cifrada; cada edición que solicites puede generar un costo.' },
   };
   const connectorGrid = $('#beta-integrations-view .beta-connectors');
   if (connectorGrid) for (const [provider, info] of Object.entries(modelProviderInfo)) {
@@ -177,7 +178,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     const description = document.createElement('p');
     const link = document.createElement('a'); link.href = info.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = info.link;
     description.append(link, '. ', info.note, ' La clave se guarda cifrada en el Worker privado de Beta.');
-    const tokenInput = document.createElement('input'); tokenInput.id = 'beta-token-' + provider; tokenInput.type = 'password'; tokenInput.autocomplete = 'off'; tokenInput.spellcheck = false; tokenInput.placeholder = 'Pegá tu clave gratuita de ' + provider; tokenInput.setAttribute('aria-label', 'Clave gratuita de ' + provider);
+    const tokenInput = document.createElement('input'); tokenInput.id = 'beta-token-' + provider; tokenInput.type = 'password'; tokenInput.autocomplete = 'off'; tokenInput.spellcheck = false; tokenInput.placeholder = provider === 'openai' ? 'Pegá tu API key de OpenAI' : 'Pegá tu clave gratuita de ' + provider; tokenInput.setAttribute('aria-label', provider === 'openai' ? 'API key de OpenAI' : 'Clave gratuita de ' + provider);
     const actions = document.createElement('div'); actions.className = 'beta-actions';
     const connect = document.createElement('button'); connect.className = 'add-btn'; connect.type = 'button'; connect.dataset.betaConnect = provider; connect.textContent = 'Validar y guardar';
     const disconnect = document.createElement('button'); disconnect.className = 'secondary hidden'; disconnect.type = 'button'; disconnect.dataset.betaDisconnect = provider; disconnect.textContent = 'Desconectar';
@@ -1267,10 +1268,73 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 
   function attachmentLabel(file, selector) { $(selector).textContent = file ? `Adjunto: ${file.name}` : ''; }
 
+  const imageEditButton = document.createElement('button');
+  imageEditButton.type = 'button';
+  imageEditButton.className = 'secondary hidden';
+  imageEditButton.textContent = 'Editar imagen';
+  imageEditButton.setAttribute('aria-label', 'Editar imagen adjunta');
+  $('#beta-image-name')?.insertAdjacentElement('afterend', imageEditButton);
+
+  imageEditButton.addEventListener('click', async () => {
+    const prompt = input.value.trim();
+    if (!pendingImage) { setStatus('Adjuntá primero una imagen.', 'error'); return; }
+    if (!prompt) { setStatus('Escribí qué querés agregar, quitar o modificar.', 'error'); input.focus(); return; }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(pendingImage.type)) {
+      setStatus('Para editar, usá PNG, JPG o WebP. Los GIF se pueden analizar, pero no editar directamente.', 'error');
+      return;
+    }
+    imageEditButton.disabled = true;
+    imageEditButton.textContent = 'Editando…';
+    setStatus('Editando la imagen con GPT Image 2.5…');
+    activity('Procesando la edición de imagen solicitada.', 'active');
+    try {
+      const auth = await currentSession();
+      const response = await fetch(`${API}/image-edit`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, image: { data: await fileToBase64(pendingImage) } }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.image) throw new Error(data.error || 'No se pudo editar la imagen.');
+      const imageUrl = `data:image/png;base64,${data.image}`;
+      addMessage('user', `Editar imagen: ${prompt}`);
+      const resultMessage = addMessage('assistant', 'Listo. Esta es la imagen editada. Podés abrirla o guardarla.');
+      const preview = document.createElement('img');
+      preview.src = imageUrl;
+      preview.alt = 'Imagen editada por Beta';
+      preview.loading = 'lazy';
+      preview.style.cssText = 'display:block;max-width:100%;height:auto;max-height:720px;object-fit:contain;border-radius:12px;margin:10px 0;border:1px solid rgba(130,160,190,.25)';
+      const download = document.createElement('a');
+      download.href = imageUrl;
+      download.download = 'MediaChafa-imagen-editada.png';
+      download.textContent = 'Guardar imagen editada';
+      download.className = 'beta-link';
+      download.style.display = 'inline-block';
+      download.style.margin = '4px 0 10px';
+      resultMessage.append(preview, download);
+      history.push({ role: 'user', content: `Editar imagen: ${prompt}` }, { role: 'assistant', content: 'Imagen editada y entregada en el chat.' });
+      history = history.slice(-30);
+      saveHistory();
+      input.value = '';
+      pendingImage = undefined;
+      imageInput.value = '';
+      attachmentLabel(undefined, '#beta-image-name');
+      imageEditButton.classList.add('hidden');
+      setStatus('Edición terminada. La imagen está lista para guardar.');
+      activity('Imagen editada y entregada en el chat.', 'done');
+    } catch (error) {
+      setStatus(error.message || 'No se pudo editar la imagen.', 'error');
+    } finally {
+      imageEditButton.disabled = false;
+      imageEditButton.textContent = 'Editar imagen';
+    }
+  });
+
   imageInput.addEventListener('change', () => {
     pendingImage = imageInput.files?.[0];
     if (pendingImage && pendingImage.size > 5 * 1024 * 1024) { pendingImage = undefined; imageInput.value = ''; setStatus('La imagen supera el límite de 5 MB.', 'error'); }
     attachmentLabel(pendingImage, '#beta-image-name');
+    imageEditButton.classList.toggle('hidden', !pendingImage);
   });
   audioInput.addEventListener('change', () => {
     pendingAudio = audioInput.files?.[0];
