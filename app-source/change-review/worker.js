@@ -208,7 +208,8 @@ export default {
       let state;
       try { state = JSON.parse(raw); } catch { return json({ status: "blocked", decision: "block", error: "Checkpoint inválido." }, 500); }
       if (!token || token !== state.poll_token || Number(url.searchParams.get("pull_number")) !== Number(state.pull_number)) return json({ error: "Token de consulta no válido." }, 403);
-      return json(state, state.status === "approved" ? 200 : state.status === "blocked" ? 409 : 202);
+      const { poll_token: _privatePollToken, ...publicState } = state;
+      return json(publicState, state.status === "approved" ? 200 : state.status === "blocked" ? 409 : 202);
     }
     return json({ error: "Ruta no encontrada." }, 404);
   }
