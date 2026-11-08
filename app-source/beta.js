@@ -3,10 +3,10 @@
   const LIVE_REPO = 'knmollpy/mediachafa-transfer-';
   const AUTO_TYPES = new Set(['create_repository', 'write_file', 'write_files', 'enable_pages', 'pages_build', 'create_worker']);
   const TAGS = { SIGO: 'continue', PREGUNTA: 'question', LISTO: 'done' };
-  const OWN_MODEL_TURNS = 30;
+  const OWN_MODEL_TURNS = 12;
   const OTHER_MODEL_TURNS = 12;
 
-  // Las IAs MediaChafa no tienen límite de consultas; las demás no gastan más de lo que queda.
+  // Las IAs MediaChafa usan la misma cuota diaria gratuita verificada de OpenRouter.
   function turnLimit(model) {
     if (model?.unlimited) return OWN_MODEL_TURNS;
     const remaining = Number(model?.remaining);
@@ -551,7 +551,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     modelProbe.disabled = !model || (!model.unlimited && Number(model.remaining) <= 0);
     const periodLabel = model?.quotaPeriod === 'month' ? 'este mes' : 'hoy';
     modelCount.textContent = model?.unlimited ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0} consultas hoy · sin límite · solo tu cuenta` : model ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0}/${model.dailyLimit || '—'} ${periodLabel}${model.rateLimit ? ` · ritmo: ${model.rateLimit}` : ''}${model.keyless ? ' · sin cuenta' : ''}` : 'Conectá proveedores para ver modelos gratuitos';
-    $('#beta-count').textContent = model?.unlimited ? `${model.name}: la IA propia de MediaChafa, solo para tu cuenta. Sin límite de consultas de Beta (${model.usedToday || 0} usadas hoy). Usa primero tu Cloudflare y, si se satura, cambia sola a otro motor gratis.` : model ? `${model.usedToday || 0} de ${model.dailyLimit || '—'} consultas gratuitas usadas ${periodLabel} en ${model.provider}; ${model.remaining ?? '—'} disponibles para este modelo/proveedor.${model.rateLimit ? ` Límite del proveedor: ${model.rateLimit}.` : ''}` : 'Sin modelo seleccionado.';
+    $('#beta-count').textContent = model?.unlimited ? `${model.name}: IA propia de MediaChafa. Usa únicamente modelos OpenRouter gratuitos verificados; la cuota es compartida y no se habilitan proveedores con facturación.` : model ? `${model.usedToday || 0} de ${model.dailyLimit || '—'} consultas gratuitas usadas ${periodLabel} en ${model.provider}; ${model.remaining ?? '—'} disponibles para este modelo/proveedor.${model.rateLimit ? ` Límite del proveedor: ${model.rateLimit}.` : ''}` : 'Sin modelo seleccionado.';
     const imageLabel = document.querySelector('label[for="beta-image"]');
     const audioLabel = document.querySelector('label[for="beta-audio"]');
     const imageAllowed = Boolean(model?.vision);
@@ -1328,7 +1328,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   function explainCandidates() {
     const usable = model => model && (model.unlimited || Number(model.remaining) > 0);
     const chosen = modelCatalog.find(item => item.id === modelSelect.value);
-    const ours = ['rapida', 'pro', 'codigo'].map(variant => modelCatalog.find(item => item.id === `mediachafa::${variant}`) || { id: `mediachafa::${variant}`, name: `MediaChafa IA ${variant === 'rapida' ? 'Rápida' : variant === 'pro' ? 'Pro' : 'Código'}`, unlimited: true, vision: true });
+    const ours = ['rapida', 'pro', 'codigo'].map(variant => modelCatalog.find(item => item.id === `mediachafa::${variant}`) || { id: `mediachafa::${variant}`, name: `MediaChafa IA ${variant === 'rapida' ? 'Rápida' : variant === 'pro' ? 'Pro' : 'Código'}`, unlimited: false, remaining: 0, vision: false, audio: false });
     const seen = new Set();
     return [chosen, ...ours].filter(model => usable(model) && !seen.has(model.id) && seen.add(model.id));
   }
