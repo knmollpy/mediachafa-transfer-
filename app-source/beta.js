@@ -1415,6 +1415,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         if (settled) return;
         settled = true;
         run.waiting = null;
+        run.waitingKind = null;
         for (const button of controls.querySelectorAll('button')) button.disabled = true;
         customInput.disabled = true;
         if (result?.answer) {
@@ -1559,7 +1560,6 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           }
         }
         if (!data) continue;
-        }
         if (data.modelName) lastModelName = data.modelName;
         const classified = agent.classifyAnswer(data.answer);
         const proposals = Array.isArray(data.proposals) ? data.proposals : [];
