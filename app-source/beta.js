@@ -17,7 +17,7 @@
     const text = String(goal || '');
     const full = text.match(/(?:github\.com\/)?knmollpy\/([A-Za-z0-9._-]{1,100})/i);
     if (full) return full[1];
-    const named = text.match(/\b(?:repositorio|repo)\s+(?:(?:llamado|llamada|de nombre|que se llama)\\s+)?(?:(?:el|la|un|una|mi|ese|este)\\s+)?["'`]?([A-Za-z0-9][A-Za-z0-9._-]{0,99})/i);
+    const named = text.match(/\b(?:repositorio|repo)\s+(?:(?:llamado|llamada|de nombre|que se llama)\s+)?(?:(?:el|la|un|una|mi|ese|este)\s+)?["'`]?([A-Za-z0-9][A-Za-z0-9._-]{0,99})/i);
     if (named && !/^(?:un|una|el|la|mi|ese|este|que|de|github)$/i.test(named[1])) return named[1];
     return '';
   }
@@ -1343,6 +1343,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     return new Promise(resolve => {
       const lines = String(questionText || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
       const question = (lines.shift() || '¿Cómo querés que continúe?').replace(/^PREGUNTA\s*[:：-]?\s*/i, '');
+      const isRepoNameQuestion = /nombre exacto del repositorio que querés borrar/i.test(question);
       const options = lines
         .filter(line => /^(?:[-*•]|\d+[.)])\s+/.test(line))
         .map(line => line.replace(/^(?:[-*•]|\d+[.)])\s*/, '').replace(/^\[|\]$/g, '').trim())
@@ -1386,7 +1387,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         }));
         optionRow.append(button);
       }
-      if (!options.length) {
+      if (!options.length && !isRepoNameQuestion) {
         const hint = document.createElement('p');
         hint.className = 'beta-question-hint';
         hint.textContent = 'La IA no proporcionó opciones concretas. Podés pedirle otra propuesta o escribir tu respuesta.';
@@ -1401,7 +1402,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       customInput.className = 'beta-question-custom';
       customInput.rows = 2;
       customInput.maxLength = 2000;
-      customInput.placeholder = 'O escribí tu propia respuesta…';
+      customInput.placeholder = isRepoNameQuestion ? 'Nombre exacto del repositorio…' : 'O escribí tu propia respuesta…';
       customInput.addEventListener('keydown', event => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
@@ -1413,7 +1414,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         customInput.dataset.hint = 'Escribí tu opinión y presioná Enter para continuar';
       });
       customInput.placeholder = 'Tu opinión o una respuesta propia… (Enter para enviar)';
-      controls.append(optionRow, alternativeButton, customInput);
+      if (isRepoNameQuestion) controls.append(customInput);
+      else controls.append(optionRow, alternativeButton, customInput);
       node.append(controls);
       run.waiting = (outcome) => {
         if (settled) return;
