@@ -268,7 +268,7 @@ test("MediaChafa Pro autonomous agent rotates after a provider quota error witho
   nextGroqStatus = 429;
   nextModelResponse = JSON.stringify({ type: "final", answer: "Tarea revisada.", summary: "Fallback correcto.", verified: false });
   const started = await api("/agent/start", "POST", { mode: "autonomous", model: "mediachafa::pro", message: "Comprobá el enrutamiento gratuito." });
-  assert.equal(started.status, 200);
+  assert.equal(started.status, 201);
   const start = await started.json();
   const stepped = await api(`/agent/${start.executionId}/step`, "POST", {});
   assert.equal(stepped.status, 200);
