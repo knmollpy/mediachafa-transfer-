@@ -89,6 +89,7 @@ globalThis.fetch = async (input, init = {}) => {
   if (url.endsWith("/pulls") && init.method === "POST") return Response.json({ number: 5, html_url: "https://github.com/knmollpy/mediachafa-transfer-/pull/5", state: "open", merged: false });
   if (url.endsWith("/pulls/5")) return Response.json({ number: 5, html_url: "https://github.com/knmollpy/mediachafa-transfer-/pull/5", state: "closed", merged: true, head: { sha: "new-commit" }, merge_commit_sha: "merge-sha" });
   if (url.endsWith("/issues/5/comments?per_page=100")) return Response.json([]);
+  if (url.endsWith("/pulls/5/reviews?per_page=100")) return Response.json([]);
   if (url.endsWith("/actions/workflows/beta-agent-tests.yml/dispatches") && init.method === "POST") { dispatchedChecks = true; return new Response(null, { status: 204 }); }
   if (url.includes("/actions/workflows/beta-agent-tests.yml/runs?branch=")) return Response.json({ workflow_runs: [{ head_sha: "new-commit", id: 8, status: "completed", conclusion: "success", html_url: "https://github.com/example/run/8" }] });
   if (url === "https://api.vercel.com/v9/projects?limit=100") return Response.json({ projects: [{ id: "vercel-project", name: "mediachafa", teamId: "vercel-team", link: { repo: "mediachafa-transfer-", org: "knmollpy", repoId: "1411026786" } }] });
