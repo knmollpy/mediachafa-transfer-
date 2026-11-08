@@ -31,6 +31,7 @@ let savedMemory = null;
 let openedPrBody = null;
 let modelGate = null;
 let nextModelResponse = null;
+let nextGroqStatus = null;
 const modelPromptMessages = [];
 const originalFetch = globalThis.fetch;
 
@@ -63,6 +64,12 @@ globalThis.fetch = async (input, init = {}) => {
   if (url.includes("/rest/v1/task_hunter_memory")) {
     if (init.method === "POST") { savedMemory = JSON.parse(init.body); return Response.json([savedMemory], { status: 201 }); }
     return Response.json(memoryRows);
+  }
+  if (url === "https://api.groq.com/openai/v1/models") return Response.json({ data: [{ id: "openai/gpt-oss-120b" }] });
+  if (url === "https://api.groq.com/openai/v1/chat/completions") {
+    const status = nextGroqStatus ?? 429;
+    nextGroqStatus = null;
+    return Response.json({ error: { message: "rate limit" } }, { status });
   }
   if (url === "https://openrouter.ai/api/v1/models") return Response.json({ data: [{ id: "openai/gpt-oss-20b:free", name: "Test model", pricing: { prompt: "0", completion: "0" }, architecture: { input_modalities: ["text"] } }] });
   if (url === "https://openrouter.ai/api/v1/key") return Response.json({ data: { is_free_tier: true, free_model_daily_requests: { used: 0, limit: 50, remaining: 50 } } });
@@ -299,4 +306,32 @@ test("internal independent-review model router uses connected free providers and
   assert.equal(result.model, "openai/gpt-oss-20b:free");
   assert.match(result.text, /"decision":"block"/);
   assert.equal(typeof result.rotations, "number");
+});
+
+
+test("review router rotates to another free provider after quota errors without an app-imposed daily cap", async () => {
+  kv.set(`integration:${userId}:groq`, await encryptToken("groq-token"));
+  kv.set(`integration:${userId}:openrouter`, await encryptToken("router-token"));
+  const today = new Date().toISOString().slice(0, 10);
+  kv.set(`beta-ai-requests:${userId}:openrouter:day:${today}`, "999999");
+  nextGroqStatus = 429;
+  nextModelResponse = JSON.stringify({
+    decision: "block",
+    confidence: 0.99,
+    scope_ok: true,
+    requirements_met: false,
+    regressions_found: true,
+    findings: [{ severity: "high", file: "app-source/beta.js", detail: "Fallback test finding." }],
+    summary: "Fallback model review."
+  });
+  const response = await worker.fetch(new Request("https://mediachafa-beta-ai.nxmollpy.workers.dev/internal/review-model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer review-service-test-token" },
+    body: JSON.stringify({ messages: [{ role: "system", content: "review" }, { role: "user", content: "diff" }] }),
+  }), env);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.provider, "openrouter");
+  assert.equal(result.model, "openai/gpt-oss-20b:free");
+  assert.ok(result.rotations >= 1);
 });
