@@ -45,14 +45,14 @@ const CLOUDFLARE_ACCOUNT = "3ed811eed85e393b5d97f052e812cfaf";
 const OPERATION_TTL_SECONDS = 600;
 const MAX_ACTIONS_PER_PLAN = 10;
 const MAX_FILES_PER_ACTION = 40;
-const MAX_AGENT_ROUNDS = 8;
+const MAX_AGENT_ROUNDS = 12;
 const MAX_AGENT_TOOLS = 20;
 const MAX_AGENT_CHECK_RUNS = 4;
 const MAX_AGENT_PREVIEWS = 3;
 const MAX_AGENT_CONTEXT_CHARS = 100_000;
 const MAX_AGENT_RESULT_CHARS = 16_000;
 const AGENT_EXECUTION_TTL_SECONDS = 24 * 60 * 60;
-const AGENT_EXECUTION_MAX_AGE_MS = 15 * 60 * 1000;
+const AGENT_EXECUTION_MAX_AGE_MS = 45 * 60 * 1000;
 const AGENT_STEP_LEASE_MS = 75_000;
 const AGENT_ALLOWED_FILE_PREFIX = "app-source/";
 const AGENT_BLOCKED_PATH_PARTS = new Set([".git", ".env", "node_modules", "dist", "build"]);
@@ -985,7 +985,7 @@ async function agentStep(env, state, requestSignal) {
   }
   if (Date.now() - state.createdAt > AGENT_EXECUTION_MAX_AGE_MS) {
     state.status = "failed";
-    state.error = "Se superó el límite de duración de 15 minutos.";
+    state.error = "Se superó el límite de duración de 45 minutos.";
     await saveAgentState(env, state);
     return state;
   }
