@@ -151,8 +151,11 @@ async function createTask(env, user, auth, payload) {
       body: JSON.stringify({ status: "running", stage: "starting", started_at: new Date().toISOString(), checkpoint: { executor: "cloudflare_workflow", workflow_id: instance.id } })
     });
     if (!patch.ok) throw new Error("El Workflow arrancó, pero no se pudo sincronizar el registro.");
-    state.status = "running"; state.stage = "starting"; state.startedAt = Date.now();
-    await saveState(env, state);
+    const latest = await loadState(env, user.id, task.id) || state;
+    if (latest.status === "queued") {
+      latest.status = "running"; latest.stage = "starting"; latest.startedAt = latest.startedAt || Date.now();
+      await saveState(env, latest);
+    }
     return { task: taskRecordFromState(task, state), execution: "started", workflowId: instance.id };
   } catch (error) {
     state.status = "failed"; state.stage = "start_failed"; state.finishedAt = Date.now();
