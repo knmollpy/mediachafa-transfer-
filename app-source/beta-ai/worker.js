@@ -2023,6 +2023,25 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
   return list;
 }
 
+function parseInternalReviewJson(text) {
+  const raw = String(text || "").trim()
+    .replace(/^\x60{3}(?:json)?\s*/i, "")
+    .replace(/\s*\x60{3}$/, "");
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) { try { parsed = JSON.parse(match[0]); } catch {} }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  if (!["approve", "block"].includes(parsed.decision)
+    || typeof parsed.scope_ok !== "boolean"
+    || typeof parsed.requirements_met !== "boolean"
+    || typeof parsed.regressions_found !== "boolean"
+    || !Number.isFinite(Number(parsed.confidence))
+    || !Array.isArray(parsed.findings)) return null;
+  return parsed;
+}
+
 async function internalReviewModel(env, payload) {
   const messages = payload?.messages;
   if (!Array.isArray(messages) || messages.length !== 2
@@ -2033,6 +2052,8 @@ async function internalReviewModel(env, payload) {
   }
   const promptText = messages[1].content;
   const candidates = await mediachafaCandidates(env, OWNER_USER_ID, "pro", false);
+  // Priorizamos proveedores externos independientes; Workers AI queda como alternativa final.
+  candidates.sort((a, b) => Number(a.provider === "workersai") - Number(b.provider === "workersai"));
   const date = new Date().toISOString().slice(0, 10);
   const counterKey = `beta-ai-requests:${OWNER_USER_ID}:workersai:day:${date}`;
   let workersAiUsed = Number(await env.BETA_LIMITS.get(counterKey) || 0);
@@ -2071,6 +2092,10 @@ async function internalReviewModel(env, payload) {
       await env.BETA_LIMITS.put(counterKey, String(workersAiUsed), { expirationTtl: 172800 });
     }
     if (outcome.ok) {
+      if (!parseInternalReviewJson(outcome.text)) {
+        attempts.push(`${candidate.provider} ${candidate.name}: el modelo no devolvió JSON de revisión válido`);
+        continue;
+      }
       return {
         text: outcome.text,
         provider: candidate.provider,
