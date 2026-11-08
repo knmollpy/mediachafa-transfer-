@@ -737,7 +737,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     betaSidebarRecent.replaceChildren(...rows);
   }
   function switchThread(id) {
-    if (sendButton.disabled) { setStatus('Esperá a que Beta termine de responder para cambiar de chat.', 'error'); return; }
+    if (sendButton.disabled || autonomousRun) { setStatus('Esperá a que Beta termine o pausá el trabajo antes de cambiar de chat.', 'error'); return; }
     currentThreadId = id;
     saveThreads();
     restoreHistory();
@@ -745,7 +745,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     input.focus();
   }
   function createThread() {
-    if (sendButton.disabled) { setStatus('Esperá a que Beta termine de responder.', 'error'); return; }
+    if (sendButton.disabled || autonomousRun) { setStatus('Esperá a que Beta termine o pausá el trabajo antes de cambiar de chat.', 'error'); return; }
     const empty = threads.find(t => t.title === 'Nuevo chat');
     if (empty) { switchThread(empty.id); return; }
     const thread = { id: newThreadId(), title: 'Nuevo chat', updatedAt: Date.now() };
@@ -1282,26 +1282,28 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   const modeSelect = $('#beta-mode');
   const pendingAgentRuns = {};
   let autonomousRun = null;
-  const pauseButton = document.createElement('button');
-  pauseButton.type = 'button';
-  pauseButton.className = 'secondary beta-agent-pause hidden';
-  pauseButton.textContent = 'Pausar';
-  pauseButton.title = 'Pausar el modo autónomo y agregar instrucciones antes de continuar';
-  const stopButton = document.createElement('button');
-  stopButton.type = 'button';
-  stopButton.className = 'secondary beta-agent-stop hidden';
-  stopButton.textContent = 'Detener';
-  stopButton.title = 'Detener el modo autónomo';
-  $('#beta-form .beta-tools')?.append(pauseButton, stopButton);
+  function setComposerMode(mode) {
+    if (mode === 'working') {
+      sendButton.disabled = false;
+      sendButton.classList.add('beta-send-pause');
+      sendButton.textContent = '■';
+      sendButton.setAttribute('aria-label', 'Pausar el trabajo de Beta');
+      sendButton.title = 'Pausar y agregar otra instrucción';
+    } else {
+      sendButton.classList.remove('beta-send-pause');
+      sendButton.textContent = '↑';
+      sendButton.setAttribute('aria-label', 'Enviar mensaje');
+      sendButton.title = mode === 'paused' ? 'Enviar corrección y reanudar' : 'Enviar mensaje';
+      sendButton.disabled = mode === 'busy';
+    }
+  }
 
   function resumeAutonomous(run, instruction = '') {
     if (!run || !run.paused) return;
     run.paused = false;
     run.pauseRequested = false;
     run.controller = new AbortController();
-    sendButton.disabled = true;
-    pauseButton.textContent = 'Pausar';
-    pauseButton.title = 'Pausar el modo autónomo y agregar instrucciones antes de continuar';
+    setComposerMode('busy');
     setStatus('Continuando el modo autónomo…');
     run.resumeResolve?.(String(instruction || '').trim());
     run.resumeResolve = null;
@@ -1311,9 +1313,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (!run.pauseRequested && !run.paused) return '';
     run.pauseRequested = false;
     run.paused = true;
-    sendButton.disabled = false;
-    pauseButton.textContent = 'Reanudar';
-    pauseButton.title = 'Continuar el modo autónomo';
+    setComposerMode('paused');
     setStatus('Beta está pausada. Podés escribir una corrección o instrucción y enviarla para continuar.');
     activity('Modo autónomo pausado por el dueño.', 'active');
     const instruction = await new Promise(resolve => { run.resumeResolve = resolve; });
@@ -1322,32 +1322,11 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       run.state.loopHistory = run.state.loopHistory.slice(-12);
     }
     run.paused = false;
-    sendButton.disabled = true;
-    pauseButton.textContent = 'Pausar';
-    pauseButton.title = 'Pausar el modo autónomo y agregar instrucciones antes de continuar';
+    setComposerMode('busy');
     return instruction ? `INSTRUCCIÓN NUEVA DEL DUEÑO (prioridad alta):\n${instruction}\nIncorporala al pedido original y continuá desde el estado actual, sin repetir acciones ya completadas.` : '';
   }
 
-  pauseButton.addEventListener('click', () => {
-    const run = autonomousRun;
-    if (!run) return;
-    if (run.paused) { resumeAutonomous(run); return; }
-    if (run.pauseRequested) return;
-    run.pauseRequested = true;
-    pauseButton.textContent = 'Pausando…';
-    setStatus('Pausando en un punto seguro…');
-    if (run.waitingKind === 'question' || run.waitingKind === 'approval') run.waiting?.({ paused: true });
-    else if (run.inFlight) run.controller.abort();
-  });
-
-  stopButton.addEventListener('click', () => {
-    if (!autonomousRun) return;
-    autonomousRun.stopped = true;
-    autonomousRun.controller.abort();
-    autonomousRun.resumeResolve?.('');
-    autonomousRun.waiting?.({ ok: false, stopped: true, error: 'Detenido por el dueño.' });
-    setStatus('Deteniendo el modo autónomo…');
-  });
+  // El botón de envío cambia a pausa mientras Beta trabaja; no hace falta un control aparte.
   try {
     const savedMode = localStorage.getItem('mediachafa-beta-mode');
     if (modeSelect && savedMode && [...modeSelect.options].some(option => option.value === savedMode)) modeSelect.value = savedMode;
@@ -1507,9 +1486,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   async function runAutonomous({ state, firstMessage, attachments, model }) {
     const run = { stopped: false, pauseRequested: false, paused: false, inFlight: false, controller: new AbortController(), waiting: null, waitingKind: null, state, resumeResolve: null };
     autonomousRun = run;
-    sendButton.disabled = true;
-    stopButton.classList.remove('hidden');
-    pauseButton.classList.remove('hidden');
+    setComposerMode('working');
     const progress = addMessage('assistant', 'Trabajando en modo autónomo…');
     progress.classList.add('beta-working');
     progress.querySelector('.beta-copy-btn')?.remove();
@@ -1685,9 +1662,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       autonomousRun = null;
       run.waiting = null;
       run.resumeResolve = null;
-      pauseButton.classList.add('hidden');
-      stopButton.classList.add('hidden');
-      sendButton.disabled = false;
+      setComposerMode('idle');
     }
     progress.remove();
     const finalText = agent.finalMessage(outcome, state);
@@ -1745,7 +1720,15 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       resumeAutonomous(autonomousRun, instruction);
       return;
     }
-    if (autonomousRun) { setStatus('Beta está trabajando. Tocá "Pausar" para agregar una instrucción o "Detener" para finalizar.', 'error'); return; }
+    if (autonomousRun) {
+      if (autonomousRun.pauseRequested) return;
+      autonomousRun.pauseRequested = true;
+      setComposerMode('busy');
+      setStatus('Pausando en un punto seguro…');
+      if (autonomousRun.waitingKind === 'question' || autonomousRun.waitingKind === 'approval') autonomousRun.waiting?.({ paused: true });
+      else if (autonomousRun.inFlight) autonomousRun.controller.abort();
+      return;
+    }
     const prompt = input.value.trim();
     if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
     const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
