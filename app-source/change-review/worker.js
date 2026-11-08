@@ -97,10 +97,22 @@ function parseReview(text) {
   if (match) { try { return JSON.parse(match[0]); } catch {} }
   throw new Error("El revisor independiente devolvió un formato inválido.");
 }
-async function collectReviewInput(pullNumber, expectedHeadSha) {
+async function verifyTrustedControlFiles(env, headSha) {
+  const expected = {
+    ".github/workflows/change-review-gate.yml": String(env.TRUSTED_WORKFLOW_BLOB_SHA || ""),
+    "app-source/change-review/worker.js": String(env.TRUSTED_REVIEWER_BLOB_SHA || ""),
+  };
+  for (const [path, sha] of Object.entries(expected)) {
+    if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error("Falta el anclaje externo de integridad del control; revisión bloqueada.");
+    const { data } = await github(`/contents/${path}?ref=${headSha}`);
+    if (data.sha !== sha) throw new Error(`El archivo de control protegido fue alterado: ${path}`);
+  }
+}
+async function collectReviewInput(pullNumber, expectedHeadSha, env) {
   const { data: pr } = await github(`/pulls/${pullNumber}`);
   if (pr.state !== "open" || pr.base?.ref !== "main" || !String(pr.head?.ref || "").startsWith("beta-agent/")) throw new Error("El Pull Request no cumple las condiciones de publicación de Beta.");
   if (pr.head?.sha !== expectedHeadSha) throw new Error("El commit cambió durante la revisión; se requiere una nueva ejecución.");
+  await verifyTrustedControlFiles(env, expectedHeadSha);
   const manifest = readManifest(pr.body);
   const { data: files, headers } = await github(`/pulls/${pullNumber}/files?per_page=100`);
   if (!Array.isArray(files) || !files.length || files.length > 40 || headers.get("Link")?.includes('rel="next"')) throw new Error("La lista de archivos está vacía, excede 40 elementos o fue truncada.");
@@ -148,7 +160,7 @@ export class ChangeReviewWorkflow extends WorkflowEntrypoint {
         await this.env.REVIEW_STATE.put(reservationKey, "1", { expirationTtl: REVIEW_TTL });
         return { reserved: true, used: used + 1 };
       });
-      const input = await step.do("load-and-validate-pull-request", { retries: { limit: 2, delay: "5 seconds", backoff: "exponential" } }, async () => collectReviewInput(pullNumber, headSha));
+      const input = await step.do("load-and-validate-pull-request", { retries: { limit: 2, delay: "5 seconds", backoff: "exponential" } }, async () => collectReviewInput(pullNumber, headSha, this.env));
       const review = await step.do("independent-ai-regression-review", { retries: { limit: 2, delay: "10 seconds", backoff: "exponential" }, timeout: "5 minutes" }, async () => {
         const prompt = [
           "Sos el revisor independiente de MediaChafa. No sos el agente que programó este cambio. Tu tarea es bloquear regresiones y cambios fuera del pedido.",
