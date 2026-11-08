@@ -16,7 +16,9 @@ const modelTurns = [
   { type: "tool_call", name: "github_check_status", arguments: {} },
   { type: "tool_call", name: "vercel_deploy_preview", arguments: {} },
   { type: "tool_call", name: "vercel_preview_status", arguments: {} },
-  { type: "final", answer: "Tarea completada.", summary: "Leí, modifiqué y verifiqué el cambio.", verified: true },
+  { type: "tool_call", name: "github_open_review_pr", arguments: {} },
+  { type: "tool_call", name: "github_pr_status", arguments: {} },
+  { type: "final", answer: "Tarea completada.", summary: "Leí, modifiqué, probé y publiqué tras revisión independiente.", verified: true },
 ];
 let requestCount = 0;
 let createdCommit = false;
@@ -24,6 +26,8 @@ let commitCount = 0;
 let dispatchedChecks = false;
 let activeBranch = "";
 let deploymentRequest;
+let memoryRows = [{ memory_key: "response_style", memory_value: { text: "Respuestas breves en español." }, user_confirmed: true, reusable: true, sensitive: false }];
+let savedMemory = null;
 let modelGate = null;
 const modelPromptMessages = [];
 const originalFetch = globalThis.fetch;
@@ -53,6 +57,10 @@ const api = async (path, method = "GET", body) => worker.fetch(new Request(`${or
 globalThis.fetch = async (input, init = {}) => {
   const url = String(input);
   if (url.endsWith("/auth/v1/user")) return Response.json({ id: userId, email: "nxmollpy@gmail.com", is_anonymous: false });
+  if (url.includes("/rest/v1/task_hunter_memory")) {
+    if (init.method === "POST") { savedMemory = JSON.parse(init.body); return Response.json([savedMemory], { status: 201 }); }
+    return Response.json(memoryRows);
+  }
   if (url === "https://openrouter.ai/api/v1/models") return Response.json({ data: [{ id: "openai/gpt-oss-20b:free", name: "Test model", pricing: { prompt: "0", completion: "0" }, architecture: { input_modalities: ["text"] } }] });
   if (url === "https://openrouter.ai/api/v1/key") return Response.json({ data: { is_free_tier: true, free_model_daily_requests: { used: 0, limit: 50, remaining: 50 } } });
   if (url === "https://openrouter.ai/api/v1/chat/completions") {
@@ -77,6 +85,9 @@ globalThis.fetch = async (input, init = {}) => {
   if (url === "https://api.github.com/repos/knmollpy/mediachafa-transfer-/git/trees" && init.method === "POST") return Response.json({ sha: "new-tree" });
   if (url === "https://api.github.com/repos/knmollpy/mediachafa-transfer-/git/commits" && init.method === "POST") { createdCommit = true; commitCount++; return Response.json({ sha: "new-commit" }); }
   if (url.endsWith(`/git/refs/heads/${activeBranch}`) && init.method === "PATCH") return Response.json({ ref: activeBranch });
+  if (url.includes("/pulls?state=open&head=knmollpy:")) return Response.json([]);
+  if (url.endsWith("/pulls") && init.method === "POST") return Response.json({ number: 5, html_url: "https://github.com/knmollpy/mediachafa-transfer-/pull/5", state: "open", merged: false });
+  if (url.endsWith("/pulls/5")) return Response.json({ number: 5, html_url: "https://github.com/knmollpy/mediachafa-transfer-/pull/5", state: "closed", merged: true, head: { sha: "new-commit" }, merge_commit_sha: "merge-sha" });
   if (url.endsWith("/actions/workflows/beta-agent-tests.yml/dispatches") && init.method === "POST") { dispatchedChecks = true; return new Response(null, { status: 204 }); }
   if (url.includes("/actions/workflows/beta-agent-tests.yml/runs?branch=")) return Response.json({ workflow_runs: [{ head_sha: "new-commit", id: 8, status: "completed", conclusion: "success", html_url: "https://github.com/example/run/8" }] });
   if (url === "https://api.vercel.com/v9/projects?limit=100") return Response.json({ projects: [{ id: "vercel-project", name: "mediachafa", teamId: "vercel-team", link: { repo: "mediachafa-transfer-", org: "knmollpy", repoId: "1411026786" } }] });
@@ -128,15 +139,54 @@ test("autonomous execution persists pause state and verifies isolated GitHub cha
   assert.equal(state.commitSha, "new-commit");
   assert.equal(state.lastChecksSucceeded, true);
   assert.equal(state.lastPreviewSucceeded, true, JSON.stringify(state.lastToolResult));
+  assert.equal(state.pullRequest.merged, true, JSON.stringify(state.pullRequest));
   assert.equal(state.vercelDeployment.target, "preview");
   assert.equal(state.vercelDeployment.url, "mediachafa-preview.vercel.app");
   assert.equal(deploymentRequest.target, "preview");
   assert.equal(deploymentRequest.gitSource.ref, branch);
   assert.equal(deploymentRequest.gitSource.sha, "new-commit");
   assert.equal(state.estimatedCostUsd, 0);
-  assert.equal(requestCount, 7);
+  assert.equal(requestCount, 9);
   assert.equal(createdCommit, true);
   assert.equal(dispatchedChecks, true);
+  assert.ok(modelPromptMessages[0][0].content.includes("Respuestas breves en español."));
+});
+
+test("Beta saves persistent memory only after explicit owner approval", async () => {
+  savedMemory = null;
+  const proposalResponse = await api("/actions/propose", "POST", { actions: [{
+    provider: "supabase",
+    type: "memory_save",
+    memory_key: "response_style",
+    memory_value: { text: "Usar respuestas breves y claras en español." },
+    user_confirmed: true,
+    reusable: true,
+    sensitive: false,
+    description: "Recordar preferencia de estilo."
+  }] });
+  assert.equal(proposalResponse.status, 200);
+  const proposals = (await proposalResponse.json()).proposals;
+  assert.equal(proposals.length, 1);
+  const approved = await api(`/actions/${proposals[0].id}/approve`, "POST", {});
+  assert.equal(approved.status, 200);
+  assert.equal(savedMemory.user_id, userId);
+  assert.equal(savedMemory.memory_key, "response_style");
+  assert.equal(savedMemory.user_confirmed, true);
+  assert.equal(savedMemory.reusable, true);
+  assert.equal(savedMemory.sensitive, false);
+});
+
+test("sensitive or unconfirmed memory proposals are rejected", async () => {
+  const response = await api("/actions/propose", "POST", { actions: [{
+    provider: "supabase",
+    type: "memory_save",
+    memory_key: "api_token",
+    memory_value: { text: "do not store" },
+    user_confirmed: false,
+    reusable: true,
+    sensitive: false
+  }] });
+  assert.equal((await response.json()).proposals.length, 0);
 });
 
 test("pause during a model turn persists instructions and skips the pending tool call", async () => {
