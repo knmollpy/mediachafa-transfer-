@@ -30,6 +30,7 @@ let memoryRows = [{ memory_key: "response_style", memory_value: { text: "Respues
 let savedMemory = null;
 let openedPrBody = null;
 let modelGate = null;
+let nextModelResponse = null;
 const modelPromptMessages = [];
 const originalFetch = globalThis.fetch;
 
@@ -41,6 +42,7 @@ async function encryptToken(value) {
 
 const env = {
   TOKEN_ENCRYPTION_KEY: base64(encryptionBytes),
+  CHANGE_REVIEW_SERVICE_TOKEN: "review-service-test-token",
   BETA_LIMITS: {
     get: async (key) => kv.get(key) ?? null,
     put: async (key, value) => { kv.set(key, value); },
@@ -65,7 +67,8 @@ globalThis.fetch = async (input, init = {}) => {
   if (url === "https://openrouter.ai/api/v1/models") return Response.json({ data: [{ id: "openai/gpt-oss-20b:free", name: "Test model", pricing: { prompt: "0", completion: "0" }, architecture: { input_modalities: ["text"] } }] });
   if (url === "https://openrouter.ai/api/v1/key") return Response.json({ data: { is_free_tier: true, free_model_daily_requests: { used: 0, limit: 50, remaining: 50 } } });
   if (url === "https://openrouter.ai/api/v1/chat/completions") {
-    const turn = modelTurns[requestCount++];
+    const content = nextModelResponse ?? JSON.stringify(modelTurns[requestCount++]);
+    nextModelResponse = null;
     modelPromptMessages.push(JSON.parse(init.body).messages);
     if (modelGate) {
       const gate = modelGate;
@@ -73,7 +76,7 @@ globalThis.fetch = async (input, init = {}) => {
       gate.entered();
       await gate.promise;
     }
-    return Response.json({ choices: [{ message: { content: JSON.stringify(turn) } }], usage: { prompt_tokens: 100, completion_tokens: 40 } });
+    return Response.json({ choices: [{ message: { content } }], usage: { prompt_tokens: 100, completion_tokens: 40 } });
   }
   if (url === "https://api.github.com/repos/knmollpy/mediachafa-transfer-/git/ref/heads/main") return Response.json({ object: { sha: "base-sha" } });
   if (url === "https://api.github.com/repos/knmollpy/mediachafa-transfer-") return Response.json({ default_branch: "main", permissions: { push: true } });
@@ -264,4 +267,36 @@ test("Vercel integration validates project access and stores its token encrypted
   const stored = kv.get(`integration:${userId}:vercel`);
   assert.ok(stored);
   assert.equal(stored.includes("vercel-owner-token"), false);
+});
+
+
+test("internal independent-review model router uses connected free providers and requires service authentication", async () => {
+  kv.set(`integration:${userId}:openrouter`, await encryptToken("router-token"));
+  nextModelResponse = JSON.stringify({
+    decision: "block",
+    confidence: 0.99,
+    scope_ok: true,
+    requirements_met: false,
+    regressions_found: true,
+    findings: [{ severity: "high", file: "app-source/beta.js", detail: "Test finding." }],
+    summary: "Test review response."
+  });
+  const unauthorized = await worker.fetch(new Request("https://mediachafa-beta-ai.nxmollpy.workers.dev/internal/review-model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer wrong-token" },
+    body: JSON.stringify({ messages: [{ role: "system", content: "review" }, { role: "user", content: "diff" }] }),
+  }), env);
+  assert.equal(unauthorized.status, 403);
+
+  const response = await worker.fetch(new Request("https://mediachafa-beta-ai.nxmollpy.workers.dev/internal/review-model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer review-service-test-token" },
+    body: JSON.stringify({ messages: [{ role: "system", content: "review" }, { role: "user", content: "diff" }] }),
+  }), env);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.provider, "openrouter");
+  assert.equal(result.model, "openai/gpt-oss-20b:free");
+  assert.match(result.text, /"decision":"block"/);
+  assert.equal(typeof result.rotations, "number");
 });
