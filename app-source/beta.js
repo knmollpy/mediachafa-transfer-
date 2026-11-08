@@ -224,6 +224,18 @@ Para una página web pública: create_repository con visibility "public", despu�
     workModelSelect.value = 'mediachafa::pro';
   }
   renderWorkModels();
+  const WORK_API = 'https://mediachafa-task-hunter.nxmollpy.workers.dev';
+  async function workApi(path, options = {}) {
+    const auth = await currentSession();
+    const response = await fetch(`${WORK_API}${path}`, {
+      ...options,
+      headers: { Authorization: `Bearer ${auth.token}`, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Zona de trabajo respondió ${response.status}.`);
+    return data;
+  }
+
   const workList = $('#beta-work-list');
   const workCount = $('#beta-work-count');
   const workSummary = $('#beta-work-summary');
@@ -260,7 +272,7 @@ Para una página web pública: create_repository con visibility "public", despu�
   }
   async function refreshWorkTasks() {
     workCount.textContent='Actualizando…';
-    try { const data=await api('/work/tasks');renderWorkTasks(Array.isArray(data.tasks)?data.tasks:[]); }
+    try { const data=await workApi('/tasks');renderWorkTasks(Array.isArray(data.tasks)?data.tasks:[]); }
     catch(error){workList.textContent=error.message;workCount.textContent='No disponible';}
   }
   $('#beta-work-refresh').addEventListener('click',refreshWorkTasks);
@@ -271,7 +283,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     try {
       const reward=$('#beta-work-reward').value;
       const minutes=Number($('#beta-work-duration').value);
-      const result=await api('/work/tasks',{method:'POST',body:JSON.stringify({
+      const result=await workApi('/tasks',{method:'POST',body:JSON.stringify({
         title:$('#beta-work-title').value,description:$('#beta-work-description').value,
         assigned_model:workModelSelect.value,estimated_reward:reward===''?null:Number(reward),
         estimated_currency:$('#beta-work-currency').value,
