@@ -1,0 +1,16 @@
+name = "mediachafa-beta-ai"
+main = "worker.js"
+compatibility_date = "2026-11-08"
+workers_dev = true
+keep_vars = true
+
+[ai]
+binding = "AI"
+
+[[kv_namespaces]]
+binding = "BETA_LIMITS"
+id = "6f8bada8702645e5987bbdd23b42424c"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
