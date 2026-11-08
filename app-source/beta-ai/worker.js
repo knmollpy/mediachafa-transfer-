@@ -26,7 +26,8 @@ const TOOL_PROVIDERS = ["github", "supabase", "cloudflare"];
 const MAX_BODY_BYTES = 14 * 1024 * 1024;
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
 const PROVIDERS = ["github", "supabase", "cloudflare", "vercel", "openrouter", "groq", "gemini", "cohere", "huggingface"];
-const MODEL_PROVIDERS = ["openrouter", "groq", "gemini", "cohere"];
+// Solo se habilita inferencia con precio cero verificable; otros proveedores quedan fuera del chat hasta poder certificar que su cuenta no factura.
+const MODEL_PROVIDERS = ["openrouter"];
 // IAs propias de MediaChafa: usan primero Workers AI (binding env.AI, cuenta Workers Free:
 // al agotar la cuota gratis Cloudflare devuelve error, no cobra) y después rotan solas a los
 // modelos gratuitos conectados. Nunca se usan modelos pagos.
@@ -1397,11 +1398,12 @@ export default {
             used = 0;
             for (const model of catalog) used += Number(await env.BETA_LIMITS.get(`beta-ai-requests:${user.id}:groq:${model.nativeId}:${date}`) || 0);
           }
-          quotas[provider] = { connected: true, used, limit: providerQuota ? providerQuota.providerLimit : (provider === "cohere" ? COHERE_MONTHLY_LIMIT : Math.max(0, ...limits)), period: provider === "cohere" ? "month" : "day" };
+          const effectiveLimit = providerQuota ? providerQuota.providerLimit : (provider === "cohere" ? COHERE_MONTHLY_LIMIT : Math.max(0, ...limits));
+          quotas[provider] = { connected: true, used, limit: effectiveLimit, remaining: Math.max(0, effectiveLimit - used), period: "day" };
         } catch (error) { catalogErrors[provider] = error.message; }
       }
-      const workersAiUsed = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${user.id}:workersai:day:${date}`) || 0);
-      const own = MEDIACHAFA_ORDER.map((variant) => ({ id: `mediachafa::${variant}`, nativeId: variant, apiProvider: "mediachafa", name: MEDIACHAFA_MODELS[variant].name, provider: "MediaChafa", own: true, unlimited: true, vision: true, audio: true, thinkingLevel: MEDIACHAFA_MODELS[variant].thinkingLevel, usedToday: workersAiUsed }));
+      const freeQuota = quotas.openrouter || { connected: false, used: 0, limit: 0, remaining: 0 };
+      const own = MEDIACHAFA_ORDER.map((variant) => ({ id: `mediachafa::${variant}`, nativeId: variant, apiProvider: "mediachafa", name: MEDIACHAFA_MODELS[variant].name, provider: "OpenRouter Free", own: true, unlimited: false, vision: true, audio: false, thinkingLevel: MEDIACHAFA_MODELS[variant].thinkingLevel, usedToday: freeQuota.used, dailyLimit: freeQuota.limit, remaining: freeQuota.remaining || 0, quotaPeriod: "day" }));
       models.unshift(...own);
       return json({ ok: true, models, quotas, catalogErrors, dailyLimit: DAILY_REQUEST_LIMIT, connectedProviders: Object.keys(quotas) }, 200, origin);
     }
@@ -1831,26 +1833,13 @@ function isRotatableError(status, detail = "") {
   return status === 429 || status === 402 || status === 408 || status >= 500 || /quota|limit|capacity|overload|unavailable|exceed|4006|rate/i.test(detail);
 }
 
-async function transcribeAudio(env, base64) {
-  if (!env.AI || !base64) return "";
-  try {
-    const result = await env.AI.run(CF_WHISPER, { audio: base64 });
-    return String(result?.text || "").trim();
-  } catch { return ""; }
+async function transcribeAudio(_env, _base64) {
+  // Workers AI puede facturar en cuentas Workers Paid; audio queda desactivado en modo cero.
+  return "";
 }
 
 async function callModel(env, candidate, messages, history, promptText, image, maxTokens, fetchImpl) {
-  if (candidate.provider === "workersai") {
-    if (!env.AI) return { ok: false, status: 503, detail: "Workers AI no está vinculado a este Worker." };
-    try {
-      const result = await env.AI.run(candidate.nativeId, { messages, max_tokens: maxTokens, temperature: 0.5 });
-      const text = workersAiText(result);
-      return text ? { ok: true, text } : { ok: false, status: 502, detail: "Workers AI no devolvió texto." };
-    } catch (error) {
-      const detail = String(error?.message || error);
-      return { ok: false, status: /4006|limit|quota|neuron/i.test(detail) ? 429 : 503, detail };
-    }
-  }
+  if (candidate.provider === "workersai") return { ok: false, status: 403, detail: "Workers AI desactivado para impedir cargos no deseados." };
   const { provider, nativeId, token } = candidate;
   let result, data, text;
   if (provider === "openrouter" || provider === "groq") {
@@ -1875,109 +1864,81 @@ async function callModel(env, candidate, messages, history, promptText, image, m
 }
 
 async function mediachafaCandidates(env, userId, variant, needsVision) {
-  const list = [];
-  // Cada IA propia usa su propio modelo principal, sin cambiar de identidad según quién inició el chat.
-  const primaries = MEDIACHAFA_ORDER.map((role, index) => {
-    const config = MEDIACHAFA_MODELS[role];
-    const nativeId = needsVision ? CF_VISION_MODELS[index] : config.cf[0];
-    return {
-      provider: "workersai",
-      nativeId,
-      name: nativeId.split("/").pop(),
-      vision: CF_VISION_MODELS.includes(nativeId),
-      mediachafaRole: role,
-      primary: true,
-    };
-  });
-  list.push(...primaries);
-  // Los demás modelos de Workers AI quedan como respaldo, no se presentan como otra IA propia.
-  const backups = [];
-  for (const role of MEDIACHAFA_ORDER) {
-    const config = MEDIACHAFA_MODELS[role];
-    const ids = needsVision ? CF_VISION_MODELS : config.cf.slice(1);
-    for (const id of ids) {
-      if (primaries.some((item) => item.nativeId === id) || backups.some((item) => item.nativeId === id)) continue;
-      backups.push({ provider: "workersai", nativeId: id, name: id.split("/").pop(), vision: CF_VISION_MODELS.includes(id), backup: true });
+  // Única inferencia permitida en modo de coste cero: modelos OpenRouter :free.
+  const token = await storedToken(env, userId, "openrouter");
+  if (!token) return [];
+  try {
+    const [catalog, quota] = await Promise.all([
+      providerModelCatalog("openrouter", token),
+      openRouterQuota(token),
+    ]);
+    if (quota.providerRemaining < 5) return [];
+    const eligible = catalog
+      .filter((model) => !needsVision || model.vision)
+      .map((model) => ({
+        provider: "openrouter",
+        nativeId: model.nativeId || model.id.split("::")[1] || model.id,
+        modelId: model.id,
+        name: model.name,
+        vision: Boolean(model.vision),
+        token,
+        thinkingLevel: model.thinkingLevel || "medio",
+      }));
+    if (!eligible.length) return [];
+    const remaining = [...eligible];
+    const primaries = [];
+    for (const role of MEDIACHAFA_ORDER) {
+      const preference = MEDIACHAFA_MODELS[role].prefer;
+      let index = remaining.findIndex((item) => preference.test(item.nativeId));
+      if (index < 0) index = 0;
+      const selected = remaining.splice(index, 1)[0] || eligible[0];
+      primaries.push({ ...selected, mediachafaRole: role, primary: true });
     }
+    return [...primaries, ...remaining];
+  } catch {
+    return [];
   }
-  // Proveedores externos gratuitos conectados; cada catálogo filtra modelos elegibles.
-  const external = [];
-  for (const provider of ["groq", "gemini", "cohere", "openrouter"]) {
-    const token = await storedToken(env, userId, provider);
-    if (!token) continue;
-    try {
-      const catalog = await providerModelCatalog(provider, token);
-      const preferred = catalog.slice().sort((a, b) => {
-        const preference = MEDIACHAFA_MODELS[variant].prefer;
-        return Number(preference.test(b.nativeId || b.id)) - Number(preference.test(a.nativeId || a.id));
-      });
-      for (const model of preferred) {
-        external.push({ provider, nativeId: model.nativeId || model.id.split("::")[1] || model.id, modelId: model.id, name: model.name, vision: Boolean(model.vision), token });
-      }
-    } catch {}
-  }
-  const perProvider = {};
-  const filteredExternal = [];
-  for (const model of external) {
-    if (needsVision && !model.vision) continue;
-    perProvider[model.provider] = (perProvider[model.provider] || 0) + 1;
-    if (perProvider[model.provider] <= 3) filteredExternal.push(model);
-  }
-  return [...primaries, ...filteredExternal, ...backups];
 }
 
 
 async function runMediaChafaConsensus(args) {
   const { request, env, user, config, variant, modelId, transcript, promptText, messages, history, image, autonomous, fetchImpl, maxTokens, candidates, integrations } = args;
-  const date = new Date().toISOString().slice(0, 10);
-  const counterKey = "beta-ai-requests:" + user.id + ":workersai:day:" + date;
-  let workersAiUsed = Number(await env.BETA_LIMITS.get(counterKey) || 0);
-  const roleCandidates = candidates.filter((candidate) => candidate.provider === "workersai" && candidate.primary && candidate.mediachafaRole);
-  const external = [];
-  const seenProviders = new Set();
-  for (const candidate of candidates.filter((item) => item.provider !== "workersai")) {
-    if (seenProviders.has(candidate.provider)) continue;
-    seenProviders.add(candidate.provider);
-    external.push(candidate);
-  }
-  const roleOrder = [variant, ...MEDIACHAFA_ORDER.filter((item) => item !== variant)];
-  const selectedProviders = new Set(roleCandidates.map((candidate) => candidate.provider));
-  const peerCandidates = external.filter((candidate) => !selectedProviders.has(candidate.provider)).slice(0, 3);
-  const team = [
+  let workersAiUsed = 0;
+  const roleCandidates = candidates.filter((candidate) => candidate.primary && candidate.mediachafaRole);
+  const peerCandidates = candidates.filter((candidate) => !candidate.primary).slice(0, 3);
+  const allParticipants = [
     ...roleCandidates.map((candidate) => ({ candidate, role: candidate.mediachafaRole, label: MEDIACHAFA_MODELS[candidate.mediachafaRole].name, kind: "MediaChafa" })),
-    ...peerCandidates.map((candidate) => ({ candidate, role: "peer", label: "Revisor externo · " + candidate.provider, kind: "Externo" })),
-  ].slice(0, 6);
-  if (team.length < 3) return null;
+    ...peerCandidates.map((candidate) => ({ candidate, role: "peer", label: "Revisor externo · " + candidate.name, kind: "Externo" })),
+  ];
+  let freeQuota;
+  try { freeQuota = await openRouterQuota(allParticipants[0]?.candidate.token); }
+  catch { return null; }
+  const maxByRemaining = Math.min(6, Math.floor((freeQuota.providerRemaining - 1) / 2));
+  const team = allParticipants.slice(0, Math.max(0, maxByRemaining));
+  if (team.length < 2) return null;
 
   const attempts = [];
   async function invoke(participant, phase, extraPrompt, baseMessages, baseHistory, baseImage) {
     const candidate = participant.candidate;
     if (request.signal.aborted) return { ok: false, detail: "Solicitud cancelada." };
-    if (candidate.provider === "workersai") {
-      if (workersAiUsed >= WORKERS_AI_DAILY_SAFETY_LIMIT) {
-        attempts.push(candidate.name + ": límite de seguridad diario de Cloudflare");
-        return { ok: false, status: 429, detail: "Límite diario de Cloudflare alcanzado." };
+    if (candidate.provider !== "openrouter" || !String(candidate.nativeId).endsWith(":free")) {
+      attempts.push(candidate.name + ": bloqueado porque no es un modelo gratuito verificado");
+      return { ok: false, status: 403, detail: "Solo se permiten modelos OpenRouter :free con precio cero." };
+    }
+    try {
+      const quota = await openRouterQuota(candidate.token);
+      if (quota.used >= Math.min(DAILY_REQUEST_LIMIT, quota.providerLimit)) {
+        attempts.push("OpenRouter: cuota gratuita compartida agotada");
+        return { ok: false, status: 429, detail: "Cuota gratuita de OpenRouter agotada." };
       }
-      workersAiUsed += 1;
-      await env.BETA_LIMITS.put(counterKey, String(workersAiUsed), { expirationTtl: 172800 });
-    } else {
-      if (candidate.provider === "openrouter") {
-        try {
-          const quota = await openRouterQuota(candidate.token);
-          if (quota.used >= Math.min(DAILY_REQUEST_LIMIT, quota.providerLimit)) {
-            attempts.push("OpenRouter: cuota gratuita compartida agotada");
-            return { ok: false, status: 429, detail: "Cuota gratuita de OpenRouter agotada." };
-          }
-        } catch (error) {
-          attempts.push("OpenRouter: " + (error?.message || "no se pudo verificar la cuota"));
-          return { ok: false, status: 503, detail: "No se pudo verificar la cuota gratuita." };
-        }
-      }
-      const quota = await reserveRequest(env, user.id, candidate.modelId);
-      if (!quota.allowed) {
-        attempts.push(candidate.provider + ": cuota gratuita agotada");
-        return { ok: false, status: 429, detail: "Cuota gratuita agotada." };
-      }
+    } catch (error) {
+      attempts.push("OpenRouter: " + (error?.message || "no se pudo verificar la cuota"));
+      return { ok: false, status: 503, detail: "No se pudo verificar la cuota gratuita." };
+    }
+    const quota = await reserveRequest(env, user.id, candidate.modelId);
+    if (!quota.allowed) {
+      attempts.push("OpenRouter: cuota gratuita agotada");
+      return { ok: false, status: 429, detail: "Cuota gratuita agotada." };
     }
     let roleText;
     if (phase === "draft") {
@@ -2011,9 +1972,7 @@ async function runMediaChafaConsensus(args) {
   const successfulDrafts = drafts.filter(Boolean);
   // Si un motor falla, probá otros modelos gratuitos ya conectados antes de aceptar un equipo reducido.
   const usedCandidates = new Set(team.map((item) => item.candidate.provider + "::" + item.candidate.nativeId));
-  const spareCandidates = candidates
-    .filter((item) => !usedCandidates.has(item.provider + "::" + item.nativeId))
-    .sort((a, b) => Number(a.provider === "workersai") - Number(b.provider === "workersai"));
+  const spareCandidates = candidates.filter((item) => !usedCandidates.has(item.provider + "::" + item.nativeId));
   const failedSlots = team.filter((_item, index) => !drafts[index]);
   for (const failed of failedSlots) {
     while (spareCandidates.length && successfulDrafts.length < 6) {
@@ -2089,7 +2048,7 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
   const counterKey = `beta-ai-requests:${user.id}:workersai:day:${date}`;
   const audioBase64 = payload.audio ? String(payload.audio.data || "").replace(/^data:[^,]+,/, "") : "";
   const transcript = audioBase64 ? await transcribeAudio(env, audioBase64) : "";
-  if (audioBase64 && !transcript) return json({ error: "No se pudo transcribir el audio. Probá de nuevo o escribí el mensaje.", modelId }, 502, origin);
+  if (audioBase64 && !transcript) return json({ error: "La transcripción de audio está pausada en el modo de coste cero para evitar usar Workers AI. Escribí el mensaje o conectá un servicio de transcripción con gratuidad verificable.", modelId }, 503, origin);
   const promptText = [prompt, transcript ? `Transcripción del audio del usuario: ${transcript}` : ""].filter(Boolean).join("\n\n") || "Describe la imagen adjunta.";
   const integrations = await integrationStatus(env, user.id);
   const connectedContext = await integrationContext(env, user.id);
