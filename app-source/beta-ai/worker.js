@@ -1917,9 +1917,13 @@ async function runMediaChafaConsensus(args) {
   const { request, env, user, config, variant, modelId, transcript, promptText, messages, history, image, autonomous, fetchImpl, maxTokens, candidates, integrations, progressId } = args;
   const progressKey = progressId ? `beta-chat-progress:${user.id}:${progressId}` : "";
   const progressState = { id: progressId || "", status: "active", phase: "preparing", phaseLabel: "Preparando el equipo", participants: [], steps: [{ label: "Solicitud recibida por el coordinador", state: "done" }, { label: "Comprobando modelos gratuitos disponibles", state: "active" }], updatedAt: Date.now() };
+  let lastProgressWriteAt = 0;
   async function publishProgress(patch = {}) {
     if (!progressKey) return;
     Object.assign(progressState, patch, { updatedAt: Date.now() });
+    const wait = Math.max(0, 1050 - (Date.now() - lastProgressWriteAt));
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    lastProgressWriteAt = Date.now();
     try { await env.BETA_LIMITS.put(progressKey, JSON.stringify(progressState), { expirationTtl: 300 }); } catch {}
   }
   function addProgressStep(label, state = "done") {
@@ -1947,8 +1951,8 @@ async function runMediaChafaConsensus(args) {
     engine: participant.candidate.name,
     provider: participant.candidate.provider,
     role: participant.kind,
-    status: "queued",
-    phase: "En espera",
+    status: "thinking",
+    phase: "Preparando propuesta",
   }));
   addProgressStep(`Equipo gratuito seleccionado: ${team.length} modelos`);
   addProgressStep("Las IA están preparando propuestas independientes", "active");
@@ -2003,10 +2007,7 @@ async function runMediaChafaConsensus(args) {
   }
 
   const drafts = await Promise.all(team.map(async (participant) => {
-    const progressParticipant = progressState.participants.find((item) => item.engine === participant.candidate.name && item.name === participant.label);
-    if (progressParticipant) { progressParticipant.status = "thinking"; progressParticipant.phase = "Preparando propuesta"; await publishProgress(); }
     const result = await invoke(participant, "draft", "", messages, history, image);
-    if (progressParticipant) { progressParticipant.status = result.ok ? "done" : "error"; progressParticipant.phase = result.ok ? "Propuesta lista" : "No respondió"; await publishProgress(); }
     return result.ok ? { ...participant, text: result.text, plan: extractPlan(result.text) } : null;
   }));
   const successfulDrafts = drafts.filter(Boolean);
@@ -2034,8 +2035,8 @@ async function runMediaChafaConsensus(args) {
   addProgressStep("Comparando propuestas y buscando errores", "active");
   progressState.participants = progressState.participants.map((item) => ({
     ...item,
-    status: successfulDrafts.some((draft) => draft.candidate.name === item.engine) ? "reviewing" : item.status,
-    phase: successfulDrafts.some((draft) => draft.candidate.name === item.engine) ? "Esperando revisión cruzada" : item.phase,
+    status: successfulDrafts.some((draft) => draft.candidate.name === item.engine) ? "reviewing" : "error",
+    phase: successfulDrafts.some((draft) => draft.candidate.name === item.engine) ? "Esperando revisión cruzada" : "No preparó propuesta",
   }));
   await publishProgress({ phase: "review", phaseLabel: "Revisión cruzada entre las IA", participants: progressState.participants });
 
@@ -2051,19 +2052,22 @@ async function runMediaChafaConsensus(args) {
   // Todos los participantes reciben el mismo paquete de propuestas y realizan una crítica cruzada.
   const reviewers = successfulDrafts;
   const reviews = await Promise.all(reviewers.map(async (participant) => {
-    const progressParticipant = progressState.participants.find((item) => item.engine === participant.candidate.name && item.name === participant.label);
-    if (progressParticipant) { progressParticipant.status = "reviewing"; progressParticipant.phase = "Analizando las propuestas del equipo"; await publishProgress(); }
     const result = await invoke(participant, "review", reviewInput, messages, [], image);
-    if (progressParticipant) { progressParticipant.status = result.ok ? "reviewed" : "error"; progressParticipant.phase = result.ok ? "Revisión entregada" : "No pudo revisar"; await publishProgress(); }
     return result.ok ? { reviewer: participant.label, engine: participant.candidate.name, text: String(result.text).slice(0, 4500) } : null;
   }));
   const successfulReviews = reviews.filter(Boolean);
-  addProgressStep(`Revisiones cruzadas completadas: ${successfulReviews.length}/${reviewers.length}`);
-  addProgressStep("La IA coordinadora está integrando acuerdos y diferencias", "active");
   progressState.participants = progressState.participants.map((item) => ({
     ...item,
-    status: item.engine === (successfulDrafts.find((draft) => draft.role === variant) || successfulDrafts[0]).candidate.name ? "synthesizing" : item.status,
-    phase: item.engine === (successfulDrafts.find((draft) => draft.role === variant) || successfulDrafts[0]).candidate.name ? "Coordinando la síntesis final" : item.phase,
+    status: successfulReviews.some((review) => review.engine === item.engine) ? "reviewed" : (item.status === "error" ? "error" : "reviewing"),
+    phase: successfulReviews.some((review) => review.engine === item.engine) ? "Revisión entregada" : item.phase,
+  }));
+  addProgressStep(`Revisiones cruzadas completadas: ${successfulReviews.length}/${reviewers.length}`);
+  addProgressStep("La IA coordinadora está integrando acuerdos y diferencias", "active");
+  const selectedLead = successfulDrafts.find((item) => item.role === variant) || successfulDrafts[0];
+  progressState.participants = progressState.participants.map((item) => ({
+    ...item,
+    status: item.engine === selectedLead.candidate.name ? "synthesizing" : item.status,
+    phase: item.engine === selectedLead.candidate.name ? "Coordinando la síntesis final" : item.phase,
   }));
   await publishProgress({ phase: "synthesis", phaseLabel: "Síntesis final revisada", participants: progressState.participants });
   const consensusInput = "PEDIDO ORIGINAL: " + promptText.slice(0, 9000) + "\n\nPROPUESTAS DEL EQUIPO:\n" + JSON.stringify(draftSummary).slice(0, 26000) + "\n\nREVISIONES INDEPENDIENTES:\n" + JSON.stringify(successfulReviews).slice(0, 15000) + "\n\nPrepará la mejor respuesta y plan final. Corregí los problemas señalados. Si una revisión propone bloquear un cambio por un riesgo real, no lo incluyas en actions; explicá el riesgo. Mantené actions vacías si no hay una acción explícita y segura.";
