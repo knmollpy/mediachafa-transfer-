@@ -1,5 +1,5 @@
-const CACHE_NAME = 'mediachafa-root-beta-v3';
-const SHELL = ['/', '/manifest.webmanifest', '/icons/app.svg', '/app-source/beta.js'];
+const CACHE_NAME = 'mediachafa-root-beta-v4';
+const SHELL = ['/', '/manifest.webmanifest', '/icons/app.svg', '/app-source/beta.js?v=20261108-sessionfix-e337e9f'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
