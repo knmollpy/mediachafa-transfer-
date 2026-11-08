@@ -2068,7 +2068,7 @@ async function internalReviewModel(env, payload) {
   const attempts = [];
   const fetchImpl = (input, init = {}) => fetch(input, {
     ...init,
-    signal: init.signal || AbortSignal.timeout(25000),
+    signal: init.signal || AbortSignal.timeout(18000),
   });
   for (const candidate of boundedCandidates) {
     if (candidate.provider === "workersai" && !env.AI) {
