@@ -3,6 +3,7 @@ const QWEN_IMAGE_SPACE = "https://daverrrr75-qwen-image-2-1-uncensored-aio-loras
 const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
 const SUPABASE_KEY = "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
 const OWNER_EMAIL = "nxmollpy@gmail.com";
+const OWNER_USER_ID = "3da2624d-d1cc-49e9-a536-ed8c0c480779";
 const DAILY_REQUEST_LIMIT = 50;
 const PROVIDER_DAILY_LIMITS = { openrouter: 50, groq: 7000, gemini: 50 };
 const COHERE_MONTHLY_LIMIT = 1000;
@@ -1463,12 +1464,24 @@ async function openRouterQuota(token) {
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/internal/review-model") {
+      const expected = String(env.CHANGE_REVIEW_SERVICE_TOKEN || "");
+      const supplied = (request.headers.get("Authorization") || "").replace(/^Bearer\\s+/i, "");
+      if (!expected || supplied !== expected) return json({ error: "Servicio interno no autorizado." }, 403);
+      if (!env.BETA_LIMITS || !env.TOKEN_ENCRYPTION_KEY) return json({ error: "El enrutador de modelos no está configurado." }, 503);
+      try {
+        const payload = await request.json();
+        return json(await internalReviewModel(env, payload), 200);
+      } catch (error) {
+        return json({ error: String(error?.message || "No se pudo ejecutar la revisión con los motores gratuitos.").slice(0, 1200) }, 503);
+      }
+    }
     if (request.method === "OPTIONS") {
       if (origin !== APP_ORIGIN) return new Response(null, { status: 403 });
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
     if (origin !== APP_ORIGIN) return json({ error: "Origen no autorizado." }, 403, origin);
-    const url = new URL(request.url);
     if (url.pathname === "/status" && request.method === "GET") {
       const user = await requireOwner(request);
       if (!user) return json({ error: "La Beta está disponible solo para la cuenta dueña." }, 403, origin);
@@ -2008,6 +2021,71 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
     if (perProvider[model.provider] <= 3) list.push(model);
   }
   return list;
+}
+
+async function internalReviewModel(env, payload) {
+  const messages = payload?.messages;
+  if (!Array.isArray(messages) || messages.length !== 2
+    || messages[0]?.role !== "system" || messages[1]?.role !== "user"
+    || typeof messages[0]?.content !== "string" || typeof messages[1]?.content !== "string"
+    || messages[0].content.length > 12000 || messages[1].content.length > 110000) {
+    throw new Error("La solicitud del revisor no cumple el formato permitido.");
+  }
+  const promptText = messages[1].content;
+  const candidates = await mediachafaCandidates(env, OWNER_USER_ID, "pro", false);
+  const date = new Date().toISOString().slice(0, 10);
+  const counterKey = `beta-ai-requests:${OWNER_USER_ID}:workersai:day:${date}`;
+  let workersAiUsed = Number(await env.BETA_LIMITS.get(counterKey) || 0);
+  const attempts = [];
+  const fetchImpl = (input, init = {}) => fetch(input, {
+    ...init,
+    signal: init.signal || AbortSignal.timeout(45000),
+  });
+  for (const candidate of candidates) {
+    if (candidate.provider === "workersai" && (!env.AI || workersAiUsed >= WORKERS_AI_DAILY_SAFETY_LIMIT)) {
+      attempts.push(`${candidate.name}: Workers AI no disponible o límite local alcanzado`);
+      continue;
+    }
+    if (candidate.provider === "openrouter") {
+      try {
+        const quota = await openRouterQuota(candidate.token);
+        if (quota.providerRemaining <= 0) {
+          attempts.push("OpenRouter: cuota gratuita agotada");
+          continue;
+        }
+      } catch (error) {
+        attempts.push(`OpenRouter: ${String(error?.message || "cuota no verificable").slice(0, 100)}`);
+        continue;
+      }
+    }
+    if (candidate.provider !== "workersai") {
+      const quota = await reserveRequest(env, OWNER_USER_ID, candidate.modelId);
+      if (!quota.allowed) {
+        attempts.push(`${candidate.provider}: límite de seguridad del proveedor alcanzado`);
+        continue;
+      }
+    }
+    let outcome;
+    try {
+      outcome = await callModel(env, candidate, messages, [], promptText, null, 2200, fetchImpl);
+    } catch (error) {
+      outcome = { ok: false, status: 503, detail: String(error?.message || error) };
+    }
+    if (candidate.provider === "workersai") {
+      workersAiUsed += 1;
+      await env.BETA_LIMITS.put(counterKey, String(workersAiUsed), { expirationTtl: 172800 });
+    }
+    if (outcome.ok) {
+      return {
+        text: outcome.text,
+        provider: candidate.provider,
+        model: candidate.nativeId,
+        rotations: attempts.length,
+      };
+    }
+    attempts.push(`${candidate.provider} ${candidate.name}: HTTP ${outcome.status} ${String(outcome.detail || "").slice(0, 100)}`);
+  }
+  throw new Error(`No hay motores gratuitos disponibles para revisar ahora. Se probaron ${attempts.length} alternativas. ${attempts.slice(-5).join(" | ")}`.slice(0, 1200));
 }
 
 async function mediachafaChat({ request, env, user, origin, payload, prompt, image, history, autonomous, variant }) {
