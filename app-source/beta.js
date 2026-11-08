@@ -1384,7 +1384,14 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const node = addMessage('assistant', `Necesito tu aprobación antes de seguir: ${proposal.summary}`);
       node.querySelector('.beta-copy-btn')?.remove();
       let settled = false;
-      const finish = (outcome) => { if (settled) return; settled = true; run.waiting = null; run.waitingKind = null; resolve(outcome); };
+      const finish = (outcome) => {
+        if (settled) return;
+        settled = true;
+        run.waiting = null;
+        run.waitingKind = null;
+        if (outcome?.paused) for (const button of node.querySelectorAll('button')) button.disabled = true;
+        resolve(outcome);
+      };
       run.waiting = finish;
       run.waitingKind = 'approval';
       renderProposals(node, [proposal], expiresInSeconds, { onResult: (_proposal, outcome) => finish(outcome) });
@@ -1567,6 +1574,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         const results = [];
         for (const error of data.proposalErrors || []) results.push(`❌ No se pudo preparar una acción: ${error}`);
         let failed = false;
+        let replanAfterPause = false;
         for (let i = 0; i < proposals.length; i++) {
           if (run.pauseRequested || run.paused) {
             const resumed = await pauseAtSafePoint(run);
@@ -1595,7 +1603,13 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
             result = await askOwnerToApprove(proposal, run, data.expiresInSeconds || 600);
             if (result.paused || run.pauseRequested) {
               const resumed = await pauseAtSafePoint(run);
-              if (resumed) message = resumed;
+              if (resumed) {
+                message = `La propuesta anterior quedó pausada y NO fue aprobada ni ejecutada. Reevaluá el pedido completo con esta nueva instrucción: ${resumed}`;
+                state.loopHistory.push({ role: 'assistant', content: `La propuesta pendiente no se aprobó y no se ejecutó: ${proposal.summary}. El dueño agregó una instrucción; revisá si corresponde modificar o descartar la propuesta.` });
+                state.loopHistory = state.loopHistory.slice(-12);
+                replanAfterPause = true;
+                break;
+              }
               i -= 1;
               continue;
             }
@@ -1614,6 +1628,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
             step(`${result.denied ? 'Denegado' : 'Falló'}: ${result.error}`, result.denied ? 'done' : 'error');
           }
         }
+        if (replanAfterPause) continue;
         if (run.pauseRequested) {
           const resumed = await pauseAtSafePoint(run);
           if (resumed) message = resumed;
