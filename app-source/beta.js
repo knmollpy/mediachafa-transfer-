@@ -2058,7 +2058,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       }
       recordModelHealth(selectedModel.id, true);
       const preparationErrors = Array.isArray(data.proposalErrors) ? data.proposalErrors : [];
-      const answerBase = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
+      const collaborationLine = data.collaboration?.enabled
+        ? `\n\nEquipo colaborativo: ${data.collaboration.participantCount}/6 IA · ${data.collaboration.reviewCount} revisiones · ${data.collaboration.status === 'consensus' ? 'síntesis revisada' : 'consenso parcial'}\n${(data.collaboration.participants || []).map(item => `${item.name}: ${item.engine}`).join(' · ')}`
+        : '';
+      const answerBase = (data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer) + collaborationLine;
       const answer = preparationErrors.length ? `${answerBase}\n\nNo pude preparar una o más acciones:\n• ${preparationErrors.join('\n• ')}` : answerBase;
       history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer, modelName: data.modelName, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds, steps: [...steps, 'Respuesta recibida'] });
       history = history.slice(-30);
