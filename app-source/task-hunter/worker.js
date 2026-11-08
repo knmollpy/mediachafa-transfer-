@@ -140,7 +140,7 @@ async function discoverOpportunities(userId, auth, env) {
       const queries = ["virtual assistant", "data entry", "web research", "content writing", "transcription"];
       const responses = await Promise.all(queries.map(async q => {
         const url = new URL("https://himalayas.app/jobs/api/search");
-        url.searchParams.set("q", q); url.searchParams.set("country", "AR"); url.searchParams.set("worldwide", "true"); url.searchParams.set("sort", "recent"); url.searchParams.set("page", "1");
+        url.searchParams.set("q", q); url.searchParams.set("country", "AR"); url.searchParams.set("sort", "recent"); url.searchParams.set("page", "1");
         const r = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "MediaChafa Task Hunter/1.0" } });
         if (!r.ok) throw new Error("Himalayas HTTP " + r.status);
         return r.json();
