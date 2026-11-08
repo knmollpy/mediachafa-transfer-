@@ -3,7 +3,7 @@ import { WorkflowEntrypoint } from "cloudflare:workers";
 const REPOSITORY = "knmollpy/mediachafa-transfer-";
 const EXPECTED_WORKFLOW = ".github/workflows/change-review-gate.yml";
 const MODEL = "@cf/openai/gpt-oss-20b";
-const MAX_REVIEWS_PER_DAY = 3;
+const MAX_REVIEWS_PER_DAY = 8;
 const REVIEW_TTL = 7 * 24 * 60 * 60;
 const TRUSTED_REQUEST = "Implementar Cloudflare Workflows para revisión durable, memoria persistente Supabase integrada en Beta y agente programador GitHub con revisión independiente obligatoria antes de publicar automáticamente en main y Vercel. Verificar cumplimiento del pedido, preservar funciones/botones/secciones, evitar regresiones y no tocar archivos fuera del alcance.";
 const TRUSTED_REQUIREMENTS = [
