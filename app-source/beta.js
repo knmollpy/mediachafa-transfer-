@@ -981,8 +981,25 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         approve.disabled = reject.disabled = true;
         result.textContent = 'Enviando al proveedor…';
         let visualPrep = null;
-        try { visualPrep = window.MediaChafaVisualCheck?.prepare(proposal) || null; } catch { visualPrep = null; }
-        activity(`Preparando aprobación de ${proposal.provider}: ${proposal.summary}`);
+        try {
+          const checker = window.MediaChafaVisualCheck;
+          visualPrep = checker?.prepare(proposal) || null;
+          if (checker?.preflight) {
+            const audit = await checker.preflight(proposal);
+            if (visualPrep) visualPrep.preflight = audit;
+            if (!audit.ok) {
+              const failures = audit.checks.filter((item) => item.ok === false).map((item) => item.label).join('\\n');
+              throw new Error(`La revisión previa encontró errores y no publicó el cambio:\\n${failures}`);
+            }
+          }
+        } catch (error) {
+          result.textContent = error.message || 'No se pudo completar la revisión previa.';
+          result.dataset.state = 'error';
+          approve.disabled = false;
+          activity('La revisión previa bloqueó el cambio para evitar publicar código roto.', 'error');
+          return false;
+        }
+        activity(`Revisión previa aprobada. Preparando cambio de ${proposal.provider}: ${proposal.summary}`);
         selectBetaView('chat');
         try {
           const data = await api(`/actions/${encodeURIComponent(proposal.id)}/approve`, { method: 'POST', body: '{}' });
@@ -1542,8 +1559,20 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
 
   async function autoApprove(proposal) {
+    let visualPrep = null;
     try {
+      const checker = window.MediaChafaVisualCheck;
+      visualPrep = checker?.prepare(proposal) || null;
+      if (checker?.preflight) {
+        const audit = await checker.preflight(proposal);
+        if (visualPrep) visualPrep.preflight = audit;
+        if (!audit.ok) {
+          const failures = audit.checks.filter((item) => item.ok === false).map((item) => item.label).join('\\n');
+          return { ok: false, error: `La revisión previa bloqueó la publicación:\\n${failures}` };
+        }
+      }
       const data = await api(`/actions/${encodeURIComponent(proposal.id)}/approve`, { method: 'POST', body: '{}' });
+      queueVisualReview(visualPrep, data);
       return { ok: true, message: data.message || 'Listo.', url: data.url || '' };
     } catch (error) {
       return { ok: false, error: error.message || 'No se pudo aplicar el cambio.' };
