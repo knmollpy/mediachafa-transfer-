@@ -85,6 +85,7 @@ function parseReview(text) {
 }
 async function reviewWithModels(env, messages) {
   const failures = [];
+  let betaRouterExhausted = false;
   if (env.CHANGE_REVIEW_SERVICE_TOKEN) {
     try {
       const response = await fetch(BETA_REVIEW_MODEL_URL, {
@@ -94,7 +95,7 @@ async function reviewWithModels(env, messages) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ messages }),
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(240000),
       });
       const data = await response.json().catch(() => ({}));
       if (response.ok && typeof data.text === "string" && data.text.trim()) {
@@ -104,10 +105,15 @@ async function reviewWithModels(env, messages) {
           provider: String(data.provider || "MediaChafa multi-provider"),
         };
       }
-      failures.push(`MediaChafa router HTTP ${response.status}: ${String(data.error || "sin respuesta").slice(0, 180)}`);
+      const routerError = String(data.error || "sin respuesta");
+      failures.push(`MediaChafa router HTTP ${response.status}: ${routerError.slice(0, 180)}`);
+      betaRouterExhausted = /No hay motores gratuitos disponibles/i.test(routerError);
     } catch (error) {
       failures.push(`MediaChafa router: ${String(error?.message || error).slice(0, 180)}`);
     }
+  }
+  if (betaRouterExhausted) {
+    throw new Error(`El enrutador ya probó todos los motores gratuitos disponibles. ${failures.join(" | ")}`.slice(0, 1600));
   }
   if (env.AI) {
     for (const model of MODEL_FALLBACKS) {
