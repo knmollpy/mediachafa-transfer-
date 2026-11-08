@@ -71,3 +71,33 @@ test("broken JSON answers never show raw code or JSON to the user", async () => 
   const data = await (await chat(env, "mediachafa::rapida")).json();
   assert.ok(data.answer.includes("Las tres IAs llegaron a un acuerdo. Preparé el repositorio."));
 });
+
+
+test("normal chat task sent to any MediaChafa model activates the other two agents", async () => {
+  const seen = [];
+  const env = makeEnv(async (model) => {
+    seen.push(model);
+    return { response: seen.length === 1
+      ? '{"answer":"Preparé una corrección propuesta.","actions":[]}'
+      : '{"decision":"approve","confidence":0.95,"findings":[]}' };
+  });
+  const response = await chat(env, "mediachafa::rapida", { mode: "normal", message: "Quiero que arregles este código" });
+  const data = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(seen.length, 3);
+  assert.equal(data.consensus.status, "approved");
+  assert.ok(data.answer.includes("Las tres IAs llegaron a un acuerdo."));
+});
+
+test("ordinary greetings use one model and do not spend the other two agents' free quota", async () => {
+  const seen = [];
+  const env = makeEnv(async (model) => {
+    seen.push(model);
+    return { response: '{"answer":"¡Hola!","actions":[]}' };
+  });
+  const response = await chat(env, "mediachafa::pro", { mode: "normal", message: "hola" });
+  const data = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(seen.length, 1);
+  assert.equal(data.consensus.status, "single_agent");
+});
