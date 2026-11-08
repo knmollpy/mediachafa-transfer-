@@ -8,7 +8,8 @@
     "build:phone": "esbuild phone-mirror.js --bundle --format=esm --platform=browser --target=es2022 --outfile=phone-mirror.bundle.js",
     "mobile:copy": "node mobile/copy-web.mjs",
     "mobile:sync": "npm run mobile:copy && cap sync android",
-    "mobile:android": "npm run mobile:copy && cap open android"
+    "mobile:android": "npm run mobile:copy && cap open android",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@capacitor/android": "8.0.0",

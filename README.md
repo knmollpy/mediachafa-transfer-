@@ -29,3 +29,11 @@ El dueño ofrece **20 GB de almacenamiento por US$ 5 con acceso permanente**, su
 ## Tecnología
 
 La aplicación web y Android usa Capacitor; Supabase gestiona autenticación y datos, y Cloudflare R2 y Google Drive se pueden usar como destinos de almacenamiento. El catálogo de PS4 muestra los enlaces que configura el dueño.
+
+
+## Pruebas de navegador y monitoreo de errores
+
+- **Playwright:** las pruebas de navegador se ejecutan en GitHub Actions para los cambios que afectan al sitio. Comprueban la pantalla de acceso, errores JavaScript no controlados y el ajuste básico en móvil. Los fallos conservan capturas, video y trace como artefactos de CI.
+- **Sentry:** el SDK del navegador está preparado en `app-source/sentry-init.js`. Para activarlo, creá un proyecto **JavaScript** en Sentry y copiá su DSN público en `window.MEDIA_CHAFA_SENTRY.dsn`, dentro de `app-source/sentry-config.js`. El DSN no es un token privado; no pegues un Auth Token de Sentry en el frontend. Hasta configurar el DSN, Sentry permanece desactivado y no afecta el funcionamiento.
+- La configuración de Sentry evita enviar por defecto datos personales, elimina cabeceras y cuerpos de solicitudes, y quita parámetros de consulta de las URLs registradas. No se habilita Session Replay.
+- Para ejecutar Playwright localmente: `cd app-source`, `npm install --no-save --package-lock=false @playwright/test@1.65.0`, `npx playwright install chromium` y `npm run test:e2e`.
