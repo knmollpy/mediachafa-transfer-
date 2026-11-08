@@ -2054,15 +2054,22 @@ async function internalReviewModel(env, payload) {
   const candidates = await mediachafaCandidates(env, OWNER_USER_ID, "pro", false);
   // Priorizamos proveedores externos independientes; Workers AI queda como alternativa final.
   candidates.sort((a, b) => Number(a.provider === "workersai") - Number(b.provider === "workersai"));
+  const providerCounts = new Map();
+  const boundedCandidates = candidates.filter(candidate => {
+    const count = providerCounts.get(candidate.provider) || 0;
+    if (count >= 2) return false;
+    providerCounts.set(candidate.provider, count + 1);
+    return true;
+  });
   const date = new Date().toISOString().slice(0, 10);
   const counterKey = `beta-ai-requests:${OWNER_USER_ID}:workersai:day:${date}`;
   let workersAiUsed = Number(await env.BETA_LIMITS.get(counterKey) || 0);
   const attempts = [];
   const fetchImpl = (input, init = {}) => fetch(input, {
     ...init,
-    signal: init.signal || AbortSignal.timeout(45000),
+    signal: init.signal || AbortSignal.timeout(25000),
   });
-  for (const candidate of candidates) {
+  for (const candidate of boundedCandidates) {
     if (candidate.provider === "workersai" && !env.AI) {
       attempts.push(`${candidate.name}: Workers AI no está vinculado`);
       continue;
