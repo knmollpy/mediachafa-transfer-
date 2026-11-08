@@ -1405,6 +1405,67 @@ export default {
       models.unshift(...own);
       return json({ ok: true, models, quotas, catalogErrors, dailyLimit: DAILY_REQUEST_LIMIT, connectedProviders: Object.keys(quotas) }, 200, origin);
     }
+    if (url.pathname.startsWith("/work/tasks")) {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "Solo la cuenta dueña puede administrar Zona de trabajo." }, 403, origin);
+      const authHeader = request.headers.get("Authorization") || "";
+      const restHeaders = {
+        apikey: SUPABASE_KEY,
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Prefer: "return=representation",
+      };
+      const base = `${SUPABASE_URL}/rest/v1/task_hunter_jobs`;
+      const taskId = url.pathname.match(/^\\/work\\/tasks\\/([0-9a-f-]{36})$/i)?.[1];
+      try {
+        if (url.pathname === "/work/tasks" && request.method === "GET") {
+          const query = new URLSearchParams({ select: "*", order: "updated_at.desc", limit: "100" });
+          const response = await fetch(`${base}?${query}`, { headers: restHeaders });
+          const data = await response.json().catch(() => []);
+          if (!response.ok) return json({ error: data.message || "No se pudieron cargar los trabajos." }, response.status, origin);
+          return json({ tasks: data }, 200, origin);
+        }
+        if (url.pathname === "/work/tasks" && request.method === "POST") {
+          let payload;
+          try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+          const title = String(payload.title || "").trim().slice(0, 180);
+          const description = String(payload.description || "").trim().slice(0, 12000);
+          const assignedModel = String(payload.assigned_model || "mediachafa::pro").slice(0, 120);
+          const allowedModels = new Set(["mediachafa::pro","mediachafa::codigo","mediachafa::rapida"]);
+          if (!title || !allowedModels.has(assignedModel)) return json({ error: "Título o modelo inválido." }, 400, origin);
+          const row = {
+            user_id: user.id, title, description, assigned_model: assignedModel,
+            source_platform: String(payload.source_platform || "manual").slice(0, 80),
+            task_category: String(payload.task_category || "other").slice(0, 60),
+            estimated_reward: Number.isFinite(Number(payload.estimated_reward)) && payload.estimated_reward !== "" ? Number(payload.estimated_reward) : null,
+            estimated_currency: /^[A-Z]{3}$/.test(String(payload.estimated_currency || "USD")) ? String(payload.estimated_currency || "USD") : "USD",
+            estimated_duration_seconds: Number.isFinite(Number(payload.estimated_duration_seconds)) && Number(payload.estimated_duration_seconds) > 0 ? Math.min(604800, Math.floor(Number(payload.estimated_duration_seconds))) : null,
+            status: "queued", stage: "awaiting_executor",
+            checkpoint: { executor: "pending_persistent_workflow", created_from: "beta_work_zone" }
+          };
+          const response = await fetch(base, { method: "POST", headers: restHeaders, body: JSON.stringify(row) });
+          const data = await response.json().catch(() => []);
+          if (!response.ok) return json({ error: data.message || "No se pudo guardar el trabajo." }, response.status, origin);
+          return json({ task: data[0] || null, execution: "not_started" }, 201, origin);
+        }
+        if (taskId && request.method === "PATCH") {
+          let payload;
+          try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+          const allowed = new Set(["paused","cancelled"]);
+          const nextStatus = String(payload.status || "");
+          if (!allowed.has(nextStatus)) return json({ error: "Por ahora solo se permite pausar o cancelar trabajos pendientes." }, 400, origin);
+          const query = new URLSearchParams({ id: `eq.${taskId}`, status: "eq.queued", select: "*" });
+          const response = await fetch(`${base}?${query}`, { method: "PATCH", headers: restHeaders, body: JSON.stringify({ status: nextStatus, stage: nextStatus, updated_at: new Date().toISOString() }) });
+          const data = await response.json().catch(() => []);
+          if (!response.ok) return json({ error: data.message || "No se pudo actualizar el trabajo." }, response.status, origin);
+          return json({ task: data[0] || null }, 200, origin);
+        }
+        return json({ error: "Ruta de Zona de trabajo no encontrada." }, 404, origin);
+      } catch (error) {
+        return json({ error: String(error?.message || "Error de persistencia de trabajos.").slice(0, 400) }, 502, origin);
+      }
+    }
     if (url.pathname === "/project-map") {
       if (request.method !== "GET") return json({ error: "Método no permitido." }, 405, origin);
       const user = await requireOwner(request);
