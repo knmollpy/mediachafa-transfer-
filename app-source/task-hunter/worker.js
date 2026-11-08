@@ -89,13 +89,13 @@ function cleanJobText(value) {
 function classifyOpportunity(title, description, categories = []) {
   const text = (String(title) + " " + String(description) + " " + categories.join(" ")).toLowerCase();
   const groups = [
-    ["data_entry", /data entry|data annotat|data label|spreadsheet|excel|google sheets|product listing|catalog management/],
+    ["data_entry", /data entry|data annotat|data label|ai training|spreadsheet|excel|google sheets|product listing|catalog management/],
     ["virtual_assistance", /virtual assistant|administrative assistant|admin assistant|executive assistant|operations assistant|personal assistant|calendar management/],
     ["research", /web research|internet research|research assistant|market research|lead research|online research/],
     ["writing", /content writ|copywrit|proofread|copy edit|editorial assistant|blog writ|newsletter|seo content/],
     ["transcription", /transcri|captioning|subtitl/],
     ["customer_support", /customer support|customer service|chat support|email support|community moderator/],
-    ["web", /wordpress|web content|cms assistant|website content/]
+    ["web", /wordpress|web content|cms assistant|website content|javascript|html|css|frontend|front-end|web developer|website developer|web development/]
   ];
   for (const [category, pattern] of groups) if (pattern.test(text)) return category;
   return null;
@@ -133,7 +133,7 @@ async function discoverOpportunities(userId, auth, env) {
         const pay = job.salaryMin ?? job.salaryMax ?? null;
         const payText = pay == null ? "" : "Pago publicado: " + (job.salaryMin ?? "") + (job.salaryMax != null ? "–" + job.salaryMax : "") + " " + (job.salaryCurrency || "") + " (" + (job.salaryPeriod || "periodo no indicado") + "). ";
         const body = [job.companyName ? "Empresa: " + job.companyName : "", "Ubicación publicada: " + (job.jobGeo || "No especificada"), job.jobType?.length ? "Modalidad: " + job.jobType.join(", ") : "", payText, description].filter(Boolean).join("\\n\\n");
-        return opportunityRow(userId, "Jobicy", job.id, title, body, job.url, category, pay, job.salaryCurrency, { company: job.companyName || null, location: job.jobGeo || null, employment_type: job.jobType || [], salary_period: job.salaryPeriod || null, source_url: job.url }, job.pubDate, null);
+        return opportunityRow(userId, "Jobicy", job.id, title, body, job.url, category, null, job.salaryCurrency, { company: job.companyName || null, location: job.jobGeo || null, employment_type: job.jobType || [], published_salary: { min: job.salaryMin ?? null, max: job.salaryMax ?? null, currency: job.salaryCurrency || null, period: job.salaryPeriod || null }, source_url: job.url }, job.pubDate, null);
       }).filter(Boolean);
     })(),
     (async () => {
@@ -162,7 +162,7 @@ async function discoverOpportunities(userId, auth, env) {
         const body = [job.companyName ? "Empresa: " + job.companyName : "", job.employmentType ? "Modalidad: " + job.employmentType : "", "Elegibilidad geográfica: " + (restrictions.length ? restrictions.join(", ") : "Sin restricción de país publicada"), payText, description].filter(Boolean).join("\\n\\n");
         const published = job.pubDate ? new Date(Number(job.pubDate) * 1000).toISOString() : null;
         const expires = job.expiryDate ? new Date(Number(job.expiryDate) * 1000).toISOString() : null;
-        return opportunityRow(userId, "Himalayas", id, title, body, job.applicationLink, category, pay, job.currency, { company: job.companyName || null, location_restrictions: restrictions, employment_type: job.employmentType || null, salary_period: job.salaryPeriod || "annual", source_url: job.guid || null }, published, expires);
+        return opportunityRow(userId, "Himalayas", id, title, body, job.applicationLink, category, null, job.currency, { company: job.companyName || null, location_restrictions: restrictions, timezone_restrictions: timezoneRestrictions, employment_type: job.employmentType || null, published_salary: { min: job.minSalary ?? null, max: job.maxSalary ?? null, currency: job.currency || null, period: job.salaryPeriod || "annual" }, source_url: job.guid || null }, published, expires);
       }).filter(Boolean);
     })()
   ]);
