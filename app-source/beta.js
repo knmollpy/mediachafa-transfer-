@@ -217,10 +217,11 @@ Para una página web pública: create_repository con visibility "public", despu�
   document.head.append(workStyle);
   const workModelSelect = $('#beta-work-model');
   function renderWorkModels() {
-    const ownModels = modelCatalog.filter(model => model.own && ['mediachafa::pro','mediachafa::codigo','mediachafa::rapida'].includes(model.id));
-    const options = ownModels.map(model => new Option(`${model.id === 'mediachafa::pro' ? '★ RECOMENDADA · ' : ''}${model.name}`, model.id));
-    if (!options.some(option => option.value === 'mediachafa::pro')) options.unshift(new Option('★ RECOMENDADA · MediaChafa Pro', 'mediachafa::pro'));
-    workModelSelect.replaceChildren(...options);
+    workModelSelect.replaceChildren(
+      new Option('★ RECOMENDADA · MediaChafa Pro', 'mediachafa::pro'),
+      new Option('MediaChafa Código', 'mediachafa::codigo'),
+      new Option('MediaChafa Rápida', 'mediachafa::rapida')
+    );
     workModelSelect.value = 'mediachafa::pro';
   }
   renderWorkModels();
@@ -287,7 +288,7 @@ Para una página web pública: create_repository con visibility "public", despu�
         title:$('#beta-work-title').value,description:$('#beta-work-description').value,
         assigned_model:workModelSelect.value,estimated_reward:reward===''?null:Number(reward),
         estimated_currency:$('#beta-work-currency').value,
-        estimated_duration_seconds:minutes>0?Math.floor(minutes*60):null
+        estimated_duration_minutes:minutes>0?minutes:null
       })});
       $('#beta-work-form').reset();renderWorkModels();
       await refreshWorkTasks();
