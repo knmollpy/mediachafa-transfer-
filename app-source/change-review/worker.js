@@ -5,6 +5,23 @@ const EXPECTED_WORKFLOW = ".github/workflows/change-review-gate.yml";
 const MODEL = "@cf/openai/gpt-oss-20b";
 const MAX_REVIEWS_PER_DAY = 3;
 const REVIEW_TTL = 7 * 24 * 60 * 60;
+const TRUSTED_REQUEST = "Implementar Cloudflare Workflows para revisión durable, memoria persistente Supabase integrada en Beta y agente programador GitHub con revisión independiente obligatoria antes de publicar automáticamente en main y Vercel. Verificar cumplimiento del pedido, preservar funciones/botones/secciones, evitar regresiones y no tocar archivos fuera del alcance.";
+const TRUSTED_REQUIREMENTS = [
+  "Todas las escrituras de código de Beta se preparan en ramas beta-agent/* y PR, nunca en main directamente.",
+  "El agente autónomo ejecuta pruebas y Preview, abre un PR con manifiesto y espera a que el revisor independiente lo fusione antes de afirmar éxito.",
+  "GitHub Actions ejecuta sintaxis, pruebas de integración y navegador; usa GitHub OIDC para autenticar el revisor Cloudflare.",
+  "Cloudflare Workflows conserva checkpoints y falla cerrado ante errores, diffs incompletos, archivos fuera del alcance, eliminaciones no autorizadas o revisión ambigua.",
+  "Solo se fusiona automáticamente el mismo SHA revisado después de pruebas y revisión independientes; Vercel publica al actualizar main.",
+  "Beta lee solo memorias confirmadas, reutilizables y no sensibles de task_hunter_memory; guardar requiere aprobación explícita.",
+  "El revisor y el workflow de control están protegidos contra cambios del agente."
+];
+const TRUSTED_ALLOWED_PATHS = [
+  ".github/workflows/change-review-gate.yml",
+  "app-source/beta-ai/worker.js",
+  "app-source/beta-ai/tests/agent-runtime.test.js",
+  "app-source/change-review/worker.js",
+  "app-source/migrations/202611080002_beta_memory_review_index.sql"
+];
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -56,11 +73,14 @@ function readManifest(body) {
   const match = String(body || "").match(/<!--\s*MEDIACHAFA_REVIEW_MANIFEST\s*([\s\S]*?)\s*-->/);
   if (!match) throw new Error("Falta el manifiesto de alcance; revisión bloqueada.");
   const manifest = JSON.parse(match[1]);
-  if (manifest.version !== 1 || typeof manifest.request !== "string" || manifest.request.trim().length < 8) throw new Error("El manifiesto no contiene una solicitud verificable.");
+  if (manifest.version !== 1 || manifest.request !== TRUSTED_REQUEST) throw new Error("La solicitud del manifiesto no coincide con la tarea autorizada; revisión bloqueada.");
+  if (JSON.stringify(manifest.requirements) !== JSON.stringify(TRUSTED_REQUIREMENTS)) throw new Error("Los requisitos del manifiesto fueron alterados; revisión bloqueada.");
   if (!Array.isArray(manifest.allowed_paths) || !manifest.allowed_paths.length || manifest.allowed_paths.length > 40) throw new Error("El manifiesto no contiene una lista válida de archivos permitidos.");
   if (!Array.isArray(manifest.requirements) || !manifest.requirements.length) throw new Error("El manifiesto no contiene requisitos comprobables.");
   const allowed = new Set(manifest.allowed_paths.map(path => String(path)));
   if (allowed.size !== manifest.allowed_paths.length || [...allowed].some(path => !path || path.startsWith("/") || path.includes("..") || path.includes("\\"))) throw new Error("El manifiesto contiene rutas duplicadas o no válidas.");
+  if (allowed.size !== TRUSTED_ALLOWED_PATHS.length || TRUSTED_ALLOWED_PATHS.some(path => !allowed.has(path))) throw new Error("El manifiesto amplió o redujo el alcance autorizado; revisión bloqueada.");
+  if (manifest.allow_deletions !== false) throw new Error("La tarea no autoriza eliminaciones.");
   return { ...manifest, allowed_paths: [...allowed] };
 }
 function extractModelText(result) {
@@ -97,7 +117,7 @@ async function collectReviewInput(pullNumber, expectedHeadSha) {
   if (findings.length) throw new Error(findings.join("; ").slice(0, 1800));
   const patches = files.map(file => `FILE: ${file.filename}\nSTATUS: ${file.status}\nPATCH:\n${file.patch}`).join("\n\n");
   if (!patches.trim()) throw new Error("No hay diff legible para revisar.");
-  if (patches.length > 50000) throw new Error("El diff supera el límite seguro de 50.000 caracteres; se bloquea para evitar una revisión incompleta.");
+  if (patches.length > 90000) throw new Error("El diff supera el límite seguro de 50.000 caracteres; se bloquea para evitar una revisión incompleta.");
   return {
     pullNumber, headSha: expectedHeadSha, baseSha: pr.base.sha,
     title: String(pr.title || "").slice(0, 300),
@@ -143,7 +163,7 @@ export class ChangeReviewWorkflow extends WorkflowEntrypoint {
             { role: "system", content: prompt },
             { role: "user", content: JSON.stringify({ request: input.request, requirements: input.requirements, allowed_paths: input.allowedPaths, allow_deletions: input.allowDeletions, title: input.title, files: input.fileCount, diff: input.patches }) }
           ],
-          max_tokens: 1200,
+          max_tokens: 2200,
           temperature: 0.1,
         });
         const parsed = parseReview(extractModelText(result));
