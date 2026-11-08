@@ -1336,7 +1336,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     run.pauseRequested = true;
     pauseButton.textContent = 'Pausando…';
     setStatus('Pausando en un punto seguro…');
-    if (run.waitingKind === 'question') run.waiting?.({ paused: true });
+    if (run.waitingKind === 'question' || run.waitingKind === 'approval') run.waiting?.({ paused: true });
     else if (run.inFlight) run.controller.abort();
   });
 
@@ -1593,6 +1593,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           } else if (agent.needsOwnerApproval(proposal)) {
             step(`Esperando tu aprobación: ${proposal.summary.slice(0, 160)}`);
             result = await askOwnerToApprove(proposal, run, data.expiresInSeconds || 600);
+            if (result.paused || run.pauseRequested) {
+              const resumed = await pauseAtSafePoint(run);
+              if (resumed) message = resumed;
+              i -= 1;
+              continue;
+            }
             if (result.stopped) throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
           } else {
             step(`Ejecutando: ${proposal.summary.slice(0, 160)}`);
