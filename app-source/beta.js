@@ -1413,7 +1413,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       customInput.addEventListener('blur', () => {
         customInput.dataset.hint = 'Escribí tu opinión y presioná Enter para continuar';
       });
-      customInput.placeholder = 'Tu opinión o una respuesta propia… (Enter para enviar)';
+      customInput.placeholder = isRepoNameQuestion ? 'Nombre exacto del repositorio… (Enter para enviar)' : 'Tu opinión o una respuesta propia… (Enter para enviar)';
       if (isRepoNameQuestion) controls.append(customInput);
       else controls.append(optionRow, alternativeButton, customInput);
       node.append(controls);
@@ -1523,6 +1523,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           }
         }
         const decision = agent.decideNext({ classified, proposalsCount: proposals.length, failed, emptyStreak: state.emptyStreak });
+        if (agent.isRepositoryDeletionRequest(state.goal) && !state.deleteRepositoryName && proposals.some(item => item.type === 'delete_repository')) decision.kind = 'question';
         state.emptyStreak = decision.emptyStreak;
         const summary = proposals.map(item => item.summary).join(' | ').slice(0, 1200);
         state.loopHistory.push({ role: 'user', content: agent.compactUserTurn(state, message).slice(0, 3000) });
