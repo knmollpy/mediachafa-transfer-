@@ -174,7 +174,7 @@ Para una página web pública: create_repository con visibility "public", despu�
   workView.innerHTML = `
     <div class="beta-work-zone">
       <div class="beta-work-zone-head"><div><h2>Zona de trabajo</h2><p>Asigná tareas a una IA y conservá su registro aunque cierres Beta.</p></div><button type="button" class="secondary" id="beta-work-refresh">Actualizar</button></div>
-      <div class="beta-work-disclaimer" role="status">Los trabajos se ejecutan en segundo plano con checkpoints persistentes y se recuperan al volver a abrir Beta. La IA crea entregables y los revisa con controles básicos; todavía no inicia sesión ni envía tareas a plataformas remuneradas. Los pagos nunca se inventan.</div>
+      <div class="beta-work-disclaimer" role="status">Por ahora cargás las tareas manualmente y la IA produce entregables con una cuota gratuita limitada (máximo 3 trabajos por día). Los checkpoints quedan guardados y el Workflow continúa aunque cierres Beta. Todavía no descubre ofertas automáticamente ni inicia sesión o envía tareas a plataformas remuneradas. No se simulan ingresos ni pagos.</div>
       <form id="beta-work-form" class="beta-work-form">
         <label>Trabajo o tarea<input id="beta-work-title" maxlength="180" required placeholder="Ej. Transcribir y revisar un audio"></label>
         <label>Instrucciones<textarea id="beta-work-description" maxlength="12000" rows="4" placeholder="Describí el encargo, formato y requisitos de calidad…"></textarea></label>
