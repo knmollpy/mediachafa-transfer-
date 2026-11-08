@@ -147,7 +147,7 @@ test("autonomous execution persists pause state and verifies isolated GitHub cha
   assert.ok(manifestMatch, "El PR debe incluir un manifiesto legible por el revisor independiente.");
   const manifest = JSON.parse(manifestMatch[1]);
   assert.equal(manifest.version, 1);
-  assert.ok(manifest.allowed_paths.includes("app-source/beta-ai/worker.js"));
+  assert.ok(manifest.allowed_paths.includes("app-source/beta.js"));
   assert.equal(manifest.allow_deletions, false);
   assert.equal(state.vercelDeployment.target, "preview");
   assert.equal(state.vercelDeployment.url, "mediachafa-preview.vercel.app");
