@@ -108,6 +108,7 @@ jobs:
           OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=mediachafa-change-review"
           TOKEN_JSON="$(curl --fail --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${OIDC_URL}")"
           echo "token=$(echo "$TOKEN_JSON" | jq -r '.value')" >> "$GITHUB_OUTPUT"
+
       - name: Run durable Cloudflare independent review
         env:
           OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
@@ -119,16 +120,18 @@ jobs:
         run: |
           set -euo pipefail
           START="$(curl --silent --show-error -X POST "$REVIEW_URL/review" \
-            -H "Authorization: Bearer $OIDC_TOKEN" -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            -H "Content-Type: application/json" \
             --data "$(jq -n --argjson number "$PR_NUMBER" --arg sha "$HEAD_SHA" '{pull_number:$number,head_sha:$sha}')" || printf '{"error":"No se pudo conectar con el revisor Cloudflare."}')"
           REVIEW_ID="$(echo "$START" | jq -r '.review_id // empty')"
           POLL_TOKEN="$(echo "$START" | jq -r '.poll_token // empty')"
           if [ -z "$REVIEW_ID" ] || [ -z "$POLL_TOKEN" ]; then
-            BODY="$(echo "$START" | jq -r '"<!-- MEDIACHAFA_REVIEW_FEEDBACK -->\n### Revisión independiente bloqueada\n\n" + (.error // "No se pudo iniciar el revisor.")')"
+            DETAILS="$(echo "$START" | jq -r '.error // "No se pudo iniciar el revisor independiente."')"
+            BODY="$(printf '%s\n' '<!-- MEDIACHAFA_REVIEW_FEEDBACK -->' '### Revisión independiente bloqueada' '' "$DETAILS")"
             gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -f body="$BODY"
-            echo "El revisor no inició; publicación bloqueada."
             exit 1
           fi
+
           for attempt in $(seq 1 70); do
             RESULT="$(curl --silent --show-error "$REVIEW_URL/review/$REVIEW_ID?pull_number=$PR_NUMBER" -H "Authorization: Bearer $POLL_TOKEN")"
             STATUS="$(echo "$RESULT" | jq -r '.status // "blocked"')"
@@ -141,79 +144,15 @@ jobs:
             if [ "$STATUS" = "blocked" ]; then
               echo "REVISIÓN BLOQUEADA:"
               echo "$RESULT" | jq .
-              BODY="$(echo "$RESULT" | jq -r '"<!-- MEDIACHAFA_REVIEW_FEEDBACK -->\n### Revisión independiente bloqueada\n\n" + (.summary // "El revisor bloqueó la publicación.") + "\n\n" + ((.findings // []) | map("- [" + (.severity // "unknown") + "] " + (.file // "") + ": " + (.detail // "")) | join("\n"))')"
+              DETAILS="$(echo "$RESULT" | jq -r '(.summary // "El revisor bloqueó la publicación.") + "\n\n" + ((.findings // []) | map("- [" + (.severity // "unknown") + "] " + (.file // "") + ": " + (.detail // "")) | join("\n"))')"
+              BODY="$(printf '%s\n' '<!-- MEDIACHAFA_REVIEW_FEEDBACK -->' '### Revisión independiente bloqueada' '' "$DETAILS")"
               gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -f body="$BODY"
               exit 1
             fi
             sleep 10
           done
-          BODY="<!-- MEDIACHAFA_REVIEW_FEEDBACK -->"
 
-  auto-publish:
-    if: startsWith(github.head_ref, 'beta-agent/')
-    needs: [tests, vercel-preview, independent-review]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - name: Verify reviewed commit is still the PR head
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          CURRENT="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-          STATE="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.state')"
-          BASE="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.base.ref')"
-          if [ "$CURRENT" != "$EXPECTED_HEAD_SHA" ] || [ "$STATE" != "open" ] || [ "$BASE" != "main" ]; then
-            echo "El PR cambió después de la revisión. No se fusiona."
-            exit 1
-          fi
-      - name: Merge only the reviewed SHA
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/merge" \
-            -f sha="$EXPECTED_HEAD_SHA" -f merge_method=squash
-\n'"### Revisión independiente bloqueada"
-
-  auto-publish:
-    if: startsWith(github.head_ref, 'beta-agent/')
-    needs: [tests, vercel-preview, independent-review]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - name: Verify reviewed commit is still the PR head
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          CURRENT="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-          STATE="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.state')"
-          BASE="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.base.ref')"
-          if [ "$CURRENT" != "$EXPECTED_HEAD_SHA" ] || [ "$STATE" != "open" ] || [ "$BASE" != "main" ]; then
-            echo "El PR cambió después de la revisión. No se fusiona."
-            exit 1
-          fi
-      - name: Merge only the reviewed SHA
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/merge" \
-            -f sha="$EXPECTED_HEAD_SHA" -f merge_method=squash
-\n\n'"El revisor no respondió dentro del límite. No se publicó; revisá los logs y volvé a ejecutar las comprobaciones."
+          BODY="$(printf '%s\n' '<!-- MEDIACHAFA_REVIEW_FEEDBACK -->' '### Revisión independiente bloqueada' '' 'El revisor no respondió dentro del límite. No se publicó; revisá los logs y volvé a ejecutar las comprobaciones.')"
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -f body="$BODY"
           echo "Timeout del revisor; publicación bloqueada."
           exit 1
