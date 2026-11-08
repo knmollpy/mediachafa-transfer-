@@ -1,4 +1,5 @@
 const APP_ORIGIN = "https://mediachafa-transfer.vercel.app";
+const QWEN_IMAGE_SPACE = "https://daverrrr75-qwen-image-2-1-uncensored-aio-loras.hf.space";
 const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
 const SUPABASE_KEY = "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
 const OWNER_EMAIL = "nxmollpy@gmail.com";
@@ -24,7 +25,7 @@ const THINKING_LEVELS = [
 const TOOL_PROVIDERS = ["github", "supabase", "cloudflare"];
 const MAX_BODY_BYTES = 14 * 1024 * 1024;
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
-const PROVIDERS = ["github", "supabase", "cloudflare", "vercel", "openrouter", "groq", "gemini", "cohere", "openai"];
+const PROVIDERS = ["github", "supabase", "cloudflare", "vercel", "openrouter", "groq", "gemini", "cohere", "huggingface"];
 const MODEL_PROVIDERS = ["openrouter", "groq", "gemini", "cohere"];
 // IAs propias de MediaChafa: usan primero Workers AI (binding env.AI, cuenta Workers Free:
 // al agotar la cuota gratis Cloudflare devuelve error, no cobra) y después rotan solas a los
@@ -91,7 +92,7 @@ const PROJECT_MAP = {
     { method: "POST", path: "/integrations/disconnect", purpose: "Desconectar una integración" },
     { method: "GET", path: "/project-map", purpose: "Mapa privado del producto y rutas del repositorio" },
     { method: "POST", path: "/chat", purpose: "Consulta de un turno al modelo seleccionado" },
-    { method: "POST", path: "/image-edit", purpose: "Editar una imagen adjunta con GPT Image y devolver el resultado al chat" },
+    { method: "POST", path: "/image-edit", purpose: "Editar imágenes con Qwen Image 2.1 Uncensored y devolver el resultado al chat" },
     { method: "POST", path: "/agent/start", purpose: "Crear una ejecución autónoma persistente y una rama de trabajo aislada" },
     { method: "POST", path: "/agent/:id/step", purpose: "Ejecutar un turno de razonamiento o herramienta" },
     { method: "POST", path: "/agent/:id/pause", purpose: "Pausar y persistir instrucciones/resultados" },
@@ -1120,11 +1121,11 @@ async function storedToken(env, userId, provider) {
 }
 
 async function verifyProvider(provider, token) {
-  if (provider === "openai") {
-    const response = await fetch("https://api.openai.com/v1/models/gpt-image-2.5-sunburst", { headers: { Authorization: `Bearer ${token}` } });
+  if (provider === "huggingface") {
+    const response = await fetch("https://huggingface.co/api/whoami-v2", { headers: { Authorization: `Bearer ${token}` } });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.id) return { ok: false, error: `OpenAI no validó el acceso a GPT Image (HTTP ${response.status}). Revisá la clave, el proyecto y la facturación de API.` };
-    return { ok: true, detail: "OpenAI validado · edición de imágenes GPT Image 2.5", capabilities: { imageEditing: true, model: "gpt-image-2.5-sunburst" } };
+    if (!response.ok || !data.name) return { ok: false, error: `Hugging Face no validó el token (HTTP ${response.status}). Creá un token con permiso Read.` };
+    return { ok: true, detail: `Hugging Face validado · cuenta ${String(data.name).slice(0, 80)} · acceso a Spaces públicos`, capabilities: { imageEditing: true, freeZeroGPU: true } };
   }
   if (provider === "groq") {
     const response = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${token}` } });
@@ -1561,15 +1562,15 @@ export default {
     if (url.pathname === "/image-edit" && request.method === "POST") {
       const user = await requireOwner(request);
       if (!user) return json({ error: "La edición de imágenes está disponible solo para la cuenta dueña." }, 403, origin);
-      const token = await storedToken(env, user.id, "openai");
-      if (!token) return json({ error: "Conectá OpenAI en Integraciones para habilitar la edición de imágenes." }, 409, origin);
+      const token = await storedToken(env, user.id, "huggingface");
+      if (!token) return json({ error: "Conectá Hugging Face en Integraciones con un token gratuito de permiso Read para usar la cuota gratuita de ZeroGPU." }, 409, origin);
       let payload;
       try {
         const rawBody = await request.text();
         if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) return json({ error: "La imagen o la instrucción supera el límite permitido." }, 413, origin);
         payload = JSON.parse(rawBody);
       } catch { return json({ error: "La solicitud de edición no tiene un formato válido." }, 400, origin); }
-      const prompt = String(payload.prompt || "").trim().slice(0, 6000);
+      const prompt = String(payload.prompt || "").trim().slice(0, 4000);
       const dataUrl = String(payload.image?.data || "");
       const match = dataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/i);
       if (!prompt) return json({ error: "Explicá qué querés agregar, quitar o modificar en la imagen." }, 400, origin);
@@ -1579,26 +1580,88 @@ export default {
         const binary = atob(match[2]);
         const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
         if (bytes.byteLength > MAX_MEDIA_BYTES) return json({ error: "La imagen supera el límite de 5 MB." }, 413, origin);
+
+        // Upload the reference image to the public Gradio Space using the user's free HF token.
         const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
-        const form = new FormData();
-        form.append("model", "gpt-image-2.5-sunburst");
-        form.append("prompt", `Editá la imagen de referencia siguiendo exactamente estas instrucciones: ${prompt}. Conservá sin cambios todos los elementos que no se hayan mencionado. Mantené la identidad, rasgos, proporciones, encuadre, iluminación y estilo originales siempre que no contradigan la edición solicitada. Integrá los cambios de forma coherente y natural.`);
-        form.append("quality", "high");
-        form.append("moderation", "low");
-        form.append("output_format", "png");
-        form.append("n", "1");
-        form.append("image[]", new Blob([bytes], { type: mime }), `mediachafa-input.${extension}`);
-        const response = await fetch("https://api.openai.com/v1/images/edits", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          const detail = String(result.error?.message || result.message || "OpenAI no pudo completar la edición.").slice(0, 500);
-          return json({ error: `Falló la edición de imagen (HTTP ${response.status}): ${detail}` }, response.status === 429 ? 429 : 502, origin);
+        const uploadForm = new FormData();
+        uploadForm.append("files", new Blob([bytes], { type: mime }), `mediachafa-input.${extension}`);
+        const authHeaders = { Authorization: `Bearer ${token}` };
+        const uploadResponse = await fetch(`${QWEN_IMAGE_SPACE}/gradio_api/upload`, {
+          method: "POST", headers: authHeaders, body: uploadForm, signal: AbortSignal.timeout(45000),
+        });
+        const uploadResult = await uploadResponse.json().catch(() => null);
+        const uploadedPath = Array.isArray(uploadResult) ? uploadResult[0] : uploadResult?.files?.[0];
+        if (!uploadResponse.ok || typeof uploadedPath !== "string") {
+          const detail = typeof uploadResult?.error === "string" ? uploadResult.error.slice(0, 300) : `HTTP ${uploadResponse.status}`;
+          return json({ error: `Hugging Face no aceptó la imagen (${detail}). Probá de nuevo más tarde.` }, 502, origin);
         }
-        const imageResult = result.data?.[0]?.b64_json;
-        if (!imageResult) return json({ error: "OpenAI respondió sin una imagen final. Probá con otra instrucción." }, 502, origin);
-        return json({ ok: true, image: imageResult, mime: "image/png", model: "gpt-image-2.5-sunburst" }, 200, origin);
+
+        const imageFile = {
+          path: uploadedPath, url: null, size: bytes.byteLength,
+          orig_name: `mediachafa-input.${extension}`, mime_type: mime,
+          meta: { _type: "gradio.FileData" },
+        };
+        const submitResponse = await fetch(`${QWEN_IMAGE_SPACE}/gradio_api/call/generate`, {
+          method: "POST",
+          headers: { ...authHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            data: [
+              `Editá esta imagen siguiendo estas instrucciones: ${prompt}. Conservá sin cambios todo lo que no se pidió modificar y respetá el encuadre, la identidad visual, las proporciones, los detalles y el estilo originales.`,
+              "Edit Image (1 Ref)", imageFile, null, "None (Base Uncensored)", 1.0,
+              "", "", "Square · 1:1 (1024x1024)", 30, 42, true,
+            ],
+          }),
+          signal: AbortSignal.timeout(45000),
+        });
+        const submitted = await submitResponse.json().catch(() => ({}));
+        if (!submitResponse.ok || !submitted.event_id) {
+          const detail = String(submitted.error || submitted.message || `HTTP ${submitResponse.status}`).slice(0, 300);
+          return json({ error: `Qwen no pudo iniciar la edición: ${detail}` }, 502, origin);
+        }
+
+        const resultResponse = await fetch(`${QWEN_IMAGE_SPACE}/gradio_api/call/generate/${encodeURIComponent(submitted.event_id)}`, {
+          headers: authHeaders, signal: AbortSignal.timeout(150000),
+        });
+        if (!resultResponse.ok) return json({ error: `No se pudo recuperar el resultado de Qwen (HTTP ${resultResponse.status}).` }, 502, origin);
+        const eventStream = await resultResponse.text();
+        let completedData = null;
+        let eventName = "";
+        for (const line of eventStream.split(/\r?\n/)) {
+          if (line.startsWith("event:")) eventName = line.slice(6).trim();
+          if (!line.startsWith("data:")) continue;
+          const raw = line.slice(5).trim();
+          if (!raw) continue;
+          let parsed;
+          try { parsed = JSON.parse(raw); } catch { continue; }
+          if (eventName === "error" || (parsed && !Array.isArray(parsed) && parsed.error)) {
+            const detail = String(parsed?.error || parsed || "El Space informó un error.").slice(0, 400);
+            return json({ error: `Qwen no pudo completar la edición: ${detail}` }, 502, origin);
+          }
+          if (eventName === "complete") completedData = parsed;
+        }
+        if (!Array.isArray(completedData) || !completedData[0]) {
+          return json({ error: "Qwen terminó sin devolver una imagen. Puede que ZeroGPU esté ocupado; intentá nuevamente." }, 502, origin);
+        }
+        const outputFile = completedData[0];
+        const outputPath = typeof outputFile === "string" ? outputFile : outputFile.path;
+        if (!outputPath) return json({ error: "Qwen devolvió un resultado sin ruta de imagen." }, 502, origin);
+        const outputUrl = typeof outputFile.url === "string" && /^https?:\/\//i.test(outputFile.url)
+          ? outputFile.url
+          : `${QWEN_IMAGE_SPACE}/gradio_api/file=${encodeURIComponent(outputPath)}`;
+        const imageResponse = await fetch(outputUrl, { headers: authHeaders, signal: AbortSignal.timeout(45000) });
+        if (!imageResponse.ok) return json({ error: `No se pudo descargar la imagen editada (HTTP ${imageResponse.status}).` }, 502, origin);
+        const outputBytes = new Uint8Array(await imageResponse.arrayBuffer());
+        if (!outputBytes.byteLength || outputBytes.byteLength > 12 * 1024 * 1024) {
+          return json({ error: "La imagen final está vacía o supera el tamaño de respuesta permitido." }, 502, origin);
+        }
+        let binaryOutput = "";
+        for (let offset = 0; offset < outputBytes.length; offset += 0x8000) {
+          binaryOutput += String.fromCharCode(...outputBytes.subarray(offset, offset + 0x8000));
+        }
+        return json({ ok: true, image: btoa(binaryOutput), mime: "image/png", model: "Qwen-Image-2.1-Uncensored" }, 200, origin);
       } catch (error) {
-        return json({ error: error?.message || "No se pudo procesar la edición." }, 502, origin);
+        const detail = String(error?.message || "No se pudo procesar la edición.").slice(0, 400);
+        return json({ error: `Falló la edición con Qwen: ${detail}` }, 502, origin);
       }
     }
     if (url.pathname !== "/chat" || request.method !== "POST") return json({ error: "Ruta no encontrada." }, 404, origin);
