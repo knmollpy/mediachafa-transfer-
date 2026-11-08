@@ -238,7 +238,7 @@ function safeAction(action) {
     for (const file of action.files.slice(0, MAX_FILES_PER_ACTION)) {
       const filePath = String(file?.path || "").trim().replace(/^\.\//, "");
       const fileContent = String(file?.content ?? "");
-      const okPath = Boolean(filePath) && filePath.startsWith("app-source/") && filePath !== "app-source/change-review/worker.js" && filePath.length <= 500 && !filePath.startsWith("/") && !filePath.endsWith("/") && !filePath.includes("\\") && filePath.split("/").every((part) => part && part !== "." && part !== ".." && part !== ".git" && !/[\u0000-\u001f]/.test(part));
+      const okPath = agentFilePath(filePath);
       if (!okPath || seen.has(filePath) || fileContent.length > 500_000) return null;
       seen.add(filePath);
       files.push({ path: filePath, content: fileContent });
