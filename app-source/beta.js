@@ -996,6 +996,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           result.textContent = error.message || 'No se pudo completar la revisión previa.';
           result.dataset.state = 'error';
           approve.disabled = false;
+          reject.disabled = false;
           activity('La revisión previa bloqueó el cambio para evitar publicar código roto.', 'error');
           return false;
         }
