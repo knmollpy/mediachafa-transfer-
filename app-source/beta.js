@@ -189,6 +189,21 @@ Para una página web pública: create_repository con visibility "public", despu�
       <div class="beta-work-summary" id="beta-work-summary"></div>
       <div class="beta-work-list-head"><h3>Mis trabajos</h3><span id="beta-work-count">Cargando…</span></div>
       <div id="beta-work-list" class="beta-work-list" aria-live="polite"><p class="beta-work-empty">Cargando trabajos guardados…</p></div>
+      <div class="beta-work-list-head"><h3>Oportunidades para la IA</h3><span id="beta-opportunity-count">0 disponibles</span></div>
+      <p>Importá una oferta que encontraste en una plataforma. La IA la analiza y prepara el trabajo; la postulación y entrega externa siguen bajo tu control.</p>
+      <form id="beta-opportunity-form" class="beta-work-form">
+        <label>Nombre de la tarea<input id="beta-opportunity-title" maxlength="180" required placeholder="Ej. Investigación de productos"></label>
+        <label>Plataforma<select id="beta-opportunity-platform"><option value="upwork">Upwork</option><option value="freelancer">Freelancer</option><option value="other">Otra plataforma</option><option value="direct">Cliente directo</option></select></label>
+        <label>Enlace de la oferta<input id="beta-opportunity-url" type="url" maxlength="2000" placeholder="https://…"></label>
+        <label>Descripción e instrucciones<textarea id="beta-opportunity-description" maxlength="12000" rows="4" placeholder="Pegá aquí los requisitos de la tarea…"></textarea></label>
+        <div class="beta-work-fields">
+          <label>Pago estimado<input id="beta-opportunity-reward" type="number" min="0" step="0.01" placeholder="Sin confirmar"></label>
+          <label>Moneda<select id="beta-opportunity-currency"><option>USD</option><option>ARS</option><option>EUR</option></select></label>
+          <label>Categoría<select id="beta-opportunity-category"><option value="research">Investigación</option><option value="data_entry">Carga de datos</option><option value="writing">Redacción</option><option value="transcription">Transcripción</option><option value="virtual_assistance">Asistencia virtual</option><option value="web">Contenido web</option><option value="other">Otra</option></select></label>
+        </div>
+        <button type="submit" class="add-btn" id="beta-opportunity-save">Guardar oportunidad</button>
+      </form>
+      <div id="beta-opportunity-list" class="beta-work-list" aria-live="polite"><p class="beta-work-empty">Todavía no hay oportunidades importadas.</p></div>
     </div>`;
   const taskHunterWorkspace = $('#beta-panel .beta-workspace');
   if (!taskHunterWorkspace) throw new Error('No se encontró el contenedor de Zona de trabajo.');
@@ -208,6 +223,10 @@ Para una página web pública: create_repository con visibility "public", despu�
     #beta-panel .beta-work-summary{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
     #beta-panel .beta-work-summary span{padding:7px 10px;border:1px solid rgba(255,255,255,.1);border-radius:9px;font-size:11px;color:#d4d4d8}
     #beta-panel .beta-work-list-head{margin:22px 0 10px}
+    #beta-panel .beta-opportunity-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    #beta-panel .beta-opportunity-actions button{font-size:11px;padding:7px 10px}
+    #beta-panel .beta-opportunity-note{font-size:11px;color:#a1a1aa;margin-top:7px}
+
     #beta-panel .beta-work-card{padding:14px;margin:9px 0;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.025)}
     #beta-panel .beta-work-card-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
     #beta-panel .beta-work-card strong{font-size:13px}#beta-panel .beta-work-card p{white-space:pre-wrap;overflow-wrap:anywhere}
@@ -284,9 +303,57 @@ Para una página web pública: create_repository con visibility "public", despu�
     try { const data=await workApi('/tasks');renderWorkTasks(Array.isArray(data.tasks)?data.tasks:[]); }
     catch(error){workList.textContent=error.message;workCount.textContent='No disponible';}
   }
-  $('#beta-work-refresh').addEventListener('click',refreshWorkTasks);
+  const opportunityList = $('#beta-opportunity-list');
+  const opportunityCount = $('#beta-opportunity-count');
+  async function refreshOpportunities() {
+    opportunityCount.textContent = 'Actualizando…';
+    try {
+      const data = await workApi('/opportunities');
+      const items = Array.isArray(data.opportunities) ? data.opportunities : [];
+      const available = items.filter(item => ['new','saved'].includes(item.status));
+      opportunityCount.textContent = available.length + ' disponibles';
+      if (!items.length) { opportunityList.innerHTML = '<p class="beta-work-empty">Todavía no hay oportunidades. Podés importar una oferta arriba.</p>'; return; }
+      opportunityList.replaceChildren();
+      for (const item of items) {
+        const card = document.createElement('article'); card.className = 'beta-work-card';
+        const top = document.createElement('div'); top.className = 'beta-work-card-top';
+        const title = document.createElement('strong'); title.textContent = item.title;
+        const status = document.createElement('span'); status.textContent = ({new:'Nueva',saved:'Guardada',assigned:'Asignada a la IA',dismissed:'Descartada',expired:'Vencida'}[item.status] || item.status);
+        top.append(title,status); card.append(top);
+        const desc = document.createElement('p'); desc.textContent = item.description || 'Sin descripción'; card.append(desc);
+        const meta = document.createElement('div'); meta.className = 'beta-work-card-meta';
+        [item.platform, item.estimated_reward == null ? 'Pago sin confirmar' : Number(item.estimated_reward).toFixed(2)+' '+item.currency, 'Elegibilidad: '+item.eligibility_status, 'Automatización: '+item.automation_status].forEach(value=>{const chip=document.createElement('span');chip.textContent=value;meta.append(chip);});
+        card.append(meta);
+        if (item.url) { const link=document.createElement('a');link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Abrir oferta';link.style.cssText='display:inline-block;margin-top:9px;color:#93c5fd;font-size:12px';card.append(link); }
+        if (['new','saved'].includes(item.status)) {
+          const actions=document.createElement('div');actions.className='beta-opportunity-actions';
+          const assign=document.createElement('button');assign.type='button';assign.className='add-btn';assign.textContent='Asignar a MediaChafa Pro';
+          assign.addEventListener('click',async()=>{assign.disabled=true;assign.textContent='Asignando…';try{await workApi('/opportunities/'+encodeURIComponent(item.id)+'/assign',{method:'POST',body:JSON.stringify({assigned_model:'mediachafa::pro'})});await refreshWorkTasks();await refreshOpportunities();setStatus('Oportunidad asignada. MediaChafa Pro está preparando el entregable.');}catch(error){assign.disabled=false;assign.textContent='Asignar a MediaChafa Pro';setStatus(error.message,'error');}});
+          actions.append(assign);card.append(actions);
+        }
+        opportunityList.append(card);
+      }
+    } catch(error) { opportunityList.textContent=error.message;opportunityCount.textContent='No disponible'; }
+  }
+  $('#beta-opportunity-form').addEventListener('submit',async event=>{
+    event.preventDefault();
+    const button=$('#beta-opportunity-save');button.disabled=true;button.textContent='Guardando…';
+    try {
+      const reward=$('#beta-opportunity-reward').value;
+      await workApi('/opportunities',{method:'POST',body:JSON.stringify({
+        title:$('#beta-opportunity-title').value, platform:$('#beta-opportunity-platform').value,
+        url:$('#beta-opportunity-url').value, description:$('#beta-opportunity-description').value,
+        estimated_reward:reward===''?null:Number(reward),currency:$('#beta-opportunity-currency').value,
+        category:$('#beta-opportunity-category').value
+      })});
+      $('#beta-opportunity-form').reset();await refreshOpportunities();setStatus('Oportunidad guardada. Ya puede asignarse a la IA.');
+    } catch(error){setStatus(error.message,'error');}
+    finally{button.disabled=false;button.textContent='Guardar oportunidad';}
+  });
+    $('#beta-work-refresh').addEventListener('click',refreshWorkTasks);
   setInterval(() => { if (!document.hidden) refreshWorkTasks(); }, 15000);
-  workTab.addEventListener('click',refreshWorkTasks);
+  workTab.addEventListener('click',()=>{refreshWorkTasks();refreshOpportunities();});
+  refreshOpportunities();
   $('#beta-work-form').addEventListener('submit',async event=>{
     event.preventDefault();
     const button=$('#beta-work-start');button.disabled=true;button.textContent='Guardando…';
