@@ -1,5 +1,5 @@
-const CACHE_NAME = 'mediachafa-shell-beta-v4-private-map';
-const SHELL = ['/', '/manifest.webmanifest', '/icons/app.svg', '/app-source/beta.js?v=20261108-collaboration-live-v2'];
+const CACHE_NAME = 'mediachafa-shell-beta-v5-private-map';
+const SHELL = ['/', '/manifest.webmanifest', '/icons/app.svg'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
