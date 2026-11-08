@@ -82,6 +82,108 @@ async function supabaseRequest(env, path, auth, init = {}) {
     }
   });
 }
+
+function cleanJobText(value) {
+  return String(value || "").replace(/<script[\\s\\S]*?<\\/script>/gi, " ").replace(/<style[\\s\\S]*?<\\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&#39;|&apos;/gi, "'").replace(/&quot;/gi, '"').replace(/\\s+/g, " ").trim().slice(0, 11000);
+}
+function classifyOpportunity(title, description, categories = []) {
+  const text = (String(title) + " " + String(description) + " " + categories.join(" ")).toLowerCase();
+  const groups = [
+    ["data_entry", /data entry|data annotat|data label|spreadsheet|excel|google sheets|product listing|catalog management/],
+    ["virtual_assistance", /virtual assistant|administrative assistant|admin assistant|executive assistant|operations assistant|personal assistant|calendar management/],
+    ["research", /web research|internet research|research assistant|market research|lead research|online research/],
+    ["writing", /content writ|copywrit|proofread|copy edit|editorial assistant|blog writ|newsletter|seo content/],
+    ["transcription", /transcri|captioning|subtitl/],
+    ["customer_support", /customer support|customer service|chat support|email support|community moderator/],
+    ["web", /wordpress|web content|cms assistant|website content/]
+  ];
+  for (const [category, pattern] of groups) if (pattern.test(text)) return category;
+  return null;
+}
+function opportunityRow(userId, platform, id, title, description, url, category, reward, currency, sourceData, publishedAt, expiresAt) {
+  return {
+    user_id: userId, platform, external_id: String(id).slice(0,160),
+    title: String(title || "Untitled opportunity").trim().slice(0,180),
+    description: String(description || "").slice(0,12000), category,
+    url, estimated_reward: Number.isFinite(Number(reward)) && reward !== null && reward !== "" ? Number(reward) : null,
+    currency: /^[A-Z]{3}$/.test(currency || "") ? currency : "USD",
+    eligibility_status: "manual_check", automation_status: "assisted_only", status: "new",
+    source_data: { ...sourceData, published_at: publishedAt || null, imported_automatically: true },
+    ...(expiresAt ? { expires_at: expiresAt } : {})
+  };
+}
+async function discoverOpportunities(userId, auth, env) {
+  const syncKey = `task-hunter-opportunity-sync:${userId}`;
+  const lastSync = Number(await env.BETA_LIMITS.get(syncKey) || 0);
+  if (Date.now() - lastSync < 60 * 60 * 1000) return { refreshed: false, added: 0, sources: [] };
+  const results = await Promise.allSettled([
+    (async () => {
+      const url = new URL("https://jobicy.com/api/jobs");
+      url.searchParams.set("count", "200");
+      const r = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "MediaChafa Task Hunter/1.0" } });
+      if (!r.ok) throw new Error("Jobicy HTTP " + r.status);
+      const data = await r.json();
+      if (data.success === false) throw new Error(data.error || "Jobicy API error");
+      return (Array.isArray(data.jobs) ? data.jobs : []).map(job => {
+        const title = job.jobTitle || "";
+        const description = cleanJobText(job.jobDescription || job.jobExcerpt || "");
+        const category = classifyOpportunity(title, description, job.jobIndustry || []);
+        const geo = String(job.jobGeo || "").toLowerCase();
+        if (!category || !(geo.includes("argentina") || geo.includes("latin america") || geo.includes("latam") || geo.includes("anywhere") || geo.includes("worldwide") || geo.includes("americas"))) return null;
+        const pay = job.salaryMin ?? job.salaryMax ?? null;
+        const payText = pay == null ? "" : "Pago publicado: " + (job.salaryMin ?? "") + (job.salaryMax != null ? "–" + job.salaryMax : "") + " " + (job.salaryCurrency || "") + " (" + (job.salaryPeriod || "periodo no indicado") + "). ";
+        const body = [job.companyName ? "Empresa: " + job.companyName : "", "Ubicación publicada: " + (job.jobGeo || "No especificada"), job.jobType?.length ? "Modalidad: " + job.jobType.join(", ") : "", payText, description].filter(Boolean).join("\\n\\n");
+        return opportunityRow(userId, "Jobicy", job.id, title, body, job.url, category, pay, job.salaryCurrency, { company: job.companyName || null, location: job.jobGeo || null, employment_type: job.jobType || [], salary_period: job.salaryPeriod || null, source_url: job.url }, job.pubDate, null);
+      }).filter(Boolean);
+    })(),
+    (async () => {
+      const queries = ["virtual assistant", "data entry", "web research", "content writing", "transcription"];
+      const responses = await Promise.all(queries.map(async q => {
+        const url = new URL("https://himalayas.app/jobs/api/search");
+        url.searchParams.set("q", q); url.searchParams.set("country", "AR"); url.searchParams.set("worldwide", "true"); url.searchParams.set("sort", "recent"); url.searchParams.set("page", "1");
+        const r = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "MediaChafa Task Hunter/1.0" } });
+        if (!r.ok) throw new Error("Himalayas HTTP " + r.status);
+        return r.json();
+      }));
+      const all = responses.flatMap(x => Array.isArray(x.jobs) ? x.jobs : Array.isArray(x.data) ? x.data : []);
+      const seen = new Set();
+      return all.map(job => {
+        const id = job.guid || job.id;
+        if (!id || seen.has(String(id))) return null;
+        seen.add(String(id));
+        const title = job.title || "";
+        const description = cleanJobText(job.description || job.excerpt || "");
+        const category = classifyOpportunity(title, description, job.categories || []);
+        if (!category) return null;
+        const restrictions = Array.isArray(job.locationRestrictions) ? job.locationRestrictions : [];
+        if (restrictions.length && !restrictions.some(x => /argentina|worldwide|anywhere/i.test(String(x)))) return null;
+        const pay = job.minSalary ?? job.maxSalary ?? null;
+        const payText = pay == null ? "" : "Pago publicado: " + (job.minSalary ?? "") + (job.maxSalary != null ? "–" + job.maxSalary : "") + " " + (job.currency || "") + " (" + (job.salaryPeriod || "annual") + "). ";
+        const body = [job.companyName ? "Empresa: " + job.companyName : "", job.employmentType ? "Modalidad: " + job.employmentType : "", "Elegibilidad geográfica: " + (restrictions.length ? restrictions.join(", ") : "Sin restricción de país publicada"), payText, description].filter(Boolean).join("\\n\\n");
+        const published = job.pubDate ? new Date(Number(job.pubDate) * 1000).toISOString() : null;
+        const expires = job.expiryDate ? new Date(Number(job.expiryDate) * 1000).toISOString() : null;
+        return opportunityRow(userId, "Himalayas", id, title, body, job.applicationLink, category, pay, job.currency, { company: job.companyName || null, location_restrictions: restrictions, employment_type: job.employmentType || null, salary_period: job.salaryPeriod || "annual", source_url: job.guid || null }, published, expires);
+      }).filter(Boolean);
+    })()
+  ]);
+  const rows = results.filter(x => x.status === "fulfilled").flatMap(x => x.value);
+  const sources = results.map((x, i) => ({ source: i === 0 ? "Jobicy" : "Himalayas", ok: x.status === "fulfilled", count: x.status === "fulfilled" ? x.value.length : 0, error: x.status === "rejected" ? String(x.reason?.message || x.reason).slice(0,180) : null }));
+  let added = 0;
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = rows.slice(i, i + 100);
+    if (!batch.length) continue;
+    const url = "/rest/v1/task_hunter_opportunities?on_conflict=user_id,platform,external_id";
+    const r = await supabaseRequest(env, url, auth, { method: "POST", headers: { Prefer: "resolution=ignore-duplicates,return=minimal" }, body: JSON.stringify(batch) });
+    if (!r.ok) {
+      const error = await r.text();
+      throw new Error("No se pudieron guardar las oportunidades detectadas: " + error.slice(0,300));
+    }
+    added += batch.length;
+  }
+  await env.BETA_LIMITS.put(syncKey, String(Date.now()), { expirationTtl: 172800 });
+  return { refreshed: true, added, sources };
+}
+
 function taskRecordFromState(task, state) {
   if (!state) return task;
   return {
@@ -269,11 +371,14 @@ export default {
     if (!session) return response({ error: "Sesión no válida o cuenta no autorizada." }, 401, origin);
     const { user, auth } = session;
     if (pathname === "/opportunities" && request.method === "GET") {
+      let discovery = { refreshed: false, added: 0, sources: [] };
+      try { discovery = await discoverOpportunities(user.id, auth, env); }
+      catch (error) { discovery = { refreshed: false, added: 0, sources: [], error: String(error?.message || error).slice(0,300) }; }
       const q = new URLSearchParams({ select: "*", order: "discovered_at.desc", limit: "100" });
       const r = await supabaseRequest(env, "/rest/v1/task_hunter_opportunities?" + q, auth);
       const rows = await r.json().catch(() => []);
       if (!r.ok) return response({ error: rows.message || "No se pudieron cargar las oportunidades." }, r.status, origin);
-      return response({ opportunities: rows }, 200, origin);
+      return response({ opportunities: rows, discovery }, 200, origin);
     }
     if (pathname === "/opportunities" && request.method === "POST") {
       let payload;
