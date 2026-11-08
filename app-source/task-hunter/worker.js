@@ -125,7 +125,9 @@ async function createTask(env, user, auth, payload) {
   const minutes = Number(payload.estimated_duration_minutes);
   const row = {
     user_id: user.id, title, description, assigned_model: model,
-    source_platform: "manual", task_category: "other",
+    source_platform: String(payload.source_platform || "manual").slice(0,80),
+    source_url: payload.source_url ? String(payload.source_url).slice(0,2000) : null,
+    task_category: String(payload.task_category || "other").slice(0,80),
     estimated_reward: reward,
     estimated_currency: /^[A-Z]{3}$/.test(payload.estimated_currency || "USD") ? payload.estimated_currency : "USD",
     estimated_duration_seconds: Number.isFinite(minutes) && minutes > 0 ? Math.min(604800, Math.floor(minutes * 60)) : null,
@@ -266,6 +268,51 @@ export default {
     const session = await authenticate(request, env);
     if (!session) return response({ error: "Sesión no válida o cuenta no autorizada." }, 401, origin);
     const { user, auth } = session;
+    if (pathname === "/opportunities" && request.method === "GET") {
+      const q = new URLSearchParams({ select: "*", order: "discovered_at.desc", limit: "100" });
+      const r = await supabaseRequest(env, "/rest/v1/task_hunter_opportunities?" + q, auth);
+      const rows = await r.json().catch(() => []);
+      if (!r.ok) return response({ error: rows.message || "No se pudieron cargar las oportunidades." }, r.status, origin);
+      return response({ opportunities: rows }, 200, origin);
+    }
+    if (pathname === "/opportunities" && request.method === "POST") {
+      let payload;
+      try { payload = await request.json(); } catch { return response({ error: "Solicitud inválida." }, 400, origin); }
+      const title = String(payload.title || "").trim().slice(0,180);
+      const description = String(payload.description || "").trim().slice(0,12000);
+      const platform = String(payload.platform || "other").trim().slice(0,80);
+      const category = String(payload.category || "other").trim().slice(0,80);
+      const url = payload.url ? String(payload.url).trim().slice(0,2000) : null;
+      const reward = payload.estimated_reward === "" || payload.estimated_reward == null ? null : Number(payload.estimated_reward);
+      const currency = /^[A-Z]{3}$/.test(payload.currency || "USD") ? payload.currency : "USD";
+      if (!title || (reward !== null && (!Number.isFinite(reward) || reward < 0))) return response({ error: "Título o pago estimado inválido." }, 400, origin);
+      if (url) { try { const parsed = new URL(url); if (!["http:","https:"].includes(parsed.protocol)) throw new Error(); } catch { return response({ error: "El enlace debe ser HTTP o HTTPS." }, 400, origin); } }
+      const row = { user_id: user.id, platform, external_id: payload.external_id ? String(payload.external_id).slice(0,160) : null, title, description, category, url, estimated_reward: reward, currency, eligibility_status: "manual_check", automation_status: "assisted_only", status: "new", source_data: { imported_manually: true } };
+      const r = await supabaseRequest(env, "/rest/v1/task_hunter_opportunities", auth, { method: "POST", body: JSON.stringify(row) });
+      const rows = await r.json().catch(() => []);
+      if (!r.ok) return response({ error: rows.message || "No se pudo guardar la oportunidad." }, r.status, origin);
+      return response({ opportunity: rows[0] || null }, 201, origin);
+    }
+    const assignMatch = pathname.match(/^\\/opportunities\\/([0-9a-f-]{36})\\/assign$/i);
+    if (assignMatch && request.method === "POST") {
+      let payload;
+      try { payload = await request.json(); } catch { return response({ error: "Solicitud inválida." }, 400, origin); }
+      const q = new URLSearchParams({ select: "*", id: "eq." + assignMatch[1], status: "in.(new,saved)", limit: "1" });
+      const found = await supabaseRequest(env, "/rest/v1/task_hunter_opportunities?" + q, auth);
+      const rows = await found.json().catch(() => []);
+      if (!found.ok || !rows[0]) return response({ error: "La oportunidad no existe o ya fue asignada." }, 404, origin);
+      const opportunity = rows[0];
+      try {
+        const created = await createTask(env, user, auth, {
+          title: opportunity.title, description: [opportunity.description, opportunity.url ? "ENLACE DE REFERENCIA: " + opportunity.url : "", "La IA debe preparar el entregable y señalar cualquier paso externo que requiera aprobación o intervención humana."].filter(Boolean).join("\\n\\n"),
+          assigned_model: payload.assigned_model || "mediachafa::pro",
+          estimated_reward: opportunity.estimated_reward, estimated_currency: opportunity.currency,
+          source_platform: opportunity.platform, source_url: opportunity.url, task_category: opportunity.category
+        });
+        await supabaseRequest(env, "/rest/v1/task_hunter_opportunities?id=eq." + opportunity.id, auth, { method: "PATCH", body: JSON.stringify({ status: "assigned" }) });
+        return response({ ...created, opportunity_id: opportunity.id }, 201, origin);
+      } catch (error) { return response({ error: String(error?.message || "No se pudo asignar la oportunidad.").slice(0,600) }, 409, origin); }
+    }
     if (pathname === "/tasks" && request.method === "GET") {
       const q = new URLSearchParams({ select: "*", order: "updated_at.desc", limit: "100" });
       const r = await supabaseRequest(env, "/rest/v1/task_hunter_jobs?" + q, auth);
