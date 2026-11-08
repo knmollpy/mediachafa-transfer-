@@ -104,7 +104,7 @@ async function collectReviewInput(pullNumber, expectedHeadSha, env) {
     if (file.status === "renamed" && (!allowed.has(file.previous_filename) || !allowed.has(file.filename))) findings.push(`Renombrado fuera del alcance: ${file.previous_filename} → ${file.filename}`);
     if (typeof file.patch !== "string" || !file.patch.length) findings.push(`No se pudo inspeccionar el diff de ${file.filename}`);
   }
-  const actual = new Set(files.map(file => file.filename));
+  const actual = new Set(files.flatMap(file => [file.filename, file.previous_filename].filter(Boolean)));
   for (const path of manifest.allowed_paths) if (!actual.has(path)) findings.push(`El archivo declarado no aparece en el Pull Request: ${path}`);
   if (findings.length) throw new Error(findings.join("; ").slice(0, 1800));
   const patches = files.map(file => `FILE: ${file.filename}\nSTATUS: ${file.status}\nPATCH:\n${file.patch}`).join("\n\n");
