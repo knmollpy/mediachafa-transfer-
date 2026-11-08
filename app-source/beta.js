@@ -2027,6 +2027,106 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const liveList = document.createElement('ul');
     liveList.className = 'beta-live-steps';
     progressMessage.insertBefore(liveList, progressBody);
+    const usesMediaChafaTeam = String(selectedModel.id || '').startsWith('mediachafa::');
+    let collaborationPanel = null;
+    if (usesMediaChafaTeam) {
+      collaborationPanel = document.createElement('section');
+      collaborationPanel.className = 'beta-live-collaboration';
+      collaborationPanel.setAttribute('aria-live', 'polite');
+      collaborationPanel.innerHTML = '<div class="beta-live-collab-head"><strong>🤝 Equipo de IA</strong><span class="beta-live-collab-phase">Conectando con el coordinador…</span></div><div class="beta-live-collab-members"><div class="beta-live-collab-empty">⏳ Esperando la selección de modelos gratuitos…</div></div><ol class="beta-live-collab-steps"><li data-state="active">🔎 Comprobando disponibilidad gratuita</li></ol>';
+      progressMessage.insertBefore(collaborationPanel, progressBody);
+    }
+    const progressId = usesMediaChafaTeam ? (globalThis.crypto?.randomUUID?.() || ('mc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12))) : '';
+    let progressPoll = null;
+    let progressPollBusy = false;
+    const renderCollabProgress = (snapshot) => {
+      if (!collaborationPanel || !snapshot) return;
+      const phase = collaborationPanel.querySelector('.beta-live-collab-phase');
+      const members = collaborationPanel.querySelector('.beta-live-collab-members');
+      const stepsNode = collaborationPanel.querySelector('.beta-live-collab-steps');
+      const phaseLabels = {
+        preparing: 'Preparando equipo',
+        draft: 'Propuestas independientes',
+        review: 'Revisión cruzada',
+        synthesis: 'Síntesis final',
+        completed: 'Trabajo terminado',
+        quota: 'Cuota gratuita insuficiente'
+      };
+      phase.textContent = snapshot.phaseLabel || phaseLabels[snapshot.phase] || 'Trabajando';
+      const iconFor = (member) => {
+        const name = String(member.name || '');
+        if (/Código/i.test(name)) return '💻';
+        if (/Pro/i.test(name)) return '🧠';
+        if (/Rápida/i.test(name)) return '⚡';
+        return '🤖';
+      };
+      const stateFor = (member) => ({
+        queued: ['⏳', 'En espera'],
+        thinking: ['🟡', 'Preparando propuesta'],
+        reviewing: ['🔍', 'Revisando al equipo'],
+        reviewed: ['✅', 'Revisión entregada'],
+        synthesizing: ['🧩', 'Sintetizando'],
+        done: ['✅', 'Terminado'],
+        error: ['⚠️', member.phase || 'No disponible']
+      }[member.status] || ['⏳', member.phase || 'En espera']);
+      const participantList = Array.isArray(snapshot.participants) ? snapshot.participants : [];
+      members.replaceChildren();
+      if (!participantList.length) {
+        const empty = document.createElement('div');
+        empty.className = 'beta-live-collab-empty';
+        empty.textContent = snapshot.status === 'unavailable'
+          ? '⚠️ No se pudo iniciar el equipo con la cuota gratuita disponible.'
+          : '⏳ Esperando la selección de modelos gratuitos…';
+        members.append(empty);
+      } else {
+        for (const member of participantList) {
+          const row = document.createElement('div');
+          row.className = 'beta-live-collab-member';
+          row.dataset.state = member.status || 'queued';
+          const identity = document.createElement('span');
+          identity.className = 'beta-live-collab-identity';
+          identity.textContent = iconFor(member) + ' ' + (member.name || member.engine || 'IA');
+          const state = document.createElement('span');
+          state.className = 'beta-live-collab-state';
+          const [icon, label] = stateFor(member);
+          state.textContent = icon + ' ' + label;
+          const engine = document.createElement('small');
+          engine.textContent = member.engine || member.provider || '';
+          row.append(identity, state, engine);
+          members.append(row);
+        }
+      }
+      stepsNode.replaceChildren(...(Array.isArray(snapshot.steps) ? snapshot.steps : []).map((step) => {
+        const item = document.createElement('li');
+        item.dataset.state = step.state || 'done';
+        item.textContent = (step.state === 'active' ? '🔄 ' : step.state === 'error' ? '⚠️ ' : '✓ ') + step.label;
+        return item;
+      }));
+      collaborationPanel.dataset.status = snapshot.status || 'active';
+    };
+    if (collaborationPanel) {
+      const style = document.getElementById('beta-live-collaboration-style') || document.createElement('style');
+      style.id = 'beta-live-collaboration-style';
+      style.textContent = `
+        #beta-panel .beta-live-collaboration{margin:10px 0 12px;padding:11px 12px;border:1px solid rgba(148,163,184,.22);border-radius:12px;background:rgba(15,23,42,.42);font-size:12px}
+        #beta-panel .beta-live-collab-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:9px}
+        #beta-panel .beta-live-collab-head strong{font-size:12px;color:#f4f4f5}
+        #beta-panel .beta-live-collab-phase{color:#a5b4fc;font-size:11px;text-align:right}
+        #beta-panel .beta-live-collab-members{display:grid;gap:6px}
+        #beta-panel .beta-live-collab-member{display:grid;grid-template-columns:minmax(100px,1fr) minmax(115px,auto);gap:2px 8px;align-items:center;padding:7px 8px;border-radius:8px;background:rgba(255,255,255,.035)}
+        #beta-panel .beta-live-collab-identity{font-weight:600;color:#e5e7eb;overflow-wrap:anywhere}
+        #beta-panel .beta-live-collab-state{color:#c4b5fd;text-align:right;font-size:11px}
+        #beta-panel .beta-live-collab-member[data-state="done"],#beta-panel .beta-live-collab-member[data-state="reviewed"] .beta-live-collab-state{color:#86efac}
+        #beta-panel .beta-live-collab-member[data-state="error"] .beta-live-collab-state{color:#fca5a5}
+        #beta-panel .beta-live-collab-member small{grid-column:1/-1;color:#9ca3af;font-size:10px;overflow-wrap:anywhere}
+        #beta-panel .beta-live-collab-empty{color:#a1a1aa;padding:8px}
+        #beta-panel .beta-live-collab-steps{margin:9px 0 0;padding:8px 0 0 20px;border-top:1px solid rgba(255,255,255,.08);display:grid;gap:5px;color:#a1a1aa;font-size:11px}
+        #beta-panel .beta-live-collab-steps li[data-state="active"]{color:#c4b5fd}
+        #beta-panel .beta-live-collab-steps li[data-state="error"]{color:#fca5a5}
+        @media(max-width:520px){#beta-panel .beta-live-collab-member{grid-template-columns:1fr;gap:3px}#beta-panel .beta-live-collab-state{text-align:left}}
+      `;
+      document.head.append(style);
+    }
     const paintSteps = () => {
       liveList.replaceChildren(...steps.map((step, i) => { const li = document.createElement('li'); li.dataset.state = i === steps.length - 1 ? 'active' : 'done'; li.textContent = step; return li; }));
       progressBody.textContent = 'Trabajando…';
@@ -2040,13 +2140,47 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const image = pendingImage ? { data: await fileToBase64(pendingImage) } : undefined;
       const audio = pendingAudio ? { data: (await fileToBase64(pendingAudio)).split(',')[1], mime: pendingAudio.type || 'audio/mpeg' } : undefined;
       updateProgress('Enviando la consulta a Beta…');
-    const response = await fetch(`${API}/chat`, {
+      const pollCollaboration = async () => {
+        if (!progressId || progressPollBusy) return;
+        progressPollBusy = true;
+        try {
+          const progressResponse = await fetch(`${API}/chat/progress?id=${encodeURIComponent(progressId)}`, {
+            headers: { Authorization: `Bearer ${auth.token}` },
+          });
+          if (progressResponse.ok) {
+            const snapshot = await progressResponse.json();
+            renderCollabProgress(snapshot);
+            if (['completed', 'unavailable'].includes(snapshot.status)) {
+              clearInterval(progressPoll);
+              progressPoll = null;
+            }
+          }
+        } catch {} finally { progressPollBusy = false; }
+      };
+      if (progressId) {
+        void pollCollaboration();
+        progressPoll = setInterval(() => { void pollCollaboration(); }, 900);
+      }
+      const response = await fetch(`${API}/chat`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value }),
+        body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value, progressId }),
       });
-      updateProgress('Consulta recibida; esperando la respuesta del modelo…');
+      updateProgress('Consulta recibida; esperando la respuesta del equipo…');
       const data = await response.json().catch(() => ({}));
+      if (data.collaboration?.enabled && collaborationPanel) {
+        renderCollabProgress({
+          status: 'completed',
+          phase: 'completed',
+          phaseLabel: data.collaboration.status === 'consensus' ? 'Consenso revisado · respuesta lista' : 'Equipo terminó con disponibilidad parcial',
+          participants: (data.collaboration.participants || []).map((item) => ({ ...item, status: 'done', phase: 'Trabajo terminado' })),
+          steps: data.collaboration.steps || [
+            { label: 'Propuestas independientes recibidas', state: 'done' },
+            { label: `Revisiones cruzadas: ${data.collaboration.reviewCount || 0}`, state: 'done' },
+            { label: 'Síntesis final lista', state: 'done' }
+          ]
+        });
+      }
       if (data.modelId) {
         usedToday = Number(data.usedToday ?? usedToday);
         remaining = Number(data.remaining ?? Math.max(0, dailyLimit - usedToday));
@@ -2058,16 +2192,16 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       }
       recordModelHealth(selectedModel.id, true);
       const preparationErrors = Array.isArray(data.proposalErrors) ? data.proposalErrors : [];
-      const collaborationLine = data.collaboration?.enabled
-        ? `\n\nEquipo colaborativo: ${data.collaboration.participantCount}/6 IA · ${data.collaboration.reviewCount} revisiones · ${data.collaboration.status === 'consensus' ? 'síntesis revisada' : 'consenso parcial'}\n${(data.collaboration.participants || []).map(item => `${item.name}: ${item.engine}`).join(' · ')}`
-        : '';
-      const answerBase = (data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer) + collaborationLine;
+      const answerBase = data.transcript ? `Transcripción: ${data.transcript}\n\n${data.answer}` : data.answer;
       const answer = preparationErrors.length ? `${answerBase}\n\nNo pude preparar una o más acciones:\n• ${preparationErrors.join('\n• ')}` : answerBase;
       history.push({ role: 'user', content: displayText }, { role: 'assistant', content: answer, modelName: data.modelName, proposals: data.proposals || [], expiresInSeconds: data.expiresInSeconds, steps: [...steps, 'Respuesta recibida'] });
       history = history.slice(-30);
       saveHistory();
+      if (progressPoll) { clearInterval(progressPoll); progressPoll = null; }
+      if (collaborationPanel) collaborationPanel.remove();
       progressMessage.remove();
       const answerNode = addMessage('assistant', answer, data.modelName);
+      if (collaborationPanel && data.collaboration?.enabled) answerNode.append(collaborationPanel);
       attachSteps(answerNode, [...steps, 'Respuesta recibida']);
       renderProposals(answerNode, data.proposals, data.expiresInSeconds);
       if (data.proposals?.length) {
@@ -2082,6 +2216,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       attachmentLabel(undefined, '#beta-image-name');
       attachmentLabel(undefined, '#beta-audio-name');
     } catch (error) {
+      if (progressPoll) { clearInterval(progressPoll); progressPoll = null; }
       userMessage.classList.add('failed');
       if (modelRequestStarted && selectedModel) recordModelHealth(selectedModel.id, false, error?.message || 'Error de conexión');
       progressMessage.remove();
@@ -2090,7 +2225,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       saveHistory();
       activity(`La consulta terminó con error: ${error?.message || 'error desconocido'}.`, 'error');
       setStatus(error?.message || 'No se pudo enviar el mensaje. El texto sigue en el chat; podés reintentar.', 'error');
-    } finally { sendButton.disabled = false; }
+    } finally {
+      if (progressPoll) { clearInterval(progressPoll); progressPoll = null; }
+      sendButton.disabled = false;
+    }
   });
 
   input.addEventListener('keydown', event => {

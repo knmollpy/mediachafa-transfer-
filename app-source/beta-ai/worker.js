@@ -1666,6 +1666,16 @@ export default {
         return json({ error: `Falló la edición con Qwen: ${detail}` }, 502, origin);
       }
     }
+    if (url.pathname === "/chat/progress" && request.method === "GET") {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "La Beta está disponible solo para la cuenta dueña." }, 403, origin);
+      const progressId = String(url.searchParams.get("id") || "");
+      if (!/^[A-Za-z0-9_-]{12,80}$/.test(progressId)) return json({ error: "Identificador de progreso inválido." }, 400, origin);
+      const raw = await env.BETA_LIMITS.get(`beta-chat-progress:${user.id}:${progressId}`);
+      if (!raw) return json({ id: progressId, status: "preparing", phase: "preparing", phaseLabel: "Preparando el equipo", participants: [], steps: [] }, 200, origin);
+      try { return json(JSON.parse(raw), 200, origin); }
+      catch { return json({ error: "El estado del equipo no se pudo leer." }, 500, origin); }
+    }
     if (url.pathname !== "/chat" || request.method !== "POST") return json({ error: "Ruta no encontrada." }, 404, origin);
 
     const user = await requireOwner(request);
@@ -1904,7 +1914,21 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
 
 
 async function runMediaChafaConsensus(args) {
-  const { request, env, user, config, variant, modelId, transcript, promptText, messages, history, image, autonomous, fetchImpl, maxTokens, candidates, integrations } = args;
+  const { request, env, user, config, variant, modelId, transcript, promptText, messages, history, image, autonomous, fetchImpl, maxTokens, candidates, integrations, progressId } = args;
+  const progressKey = progressId ? `beta-chat-progress:${user.id}:${progressId}` : "";
+  const progressState = { id: progressId || "", status: "active", phase: "preparing", phaseLabel: "Preparando el equipo", participants: [], steps: [{ label: "Solicitud recibida por el coordinador", state: "done" }, { label: "Comprobando modelos gratuitos disponibles", state: "active" }], updatedAt: Date.now() };
+  let lastProgressWriteAt = 0;
+  async function publishProgress(patch = {}) {
+    if (!progressKey) return;
+    Object.assign(progressState, patch, { updatedAt: Date.now() });
+    const wait = Math.max(0, 1050 - (Date.now() - lastProgressWriteAt));
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    lastProgressWriteAt = Date.now();
+    try { await env.BETA_LIMITS.put(progressKey, JSON.stringify(progressState), { expirationTtl: 300 }); } catch {}
+  }
+  function addProgressStep(label, state = "done") {
+    progressState.steps = [...(progressState.steps || []), { label, state }].slice(-10);
+  }
   let workersAiUsed = 0;
   const roleCandidates = candidates.filter((candidate) => candidate.primary && candidate.mediachafaRole);
   const peerCandidates = candidates.filter((candidate) => !candidate.primary).slice(0, 3);
@@ -1917,7 +1941,22 @@ async function runMediaChafaConsensus(args) {
   catch { return null; }
   const maxByRemaining = Math.min(6, Math.floor((freeQuota.providerRemaining - 1) / 2));
   const team = allParticipants.slice(0, Math.max(0, maxByRemaining));
-  if (team.length < 2) return null;
+  if (team.length < 2) {
+    await publishProgress({ status: "unavailable", phase: "quota", phaseLabel: "No hay cuota gratuita suficiente para activar el equipo", participants: [], steps: [...progressState.steps, { label: "No se pudo iniciar la colaboración; se intentará el modo individual", state: "error" }] });
+    return null;
+  }
+  progressState.participants = team.map((participant, index) => ({
+    id: participant.candidate.modelId || participant.candidate.nativeId || String(index),
+    name: participant.label,
+    engine: participant.candidate.name,
+    provider: participant.candidate.provider,
+    role: participant.kind,
+    status: "thinking",
+    phase: "Preparando propuesta",
+  }));
+  addProgressStep(`Equipo gratuito seleccionado: ${team.length} modelos`);
+  addProgressStep("Las IA están preparando propuestas independientes", "active");
+  await publishProgress({ phase: "draft", phaseLabel: "Propuestas independientes", participants: progressState.participants });
 
   const attempts = [];
   async function invoke(participant, phase, extraPrompt, baseMessages, baseHistory, baseImage) {
@@ -1988,7 +2027,18 @@ async function runMediaChafaConsensus(args) {
       }
     }
   }
-  if (successfulDrafts.length < 2) return null;
+  if (successfulDrafts.length < 2) {
+    await publishProgress({ status: "unavailable", phase: "draft", phaseLabel: "No se reunieron suficientes respuestas gratuitas", participants: progressState.participants });
+    return null;
+  }
+  addProgressStep(`Propuestas recibidas: ${successfulDrafts.length}/${team.length}`);
+  addProgressStep("Comparando propuestas y buscando errores", "active");
+  progressState.participants = progressState.participants.map((item) => ({
+    ...item,
+    status: successfulDrafts.some((draft) => draft.candidate.name === item.engine) ? "reviewing" : "error",
+    phase: successfulDrafts.some((draft) => draft.candidate.name === item.engine) ? "Esperando revisión cruzada" : "No preparó propuesta",
+  }));
+  await publishProgress({ phase: "review", phaseLabel: "Revisión cruzada entre las IA", participants: progressState.participants });
 
   const draftSummary = successfulDrafts.map((item) => ({
     participant: item.label,
@@ -2006,6 +2056,20 @@ async function runMediaChafaConsensus(args) {
     return result.ok ? { reviewer: participant.label, engine: participant.candidate.name, text: String(result.text).slice(0, 4500) } : null;
   }));
   const successfulReviews = reviews.filter(Boolean);
+  progressState.participants = progressState.participants.map((item) => ({
+    ...item,
+    status: successfulReviews.some((review) => review.engine === item.engine) ? "reviewed" : (item.status === "error" ? "error" : "reviewing"),
+    phase: successfulReviews.some((review) => review.engine === item.engine) ? "Revisión entregada" : item.phase,
+  }));
+  addProgressStep(`Revisiones cruzadas completadas: ${successfulReviews.length}/${reviewers.length}`);
+  addProgressStep("La IA coordinadora está integrando acuerdos y diferencias", "active");
+  const selectedLead = successfulDrafts.find((item) => item.role === variant) || successfulDrafts[0];
+  progressState.participants = progressState.participants.map((item) => ({
+    ...item,
+    status: item.engine === selectedLead.candidate.name ? "synthesizing" : item.status,
+    phase: item.engine === selectedLead.candidate.name ? "Coordinando la síntesis final" : item.phase,
+  }));
+  await publishProgress({ phase: "synthesis", phaseLabel: "Síntesis final revisada", participants: progressState.participants });
   const consensusInput = "PEDIDO ORIGINAL: " + promptText.slice(0, 9000) + "\n\nPROPUESTAS DEL EQUIPO:\n" + JSON.stringify(draftSummary).slice(0, 26000) + "\n\nREVISIONES INDEPENDIENTES:\n" + JSON.stringify(successfulReviews).slice(0, 15000) + "\n\nPrepará la mejor respuesta y plan final. Corregí los problemas señalados. Si una revisión propone bloquear un cambio por un riesgo real, no lo incluyas en actions; explicá el riesgo. Mantené actions vacías si no hay una acción explícita y segura.";
   const lead = successfulDrafts.find((item) => item.role === variant) || successfulDrafts[0];
   const coordinator = { ...lead, label: MEDIACHAFA_MODELS[variant].name };
@@ -2019,6 +2083,9 @@ async function runMediaChafaConsensus(args) {
     try { proposals.push(await storeActionProposal(env, user.id, action)); }
     catch (error) { proposalErrors.push(error?.message || "No se pudo preparar la acción."); }
   }
+  addProgressStep(finalResult.ok ? "Síntesis final completada" : "Síntesis final preparada con la mejor propuesta disponible", finalResult.ok ? "done" : "error");
+  addProgressStep("Respuesta lista para mostrar en el chat", "done");
+  await publishProgress({ status: "completed", phase: "completed", phaseLabel: "Equipo terminó de trabajar", participants: progressState.participants.map((item) => ({ ...item, status: item.status === "error" ? "error" : "done", phase: item.status === "error" ? item.phase : "Trabajo terminado" })) });
   return {
     answer: finalPlan.answer,
     plan: finalPlan.plan,
@@ -2034,6 +2101,7 @@ async function runMediaChafaConsensus(args) {
       reviewCount: successfulReviews.length,
       status: finalResult.ok && successfulReviews.length >= 2 ? "consensus" : "partial",
       note: finalResult.ok && successfulReviews.length >= 2 ? "Propuestas comparadas, revisiones recibidas y síntesis completada." : "El equipo trabajó con disponibilidad parcial; la respuesta final usa la mejor propuesta disponible.",
+      steps: progressState.steps,
     },
     engine: "Equipo colaborativo · " + successfulDrafts.length + "/6 IA · coordinó " + lead.candidate.name,
     modelId,
@@ -2077,7 +2145,7 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
   };
   const maxTokens = autonomous ? 6000 : 2400;
   const candidates = await mediachafaCandidates(env, user.id, variant, Boolean(image));
-  const collaboration = await runMediaChafaConsensus({ request, env, user, config, variant, modelId, transcript, promptText, messages, history, image, autonomous, fetchImpl, maxTokens, candidates, integrations });
+  const collaboration = await runMediaChafaConsensus({ request, env, user, config, variant, modelId, transcript, promptText, messages, history, image, autonomous, fetchImpl, maxTokens, candidates, integrations, progressId: String(payload.progressId || "") });
   if (collaboration) return json({
     answer: collaboration.answer,
     plan: collaboration.plan,
