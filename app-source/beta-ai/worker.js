@@ -2004,7 +2004,7 @@ async function runMediaChafaConsensus(args) {
       }
     }
   }
-  if (successfulDrafts.length < 3) return null;
+  if (successfulDrafts.length < 2) return null;
 
   const draftSummary = successfulDrafts.map((item) => ({
     participant: item.label,
