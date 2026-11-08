@@ -28,6 +28,10 @@ on:
       - "app-source/index.html"
       - ".github/workflows/beta-agent-tests.yml"
       - "app-source/package.json"
+      - "index.html"
+      - "app-source/e2e/**"
+      - "app-source/playwright.config.js"
+      - "app-source/sentry-*.js"
 
 permissions:
   contents: read
@@ -50,3 +54,31 @@ jobs:
           node --check beta-ai/worker.js
       - name: Run Beta agent integration tests
         run: npm run test:beta-agent
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app-source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright test runner
+        run: npm install --no-save --package-lock=false @playwright/test@1.65.0
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run browser smoke and responsive tests
+        run: npm run test:e2e
+      - name: Upload Playwright report and traces
+        if: always() && failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediachafa-playwright-results
+          path: |
+            app-source/test-results/
+            app-source/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
