@@ -149,7 +149,7 @@ test("autonomous execution persists pause state and verifies isolated GitHub cha
   assert.equal(requestCount, 9);
   assert.equal(createdCommit, true);
   assert.equal(dispatchedChecks, true);
-  assert.ok(modelPromptMessages[0][0].content.includes("Respuestas breves en español."));
+  assert.ok(modelPromptMessages[0][1].content.includes("Respuestas breves en español."));
 });
 
 test("Beta saves persistent memory only after explicit owner approval", async () => {
