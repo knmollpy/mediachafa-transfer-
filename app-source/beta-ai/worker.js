@@ -228,7 +228,7 @@ function safeAction(action) {
   const description = String(action.description || "").slice(0, 500);
   const validRepo = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) && repository.split("/")[0].toLowerCase() === "knmollpy";
   const validPath = Boolean(path) && path.length <= 500 && !path.startsWith("/") && !path.includes("\\") && path.split("/").every((part) => part && part !== "." && part !== ".." && !/[\u0000-\u001f]/.test(part));
-  if (provider === "github" && type === "write_file" && validRepo && repository === GITHUB_REPO && validPath && path.startsWith("app-source/") && path !== "app-source/change-review/worker.js" && content.length <= 500_000) {
+  if (provider === "github" && type === "write_file" && validRepo && repository === GITHUB_REPO && agentFilePath(path) && content.length <= 500_000) {
     return { provider, type, repository, path, content, message: String(action.message || `Beta: actualizar ${path}`).slice(0, 120), summary: description || `Crear o actualizar ${path} en ${repository}.` };
   }
   if (provider === "github" && type === "write_files" && validRepo && repository === GITHUB_REPO && Array.isArray(action.files)) {
@@ -253,7 +253,7 @@ function safeAction(action) {
   if (provider === "github" && type === "create_repository" && /^[a-zA-Z0-9_.-]{1,100}$/.test(name)) {
     return { provider, type, name, description, summary: description || `Crear el repositorio privado ${name} en GitHub.` };
   }
-  if (provider === "github" && type === "delete_path" && validRepo && repository === GITHUB_REPO && validPath && path.startsWith("app-source/") && path !== "app-source/change-review/worker.js") {
+  if (provider === "github" && type === "delete_path" && validRepo && repository === GITHUB_REPO && agentFilePath(path)) {
     return { provider, type, repository, path, message: String(action.message || `Beta: borrar ${path}`).slice(0, 120), summary: `BORRADO: quitar ${path} (archivo o carpeta completa) de ${repository}.` };
   }
   if (provider === "github" && type === "delete_repository" && validRepo) {
