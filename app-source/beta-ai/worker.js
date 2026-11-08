@@ -362,6 +362,8 @@ async function deleteGitHubPath(token, action) {
   if (current.length !== original.length || original.some((entry) => !current.some((item) => item.path === entry.path && item.sha === entry.sha))) {
     throw new Error("Los archivos de esta ruta cambiaron desde la vista previa. No borré nada; pedile a Beta que la actualice.");
   }
+  const branch = `beta-agent/delete-${crypto.randomUUID()}`;
+  await providerRequest("github", token, `${root}/git/refs`, "POST", { ref: `refs/heads/${branch}`, sha: ref.object.sha });
   const nextTree = await providerRequest("github", token, `${root}/git/trees`, "POST", {
     base_tree: commit.tree.sha,
     tree: original.map(({ path, mode, type }) => ({ path, mode, type, sha: null })),
@@ -371,8 +373,13 @@ async function deleteGitHubPath(token, action) {
     tree: nextTree.sha,
     parents: [ref.object.sha],
   });
-  await providerRequest("github", token, `${root}/git/refs/heads/${githubBranchPath(action.snapshot.branch)}`, "PATCH", { sha: nextCommit.sha, force: false });
-  return { message: `GitHub eliminó ${original.length} archivo(s) de ${action.repository}:${action.path} en un solo commit.`, url: nextCommit.html_url || `https://github.com/${action.repository}/commit/${nextCommit.sha}` };
+  await providerRequest("github", token, `${root}/git/refs/heads/${githubBranchPath(branch)}`, "PATCH", { sha: nextCommit.sha, force: false });
+  const paths = original.map(({ path }) => path);
+  const requestText = `Eliminación solicitada y confirmada explícitamente por el dueño: ${action.path}`;
+  const manifest = { version: 1, request: requestText, requirements: [requestText], allowed_paths: paths, allow_deletions: true };
+  const body = ["Eliminación propuesta por MediaChafa Beta. La publicación requiere pruebas y revisión independiente.", "", `<!-- MEDIACHAFA_REVIEW_MANIFEST\\n${JSON.stringify(manifest)}\\n-->`].join("\\n");
+  const pr = await providerRequest("github", token, `${root}/pulls`, "POST", { title: `MediaChafa Beta: eliminación explícita de ${action.path}`, head: branch, base: action.snapshot.branch, body, draft: false });
+  return { message: `La eliminación de ${original.length} archivo(s) quedó en PR #${pr.number}; no se borró nada de la rama principal.`, url: pr.html_url };
 }
 
 async function createReviewPullRequest(token, files, message, requestSummary) {
