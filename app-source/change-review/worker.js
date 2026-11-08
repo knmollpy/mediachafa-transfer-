@@ -131,6 +131,7 @@ async function verifyTrustedControlFiles(env, headSha) {
   const expected = {
     ".github/workflows/change-review-gate.yml": String(env.TRUSTED_WORKFLOW_BLOB_SHA || ""),
     "app-source/change-review/worker.js": String(env.TRUSTED_REVIEWER_BLOB_SHA || ""),
+    "app-source/vercel.json": String(env.TRUSTED_VERCEL_CONFIG_BLOB_SHA || ""),
   };
   for (const [path, sha] of Object.entries(expected)) {
     if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error("Falta el anclaje externo de integridad del control; revisión bloqueada.");
