@@ -2000,8 +2000,9 @@ async function callModel(env, candidate, messages, history, promptText, image, m
 async function mediachafaCandidates(env, userId, variant, needsVision) {
   const config = MEDIACHAFA_MODELS[variant];
   const list = [];
+  const cloudflareCandidates = [];
   const cfModels = needsVision ? [...CF_VISION_MODELS] : [...config.cf];
-  for (const id of cfModels) list.push({ provider: "workersai", nativeId: id, name: id.split("/").pop(), vision: CF_VISION_MODELS.includes(id) });
+  for (const id of cfModels) cloudflareCandidates.push({ provider: "workersai", nativeId: id, name: id.split("/").pop(), vision: CF_VISION_MODELS.includes(id) });
   // Otros motores gratuitos conectados (los catálogos ya filtran solo modelos gratuitos).
   const external = [];
   for (const provider of ["groq", "gemini", "cohere", "openrouter"]) {
@@ -2020,7 +2021,8 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
     perProvider[model.provider] = (perProvider[model.provider] || 0) + 1;
     if (perProvider[model.provider] <= 3) list.push(model);
   }
-  return list;
+  // Los motores externos van primero para distribuir el uso; Workers AI queda como respaldo.
+  return [...list, ...cloudflareCandidates];
 }
 
 function parseInternalReviewJson(text) {
