@@ -61,3 +61,29 @@ test("broken JSON answers never show raw code or JSON to the user", async () => 
   const data = await (await chat(env, "mediachafa::rapida")).json();
   assert.equal(data.answer, "Preparé el repositorio.");
 });
+
+
+test("the three MediaChafa roles use distinct engines and cross-review before synthesis", async () => {
+  const seen = [];
+  const env = makeEnv(async (model, input) => {
+    seen.push({ model, messages: input.messages });
+    return { response: '{"answer":"respuesta consensuada","plan":[],"actions":[]}' };
+  });
+  const res = await chat(env, "mediachafa::pro");
+  const data = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(data.answer, "respuesta consensuada");
+  assert.equal(data.collaboration.enabled, true);
+  assert.equal(data.collaboration.participantCount, 3);
+  assert.equal(data.collaboration.reviewCount, 3);
+  assert.equal(data.collaboration.status, "consensus");
+  assert.deepEqual(
+    data.collaboration.participants.map((item) => item.name),
+    ["MediaChafa IA Código", "MediaChafa IA Pro", "MediaChafa IA Rápida"],
+  );
+  const used = new Set(seen.map((item) => item.model));
+  assert.ok(used.has("@cf/qwen/qwen2.5-coder-32b-instruct"));
+  assert.ok(used.has("@cf/openai/gpt-oss-120b"));
+  assert.ok(used.has("@cf/meta/llama-4-scout-17b-16e-instruct"));
+  assert.equal(seen.length, 7, "three drafts, three peer reviews and one coordinator synthesis");
+});
