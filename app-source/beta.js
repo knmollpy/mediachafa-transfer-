@@ -243,7 +243,8 @@ Para una página web pública: create_repository con visibility "public", despu�
   function formatWorkDuration(seconds) {
     const value = Math.max(0, Number(seconds) || 0);
     const h = Math.floor(value / 3600), m = Math.floor(value % 3600 / 60);
-    return h ? `${h} h ${m} min` : `${m} min`;
+    const sec = Math.floor(value % 60);
+    return h ? `${h} h ${m} min` : m ? `${m} min` : `${sec} s`;
   }
   function renderWorkTasks(tasks = []) {
     const active = tasks.filter(task => ['queued','running','waiting'].includes(task.status));
