@@ -2,7 +2,8 @@ import { WorkflowEntrypoint } from "cloudflare:workers";
 
 const REPOSITORY = "knmollpy/mediachafa-transfer-";
 const EXPECTED_WORKFLOW = ".github/workflows/change-review-gate.yml";
-const MODEL = "@cf/openai/gpt-oss-120b";
+const MODEL = "@cf/openai/gpt-oss-20b";
+const MAX_REVIEWS_PER_DAY = 3;
 const REVIEW_TTL = 7 * 24 * 60 * 60;
 
 function json(data, status = 200) {
@@ -94,8 +95,9 @@ async function collectReviewInput(pullNumber, expectedHeadSha) {
   const actual = new Set(files.map(file => file.filename));
   for (const path of manifest.allowed_paths) if (!actual.has(path)) findings.push(`El archivo declarado no aparece en el Pull Request: ${path}`);
   if (findings.length) throw new Error(findings.join("; ").slice(0, 1800));
-  const patches = files.map(file => `FILE: ${file.filename}\nSTATUS: ${file.status}\nPATCH:\n${file.patch}`).join("\n\n").slice(0, 100000);
+  const patches = files.map(file => `FILE: ${file.filename}\nSTATUS: ${file.status}\nPATCH:\n${file.patch}`).join("\n\n");
   if (!patches.trim()) throw new Error("No hay diff legible para revisar.");
+  if (patches.length > 50000) throw new Error("El diff supera el límite seguro de 50.000 caracteres; se bloquea para evitar una revisión incompleta.");
   return {
     pullNumber, headSha: expectedHeadSha, baseSha: pr.base.sha,
     title: String(pr.title || "").slice(0, 300),
@@ -115,6 +117,17 @@ export class ChangeReviewWorkflow extends WorkflowEntrypoint {
     const { reviewId, pullNumber, headSha } = event.payload || {};
     await persist(this.env, reviewId, { status: "running", pull_number: pullNumber, head_sha: headSha });
     try {
+      await step.do("reserve-review-quota", async () => {
+        const reservationKey = `mediachafa-change-review:reserved:${reviewId}`;
+        if (await this.env.REVIEW_STATE.get(reservationKey)) return { reserved: true, reused: true };
+        const date = new Date().toISOString().slice(0, 10);
+        const dailyKey = `mediachafa-change-review:daily:${date}`;
+        const used = Number(await this.env.REVIEW_STATE.get(dailyKey) || 0);
+        if (used >= MAX_REVIEWS_PER_DAY) throw new Error("Se alcanzó el límite diario gratuito de revisiones; publicación bloqueada hasta el próximo día.");
+        await this.env.REVIEW_STATE.put(dailyKey, String(used + 1), { expirationTtl: 172800 });
+        await this.env.REVIEW_STATE.put(reservationKey, "1", { expirationTtl: REVIEW_TTL });
+        return { reserved: true, used: used + 1 };
+      });
       const input = await step.do("load-and-validate-pull-request", { retries: { limit: 2, delay: "5 seconds", backoff: "exponential" } }, async () => collectReviewInput(pullNumber, headSha));
       const review = await step.do("independent-ai-regression-review", { retries: { limit: 2, delay: "10 seconds", backoff: "exponential" }, timeout: "5 minutes" }, async () => {
         const prompt = [
@@ -130,7 +143,7 @@ export class ChangeReviewWorkflow extends WorkflowEntrypoint {
             { role: "system", content: prompt },
             { role: "user", content: JSON.stringify({ request: input.request, requirements: input.requirements, allowed_paths: input.allowedPaths, allow_deletions: input.allowDeletions, title: input.title, files: input.fileCount, diff: input.patches }) }
           ],
-          max_tokens: 2200,
+          max_tokens: 1200,
           temperature: 0.1,
         });
         const parsed = parseReview(extractModelText(result));
