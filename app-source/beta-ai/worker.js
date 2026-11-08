@@ -424,7 +424,7 @@ async function createReviewPullRequest(token, files, message, requestSummary) {
 
 async function applyApprovedAction(env, userId, action, authorization) {
   if (action.provider === "supabase" && action.type === "memory_save") {
-    if (!/^Bearer\\s+\\S+$/i.test(String(authorization || ""))) throw new Error("La sesión autenticada venció; no se guardó la memoria.");
+    if (!/^Bearer\s+\S+$/i.test(String(authorization || ""))) throw new Error("La sesión autenticada venció; no se guardó la memoria.");
     const response = await fetch(`${SUPABASE_URL}/rest/v1/task_hunter_memory?on_conflict=user_id,memory_key`, {
       method: "POST",
       headers: { apikey: SUPABASE_KEY, Authorization: authorization, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=representation" },
@@ -1344,7 +1344,7 @@ async function integrationContext(env, userId) {
 }
 
 async function loadBetaMemory(authorization, user) {
-  if (!user?.id || !/^Bearer\\s+\\S+$/i.test(String(authorization || ""))) return [];
+  if (!user?.id || !/^Bearer\s+\S+$/i.test(String(authorization || ""))) return [];
   try {
     const query = new URLSearchParams({
       select: "memory_key,memory_value,updated_at",
