@@ -65,12 +65,44 @@ jobs:
     timeout-minutes: 12
     permissions:
       contents: read
+      pull-requests: read
       statuses: read
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Find the latest commit that changes Vercel-served files
+        id: preview
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch origin "$BASE_SHA" --depth=1
+          fi
+          LATEST_FRONTEND_SHA=""
+          while IFS= read -r COMMIT; do
+            [ -n "$COMMIT" ] || continue
+            if git diff-tree --no-commit-id --name-only -r "$COMMIT" | grep -Ev '^(\.github/workflows/|app-source/(beta-ai/|change-review/|migrations/|task-hunter/|\.github/|vercel\.json$))' | grep -q .; then
+              LATEST_FRONTEND_SHA="$COMMIT"
+            fi
+          done < <(git rev-list --reverse "${BASE_SHA}..${HEAD_SHA}")
+          if [ -n "$LATEST_FRONTEND_SHA" ]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "preview_sha=$LATEST_FRONTEND_SHA" >> "$GITHUB_OUTPUT"
+            echo "Se exigirá Preview del último commit con cambios frontend: $LATEST_FRONTEND_SHA"
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+            echo "El PR solo modifica Workers, pruebas, migraciones o configuración; no necesita Preview."
+          fi
       - name: Wait for Vercel Preview to report success
+        if: steps.preview.outputs.required == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ steps.preview.outputs.preview_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -96,8 +128,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      pull-requests: read
-      issues: write
+      pull-requests: write
       id-token: write
     steps:
       - name: Request GitHub OIDC identity
@@ -128,7 +159,7 @@ jobs:
           if [ -z "$REVIEW_ID" ] || [ -z "$POLL_TOKEN" ]; then
             DETAILS="$(echo "$START" | jq -r '.error // "No se pudo iniciar el revisor independiente."')"
             BODY="$(printf '%s\n' '<!-- MEDIACHAFA_REVIEW_FEEDBACK -->' '### Revisión independiente bloqueada' '' "$DETAILS")"
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -f body="$BODY"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" -f event=REQUEST_CHANGES -f body="$BODY"
             exit 1
           fi
 
@@ -139,6 +170,10 @@ jobs:
             RESULT_PR="$(echo "$RESULT" | jq -r '.pull_number // 0')"
             if [ "$STATUS" = "approved" ] && [ "$RESULT_SHA" = "$HEAD_SHA" ] && [ "$RESULT_PR" = "$PR_NUMBER" ]; then
               echo "$RESULT" | jq .
+              PROVIDER="$(echo "$RESULT" | jq -r '.reviewer_provider // "motor gratuito"')"
+              MODEL="$(echo "$RESULT" | jq -r '.reviewer_model // "modelo verificado"')"
+              BODY="$(printf '%s\n' "Revisión independiente aprobada para el commit $HEAD_SHA." "Motor: $PROVIDER · $MODEL." "La aprobación corresponde únicamente a este SHA.")"
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" -f event=APPROVE -f body="$BODY"
               exit 0
             fi
             if [ "$STATUS" = "blocked" ]; then
@@ -146,14 +181,14 @@ jobs:
               echo "$RESULT" | jq .
               DETAILS="$(echo "$RESULT" | jq -r '(.summary // "El revisor bloqueó la publicación.") + "\n\n" + ((.findings // []) | map("- [" + (.severity // "unknown") + "] " + (.file // "") + ": " + (.detail // "")) | join("\n"))')"
               BODY="$(printf '%s\n' '<!-- MEDIACHAFA_REVIEW_FEEDBACK -->' '### Revisión independiente bloqueada' '' "$DETAILS")"
-              gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -f body="$BODY"
+              gh api --method POST "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" -f event=REQUEST_CHANGES -f body="$BODY"
               exit 1
             fi
             sleep 10
           done
 
           BODY="$(printf '%s\n' '<!-- MEDIACHAFA_REVIEW_FEEDBACK -->' '### Revisión independiente bloqueada' '' 'El revisor no respondió dentro del límite. No se publicó; revisá los logs y volvé a ejecutar las comprobaciones.')"
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -f body="$BODY"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" -f event=REQUEST_CHANGES -f body="$BODY"
           echo "Timeout del revisor; publicación bloqueada."
           exit 1
 

@@ -16,7 +16,9 @@ const modelTurns = [
   { type: "tool_call", name: "github_check_status", arguments: {} },
   { type: "tool_call", name: "vercel_deploy_preview", arguments: {} },
   { type: "tool_call", name: "vercel_preview_status", arguments: {} },
-  { type: "final", answer: "Tarea completada.", summary: "Leí, modifiqué y verifiqué el cambio.", verified: true },
+  { type: "tool_call", name: "github_open_review_pr", arguments: {} },
+  { type: "tool_call", name: "github_pr_status", arguments: {} },
+  { type: "final", answer: "Tarea completada.", summary: "Leí, modifiqué, probé y publiqué tras revisión independiente.", verified: true },
 ];
 let requestCount = 0;
 let createdCommit = false;
@@ -24,7 +26,12 @@ let commitCount = 0;
 let dispatchedChecks = false;
 let activeBranch = "";
 let deploymentRequest;
+let memoryRows = [{ memory_key: "response_style", memory_value: { text: "Respuestas breves en español." }, user_confirmed: true, reusable: true, sensitive: false }];
+let savedMemory = null;
+let openedPrBody = null;
 let modelGate = null;
+let nextModelResponse = null;
+let nextGroqStatus = null;
 const modelPromptMessages = [];
 const originalFetch = globalThis.fetch;
 
@@ -36,6 +43,7 @@ async function encryptToken(value) {
 
 const env = {
   TOKEN_ENCRYPTION_KEY: base64(encryptionBytes),
+  CHANGE_REVIEW_SERVICE_TOKEN: "review-service-test-token",
   BETA_LIMITS: {
     get: async (key) => kv.get(key) ?? null,
     put: async (key, value) => { kv.set(key, value); },
@@ -53,10 +61,21 @@ const api = async (path, method = "GET", body) => worker.fetch(new Request(`${or
 globalThis.fetch = async (input, init = {}) => {
   const url = String(input);
   if (url.endsWith("/auth/v1/user")) return Response.json({ id: userId, email: "nxmollpy@gmail.com", is_anonymous: false });
+  if (url.includes("/rest/v1/task_hunter_memory")) {
+    if (init.method === "POST") { savedMemory = JSON.parse(init.body); return Response.json([savedMemory], { status: 201 }); }
+    return Response.json(memoryRows);
+  }
+  if (url === "https://api.groq.com/openai/v1/models") return Response.json({ data: [{ id: "openai/gpt-oss-120b" }] });
+  if (url === "https://api.groq.com/openai/v1/chat/completions") {
+    const status = nextGroqStatus ?? 429;
+    nextGroqStatus = null;
+    return Response.json({ error: { message: "rate limit" } }, { status });
+  }
   if (url === "https://openrouter.ai/api/v1/models") return Response.json({ data: [{ id: "openai/gpt-oss-20b:free", name: "Test model", pricing: { prompt: "0", completion: "0" }, architecture: { input_modalities: ["text"] } }] });
   if (url === "https://openrouter.ai/api/v1/key") return Response.json({ data: { is_free_tier: true, free_model_daily_requests: { used: 0, limit: 50, remaining: 50 } } });
   if (url === "https://openrouter.ai/api/v1/chat/completions") {
-    const turn = modelTurns[requestCount++];
+    const content = nextModelResponse ?? JSON.stringify(modelTurns[requestCount++]);
+    nextModelResponse = null;
     modelPromptMessages.push(JSON.parse(init.body).messages);
     if (modelGate) {
       const gate = modelGate;
@@ -64,7 +83,7 @@ globalThis.fetch = async (input, init = {}) => {
       gate.entered();
       await gate.promise;
     }
-    return Response.json({ choices: [{ message: { content: JSON.stringify(turn) } }], usage: { prompt_tokens: 100, completion_tokens: 40 } });
+    return Response.json({ choices: [{ message: { content } }], usage: { prompt_tokens: 100, completion_tokens: 40 } });
   }
   if (url === "https://api.github.com/repos/knmollpy/mediachafa-transfer-/git/ref/heads/main") return Response.json({ object: { sha: "base-sha" } });
   if (url === "https://api.github.com/repos/knmollpy/mediachafa-transfer-") return Response.json({ default_branch: "main", permissions: { push: true } });
@@ -77,6 +96,11 @@ globalThis.fetch = async (input, init = {}) => {
   if (url === "https://api.github.com/repos/knmollpy/mediachafa-transfer-/git/trees" && init.method === "POST") return Response.json({ sha: "new-tree" });
   if (url === "https://api.github.com/repos/knmollpy/mediachafa-transfer-/git/commits" && init.method === "POST") { createdCommit = true; commitCount++; return Response.json({ sha: "new-commit" }); }
   if (url.endsWith(`/git/refs/heads/${activeBranch}`) && init.method === "PATCH") return Response.json({ ref: activeBranch });
+  if (url.includes("/pulls?state=open&head=knmollpy:")) return Response.json([]);
+  if (url.endsWith("/pulls") && init.method === "POST") { openedPrBody = JSON.parse(init.body).body; return Response.json({ number: 5, html_url: "https://github.com/knmollpy/mediachafa-transfer-/pull/5", state: "open", merged: false }); }
+  if (url.endsWith("/pulls/5")) return Response.json({ number: 5, html_url: "https://github.com/knmollpy/mediachafa-transfer-/pull/5", state: "closed", merged: true, head: { sha: "new-commit" }, merge_commit_sha: "merge-sha" });
+  if (url.endsWith("/issues/5/comments?per_page=100")) return Response.json([]);
+  if (url.endsWith("/pulls/5/reviews?per_page=100")) return Response.json([]);
   if (url.endsWith("/actions/workflows/beta-agent-tests.yml/dispatches") && init.method === "POST") { dispatchedChecks = true; return new Response(null, { status: 204 }); }
   if (url.includes("/actions/workflows/beta-agent-tests.yml/runs?branch=")) return Response.json({ workflow_runs: [{ head_sha: "new-commit", id: 8, status: "completed", conclusion: "success", html_url: "https://github.com/example/run/8" }] });
   if (url === "https://api.vercel.com/v9/projects?limit=100") return Response.json({ projects: [{ id: "vercel-project", name: "mediachafa", teamId: "vercel-team", link: { repo: "mediachafa-transfer-", org: "knmollpy", repoId: "1411026786" } }] });
@@ -128,15 +152,81 @@ test("autonomous execution persists pause state and verifies isolated GitHub cha
   assert.equal(state.commitSha, "new-commit");
   assert.equal(state.lastChecksSucceeded, true);
   assert.equal(state.lastPreviewSucceeded, true, JSON.stringify(state.lastToolResult));
+  assert.equal(state.pullRequest.merged, true, JSON.stringify(state.pullRequest));
+  const manifestMatch = openedPrBody?.match(/<!--\s*MEDIACHAFA_REVIEW_MANIFEST\s*([\s\S]*?)\s*-->/);
+  assert.ok(manifestMatch, "El PR debe incluir un manifiesto legible por el revisor independiente.");
+  const manifest = JSON.parse(manifestMatch[1]);
+  assert.equal(manifest.version, 1);
+  assert.ok(manifest.allowed_paths.includes("app-source/beta.js"));
+  assert.equal(manifest.allow_deletions, false);
   assert.equal(state.vercelDeployment.target, "preview");
   assert.equal(state.vercelDeployment.url, "mediachafa-preview.vercel.app");
   assert.equal(deploymentRequest.target, "preview");
   assert.equal(deploymentRequest.gitSource.ref, branch);
   assert.equal(deploymentRequest.gitSource.sha, "new-commit");
   assert.equal(state.estimatedCostUsd, 0);
-  assert.equal(requestCount, 7);
+  assert.equal(requestCount, 9);
   assert.equal(createdCommit, true);
   assert.equal(dispatchedChecks, true);
+  assert.ok(modelPromptMessages[0][1].content.includes("Respuestas breves en español."));
+});
+
+test("Beta saves persistent memory only after explicit owner approval", async () => {
+  savedMemory = null;
+  const proposalResponse = await api("/actions/propose", "POST", { actions: [{
+    provider: "supabase",
+    type: "memory_save",
+    memory_key: "response_style",
+    memory_value: { text: "Usar respuestas breves y claras en español." },
+    user_confirmed: true,
+    reusable: true,
+    sensitive: false,
+    description: "Recordar preferencia de estilo."
+  }] });
+  assert.equal(proposalResponse.status, 200);
+  const proposals = (await proposalResponse.json()).proposals;
+  assert.equal(proposals.length, 1);
+  const approved = await api(`/actions/${proposals[0].id}/approve`, "POST", {});
+  assert.equal(approved.status, 200);
+  assert.equal(savedMemory.user_id, userId);
+  assert.equal(savedMemory.memory_key, "response_style");
+  assert.equal(savedMemory.user_confirmed, true);
+  assert.equal(savedMemory.reusable, true);
+  assert.equal(savedMemory.sensitive, false);
+});
+
+test("sensitive or unconfirmed memory proposals are rejected", async () => {
+  const response = await api("/actions/propose", "POST", { actions: [
+    {
+      provider: "supabase",
+      type: "memory_save",
+      memory_key: "api_token",
+      memory_value: { text: "do not store" },
+      user_confirmed: false,
+      reusable: true,
+      sensitive: false
+    },
+    {
+      provider: "supabase",
+      type: "memory_save",
+      memory_key: "profile",
+      memory_value: { text: "medical diagnosis: example" },
+      user_confirmed: true,
+      reusable: true,
+      sensitive: false
+    }
+  ] });
+  assert.equal((await response.json()).proposals.length, 0);
+});
+
+test("Beta rejects protected secret paths for single- and multi-file GitHub writes", async () => {
+  const response = await api("/actions/propose", "POST", { actions: [
+    { provider: "github", type: "write_file", repository: "knmollpy/mediachafa-transfer-", path: "app-source/.env.production", content: "SECRET=do-not-write" },
+    { provider: "github", type: "write_files", repository: "knmollpy/mediachafa-transfer-", files: [
+      { path: "app-source/config/credentials.json", content: "{}" }
+    ] }
+  ] });
+  assert.equal((await response.json()).proposals.length, 0);
 });
 
 test("pause during a model turn persists instructions and skips the pending tool call", async () => {
@@ -169,10 +259,30 @@ test("pause during a model turn persists instructions and skips the pending tool
   assert.ok(modelPromptMessages.at(-1).some((message) => message.content.includes("No ejecutes la escritura pendiente")));
 });
 
-test("autonomous start rejects non-free or non-OpenRouter models", async () => {
+test("MediaChafa Pro autonomous agent rotates after a provider quota error without local daily caps", async () => {
+  kv.set(`integration:${userId}:github`, await encryptToken("github-token"));
+  kv.set(`integration:${userId}:groq`, await encryptToken("groq-token"));
+  kv.set(`integration:${userId}:openrouter`, await encryptToken("router-token"));
+  const today = new Date().toISOString().slice(0, 10);
+  kv.set(`beta-ai-requests:${userId}:openrouter:day:${today}`, "999999");
+  nextGroqStatus = 429;
+  nextModelResponse = JSON.stringify({ type: "final", answer: "Tarea revisada.", summary: "Fallback correcto.", verified: false });
+  const started = await api("/agent/start", "POST", { mode: "autonomous", model: "mediachafa::pro", message: "Comprobá el enrutamiento gratuito." });
+  assert.equal(started.status, 201);
+  const start = await started.json();
+  const stepped = await api(`/agent/${start.executionId}/step`, "POST", {});
+  assert.equal(stepped.status, 200);
+  const state = await stepped.json();
+  assert.equal(state.status, "completed");
+  assert.equal(state.modelId, "mediachafa::pro");
+  assert.equal(state.engine.provider, "openrouter");
+});
+
+test("autonomous start rejects models outside the verified free catalogs", async () => {
+  kv.set(`integration:${userId}:groq`, await encryptToken("groq-token"));
   const response = await api("/agent/start", "POST", { mode: "autonomous", model: "groq::paid-model", message: "No ejecutes esto." });
   assert.equal(response.status, 400);
-  assert.match((await response.json()).error, /OpenRouter :free/);
+  assert.match((await response.json()).error, /catálogo gratuito/);
 });
 
 test("Vercel integration validates project access and stores its token encrypted", async () => {
@@ -184,4 +294,64 @@ test("Vercel integration validates project access and stores its token encrypted
   const stored = kv.get(`integration:${userId}:vercel`);
   assert.ok(stored);
   assert.equal(stored.includes("vercel-owner-token"), false);
+});
+
+
+test("internal independent-review model router uses connected free providers and requires service authentication", async () => {
+  kv.set(`integration:${userId}:openrouter`, await encryptToken("router-token"));
+  nextModelResponse = JSON.stringify({
+    decision: "block",
+    confidence: 0.99,
+    scope_ok: true,
+    requirements_met: false,
+    regressions_found: true,
+    findings: [{ severity: "high", file: "app-source/beta.js", detail: "Test finding." }],
+    summary: "Test review response."
+  });
+  const unauthorized = await worker.fetch(new Request("https://mediachafa-beta-ai.nxmollpy.workers.dev/internal/review-model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer wrong-token" },
+    body: JSON.stringify({ messages: [{ role: "system", content: "review" }, { role: "user", content: "diff" }] }),
+  }), env);
+  assert.equal(unauthorized.status, 403);
+
+  const response = await worker.fetch(new Request("https://mediachafa-beta-ai.nxmollpy.workers.dev/internal/review-model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer review-service-test-token" },
+    body: JSON.stringify({ messages: [{ role: "system", content: "review" }, { role: "user", content: "diff" }] }),
+  }), env);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.provider, "openrouter");
+  assert.equal(result.model, "openai/gpt-oss-20b:free");
+  assert.match(result.text, /"decision":"block"/);
+  assert.equal(typeof result.rotations, "number");
+});
+
+
+test("review router rotates to another free provider after quota errors without an app-imposed daily cap", async () => {
+  kv.set(`integration:${userId}:groq`, await encryptToken("groq-token"));
+  kv.set(`integration:${userId}:openrouter`, await encryptToken("router-token"));
+  const today = new Date().toISOString().slice(0, 10);
+  kv.set(`beta-ai-requests:${userId}:openrouter:day:${today}`, "999999");
+  nextGroqStatus = 429;
+  nextModelResponse = JSON.stringify({
+    decision: "block",
+    confidence: 0.99,
+    scope_ok: true,
+    requirements_met: false,
+    regressions_found: true,
+    findings: [{ severity: "high", file: "app-source/beta.js", detail: "Fallback test finding." }],
+    summary: "Fallback model review."
+  });
+  const response = await worker.fetch(new Request("https://mediachafa-beta-ai.nxmollpy.workers.dev/internal/review-model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer review-service-test-token" },
+    body: JSON.stringify({ messages: [{ role: "system", content: "review" }, { role: "user", content: "diff" }] }),
+  }), env);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.provider, "openrouter");
+  assert.equal(result.model, "openai/gpt-oss-20b:free");
+  assert.ok(result.rotations >= 1);
 });
