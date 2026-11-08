@@ -300,6 +300,54 @@
     }
   }
 
+
+  // Revisión estática ANTES de aprobar: evita publicar HTML/JSON/JS claramente roto
+  // y advierte si desaparecen controles que ya existían en la página.
+  async function preflight(proposal) {
+    const change = changeFromProposal(proposal);
+    const checks = [];
+    if (!change) return { ok: true, checks: [{ ok: 'info', label: 'Esta acción no modifica archivos web; se comprobará la respuesta del servicio después de ejecutarla.' }] };
+    for (const file of change.files.slice(0, 30)) {
+      if (file.deleted) {
+        checks.push({ ok: 'info', label: `Borrado solicitado: ${file.path}. Revisá que sea intencional.` });
+        continue;
+      }
+      const source = String(file.after ?? '');
+      if (!source.trim()) {
+        checks.push({ ok: false, label: `${file.path}: el archivo quedaría vacío.` });
+        continue;
+      }
+      if (/\.html?$/i.test(file.path)) {
+        try {
+          const doc = new DOMParser().parseFromString(source, 'text/html');
+          if (!doc.documentElement || !doc.body || doc.querySelector('parsererror')) throw new Error('estructura HTML inválida');
+          const oldSource = await readServed(file.path);
+          if (typeof oldSource === 'string' && oldSource.trim()) {
+            const oldDoc = new DOMParser().parseFromString(oldSource, 'text/html');
+            const oldIds = [...oldDoc.querySelectorAll('[id]')].map((node) => node.id).filter(Boolean);
+            const newIds = new Set([...doc.querySelectorAll('[id]')].map((node) => node.id).filter(Boolean));
+            const missing = oldIds.filter((id) => !newIds.has(id));
+            const criticalMissing = missing.filter((id) => /^(?:app|beta-panel|beta-chat-stage|beta-form|beta-input|beta-send|login|main|content|sidebar|file-list)$/i.test(id));
+            if (criticalMissing.length) checks.push({ ok: false, label: `${file.path}: desaparecerían elementos importantes existentes: ${criticalMissing.slice(0, 8).join(', ')}.` });
+            else if (missing.length) checks.push({ ok: 'info', label: `${file.path}: ${missing.length} ID(s) anteriores ya no aparecen; revisá que no se haya quitado una sección necesaria.` });
+          }
+          checks.push({ ok: true, label: `${file.path}: estructura HTML válida.` });
+        } catch (error) { checks.push({ ok: false, label: `${file.path}: ${error.message}.` }); }
+      } else if (/\.json$/i.test(file.path)) {
+        try { JSON.parse(source); checks.push({ ok: true, label: `${file.path}: JSON válido.` }); }
+        catch (error) { checks.push({ ok: false, label: `${file.path}: JSON inválido — ${error.message}` }); }
+      } else if (/\.(?:js|mjs|cjs)$/i.test(file.path)) {
+        if (/^\s*(?:import\s|export\s)/m.test(source)) {
+          checks.push({ ok: 'info', label: `${file.path}: usa sintaxis de módulo; la sintaxis se verificará en el pipeline de pruebas, no se ejecutará durante esta revisión.` });
+        } else {
+          try { new Function(source); checks.push({ ok: true, label: `${file.path}: sintaxis JavaScript válida (sin ejecutar el código).` }); }
+          catch (error) { checks.push({ ok: false, label: `${file.path}: error de sintaxis JavaScript — ${error.message}` }); }
+        }
+      }
+    }
+    return { ok: !checks.some((check) => check.ok === false), checks };
+  }
+
   // ---------- Flujo completo ----------
   // prepare() se llama justo antes de aprobar: guarda cómo estaba todo (texto y foto).
   function prepare(proposal) {
@@ -333,7 +381,7 @@
 
   async function review(prep, onStep, result = {}) {
     const { proposal, change } = prep;
-    const checks = [];
+    const checks = [...(prep.preflight?.checks || [])];
     const images = [];
     onStep?.('Armando las fotos de antes y después del cambio…');
     await prep.beforeTexts;
@@ -417,5 +465,5 @@
     return box;
   }
 
-  window.MediaChafaVisualCheck = { prepare, review, renderReport, changeFromProposal, diffLines, capturePage };
+  window.MediaChafaVisualCheck = { prepare, preflight, review, renderReport, changeFromProposal, diffLines, capturePage };
 })();
