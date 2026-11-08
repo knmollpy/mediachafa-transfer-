@@ -63,7 +63,12 @@
 
   function protocol(state) {
     return `[MODO AUTÓNOMO DE MEDIACHAFA · turno ${state.turn} de ${state.maxTurns}]
-Trabajá sola hasta terminar TODO el pedido; no te frenes después de un paso ni pidas permiso para seguir. En cada turno devolvé en "actions" todas las acciones del próximo paso (podés mandar varias, en orden). Las acciones normales se aprueban y ejecutan solas y en el turno siguiente recibís su resultado real: nunca digas que algo se hizo antes de verlo en los resultados. Borrados de repositorios: si el pedido es borrar/eliminar un repositorio y falta el nombre exacto, hacé UNA sola pregunta: "¿Cuál es el nombre exacto del repositorio que querés borrar?". No pidas URL, propietario, motivo, visibilidad, rama, descripción ni otros datos; la cuenta es knmollpy. Cuando recibas el nombre, usá exactamente "knmollpy/nombre" en delete_repository y seguí sin volver a preguntar. La solicitud original de borrado más el nombre exacto indicado por el dueño autorizan ese borrado: no pidas una segunda confirmación. Si el nombre ya aparece claramente en el pedido original, no lo vuelvas a preguntar.
+PRIMERO CLASIFICÁ LA INTENCIÓN DEL MENSAJE ANTES DE PLANIFICAR:
+- Si el usuario saluda ("hola", "buenas"), charla ("¿cómo estás?", "gracias"), hace una pregunta informativa, pide una explicación, opinión o conversación que NO requiera modificar ni ejecutar nada en servicios externos, respondé directamente y de forma natural. Usá "LISTO: ..." y actions vacías. No generes un plan de trabajo, no ofrezcas crear repositorios ni muestres opciones de acciones. No hagas preguntas de configuración para una charla normal.
+- Si el usuario pide explícitamente crear, editar, borrar, publicar, configurar, buscar o ejecutar algo en un servicio/recurso, tratá eso como una tarea y prepará las acciones necesarias. Preguntá solo si falta un dato imprescindible que no puedas inferir con seguridad.
+- Si el usuario pide ayuda para pensar o planificar, pero no pide ejecutar cambios, ayudalo conversando y no prepares acciones externas.
+- No confundas mencionar una herramienta, repositorio o servicio en una pregunta con autorizar una acción sobre él.
+Trabajá sola hasta terminar TODO el pedido de acción; no te frenes después de un paso ni pidas permiso para seguir. En cada turno devolvé en "actions" todas las acciones del próximo paso (podés mandar varias, en orden). Las acciones normales se aprueban y ejecutan solas y en el turno siguiente recibís su resultado real: nunca digas que algo se hizo antes de verlo en los resultados. Borrados de repositorios: si el pedido es borrar/eliminar un repositorio y falta el nombre exacto, hacé UNA sola pregunta: "¿Cuál es el nombre exacto del repositorio que querés borrar?". No pidas URL, propietario, motivo, visibilidad, rama, descripción ni otros datos; la cuenta es knmollpy. Cuando recibas el nombre, usá exactamente "knmollpy/nombre" en delete_repository y seguí sin volver a preguntar. La solicitud original de borrado más el nombre exacto indicado por el dueño autorizan ese borrado: no pidas una segunda confirmación. Si el nombre ya aparece claramente en el pedido original, no lo vuelvas a preguntar.
 Borrados de archivos/rutas, SQL y cambios en ${LIVE_REPO} (la web en vivo) siguen requiriendo aprobación del dueño.
 "answer" tiene que empezar con UNA etiqueta:
 - "SIGO: ..." cuando mandás acciones y todavía falta trabajo.
@@ -737,7 +742,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     betaSidebarRecent.replaceChildren(...rows);
   }
   function switchThread(id) {
-    if (sendButton.disabled) { setStatus('Esperá a que Beta termine de responder para cambiar de chat.', 'error'); return; }
+    if (sendButton.disabled || autonomousRun) { setStatus('Esperá a que Beta termine o pausá el trabajo antes de cambiar de chat.', 'error'); return; }
     currentThreadId = id;
     saveThreads();
     restoreHistory();
@@ -745,7 +750,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     input.focus();
   }
   function createThread() {
-    if (sendButton.disabled) { setStatus('Esperá a que Beta termine de responder.', 'error'); return; }
+    if (sendButton.disabled || autonomousRun) { setStatus('Esperá a que Beta termine o pausá el trabajo antes de cambiar de chat.', 'error'); return; }
     const empty = threads.find(t => t.title === 'Nuevo chat');
     if (empty) { switchThread(empty.id); return; }
     const thread = { id: newThreadId(), title: 'Nuevo chat', updatedAt: Date.now() };
@@ -1282,19 +1287,51 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   const modeSelect = $('#beta-mode');
   const pendingAgentRuns = {};
   let autonomousRun = null;
-  const stopButton = document.createElement('button');
-  stopButton.type = 'button';
-  stopButton.className = 'secondary beta-agent-stop hidden';
-  stopButton.textContent = 'Detener';
-  stopButton.title = 'Detener el modo autónomo';
-  $('#beta-form .beta-tools')?.append(stopButton);
-  stopButton.addEventListener('click', () => {
-    if (!autonomousRun) return;
-    autonomousRun.stopped = true;
-    autonomousRun.controller.abort();
-    autonomousRun.waiting?.({ ok: false, stopped: true, error: 'Detenido por el dueño.' });
-    setStatus('Deteniendo el modo autónomo…');
-  });
+  function setComposerMode(mode) {
+    if (mode === 'working') {
+      sendButton.disabled = false;
+      sendButton.classList.add('beta-send-pause');
+      sendButton.textContent = '■';
+      sendButton.setAttribute('aria-label', 'Pausar el trabajo de Beta');
+      sendButton.title = 'Pausar y agregar otra instrucción';
+    } else {
+      sendButton.classList.remove('beta-send-pause');
+      sendButton.textContent = '↑';
+      sendButton.setAttribute('aria-label', 'Enviar mensaje');
+      sendButton.title = mode === 'paused' ? 'Enviar corrección y reanudar' : 'Enviar mensaje';
+      sendButton.disabled = mode === 'busy';
+    }
+  }
+
+  function resumeAutonomous(run, instruction = '') {
+    if (!run || !run.paused) return;
+    run.paused = false;
+    run.pauseRequested = false;
+    run.controller = new AbortController();
+    setComposerMode('busy');
+    setStatus('Continuando el modo autónomo…');
+    run.resumeResolve?.(String(instruction || '').trim());
+    run.resumeResolve = null;
+  }
+
+  async function pauseAtSafePoint(run) {
+    if (!run.pauseRequested && !run.paused) return '';
+    run.pauseRequested = false;
+    run.paused = true;
+    setComposerMode('paused');
+    setStatus('Beta está pausada. Podés escribir una corrección o instrucción y enviarla para continuar.');
+    activity('Modo autónomo pausado por el dueño.', 'active');
+    const instruction = await new Promise(resolve => { run.resumeResolve = resolve; });
+    if (instruction && run.state?.loopHistory) {
+      run.state.loopHistory.push({ role: 'user', content: `CORRECCIÓN / INSTRUCCIÓN DEL DUEÑO: ${instruction}` });
+      run.state.loopHistory = run.state.loopHistory.slice(-12);
+    }
+    run.paused = false;
+    setComposerMode('busy');
+    return instruction ? `INSTRUCCIÓN NUEVA DEL DUEÑO (prioridad alta):\n${instruction}\nIncorporala al pedido original y continuá desde el estado actual, sin repetir acciones ya completadas.` : '';
+  }
+
+  // El botón de envío cambia a pausa mientras Beta trabaja; no hace falta un control aparte.
   try {
     const savedMode = localStorage.getItem('mediachafa-beta-mode');
     if (modeSelect && savedMode && [...modeSelect.options].some(option => option.value === savedMode)) modeSelect.value = savedMode;
@@ -1331,8 +1368,16 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const node = addMessage('assistant', `Necesito tu aprobación antes de seguir: ${proposal.summary}`);
       node.querySelector('.beta-copy-btn')?.remove();
       let settled = false;
-      const finish = (outcome) => { if (settled) return; settled = true; run.waiting = null; resolve(outcome); };
+      const finish = (outcome) => {
+        if (settled) return;
+        settled = true;
+        run.waiting = null;
+        run.waitingKind = null;
+        if (outcome?.paused) for (const button of node.querySelectorAll('button')) button.disabled = true;
+        resolve(outcome);
+      };
       run.waiting = finish;
+      run.waitingKind = 'approval';
       renderProposals(node, [proposal], expiresInSeconds, { onResult: (_proposal, outcome) => finish(outcome) });
       setStatus('Beta está esperando tu aprobación para seguir trabajando.');
       activity('Esperando tu aprobación para seguir.', 'active');
@@ -1361,6 +1406,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         if (settled) return;
         settled = true;
         run.waiting = null;
+        run.waitingKind = null;
         for (const button of controls.querySelectorAll('button')) button.disabled = true;
         customInput.disabled = true;
         if (result?.answer) {
@@ -1417,13 +1463,15 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       if (isRepoNameQuestion) controls.append(customInput);
       else controls.append(optionRow, alternativeButton, customInput);
       node.append(controls);
+      run.waitingKind = 'question';
       run.waiting = (outcome) => {
         if (settled) return;
         settled = true;
         run.waiting = null;
+        run.waitingKind = null;
         for (const button of controls.querySelectorAll('button')) button.disabled = true;
         customInput.disabled = true;
-        resolve(outcome?.stopped ? { stopped: true } : { answer: '' });
+        resolve(outcome?.stopped ? { stopped: true } : outcome?.paused ? { paused: true } : { answer: '' });
       };
       setStatus('Beta está esperando tu decisión. Elegí una opción o escribí tu propia respuesta.');
       activity('Esperando tu respuesta para continuar.', 'active');
@@ -1441,10 +1489,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
 
   async function runAutonomous({ state, firstMessage, attachments, model }) {
-    const run = { stopped: false, controller: new AbortController(), waiting: null };
+    const run = { stopped: false, pauseRequested: false, paused: false, inFlight: false, controller: new AbortController(), waiting: null, waitingKind: null, state, resumeResolve: null };
     autonomousRun = run;
-    sendButton.disabled = true;
-    stopButton.classList.remove('hidden');
+    setComposerMode('working');
     const progress = addMessage('assistant', 'Trabajando en modo autónomo…');
     progress.classList.add('beta-working');
     progress.querySelector('.beta-copy-btn')?.remove();
@@ -1467,18 +1514,41 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     try {
       while (state.turn < state.maxTurns) {
         if (run.stopped) { outcome = { kind: 'stopped', text: '' }; break; }
+        if (run.pauseRequested || run.paused) {
+          const resumed = await pauseAtSafePoint(run);
+          if (resumed) message = resumed;
+          if (run.stopped) { outcome = { kind: 'stopped', text: '' }; break; }
+        }
         state.turn += 1;
         step(`Turno ${state.turn}: pensando el próximo paso…`);
         let data;
         for (let attempt = 0; ; attempt++) {
-          try { data = await agentChat(state, run, agent.buildTurnMessage(state, message), state.turn === 1 && attempt === 0 ? attachments : {}); break; }
-          catch (error) {
-            if (run.stopped || error.name === 'AbortError') throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
+          try {
+            run.inFlight = true;
+            data = await agentChat(state, run, agent.buildTurnMessage(state, message), state.turn === 1 && attempt === 0 ? attachments : {});
+            run.inFlight = false;
+            break;
+          } catch (error) {
+            run.inFlight = false;
+            if (run.stopped) throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
+            if (run.pauseRequested && error.name === 'AbortError') {
+              const resumed = await pauseAtSafePoint(run);
+              state.turn = Math.max(0, state.turn - 1);
+              if (resumed) message = resumed;
+              data = null;
+              break;
+            }
+            if (error.name === 'AbortError') throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
             if (!agent.shouldRetry(error.status, attempt, model)) throw error;
             step(`El modelo no respondió (${error.status || 'sin conexión'}); reintento en unos segundos…`);
             await waitMs(attempt === 0 ? 4000 : 10000, run);
+            if (run.pauseRequested) {
+              const resumed = await pauseAtSafePoint(run);
+              if (resumed) message = resumed;
+            }
           }
         }
+        if (!data) continue;
         if (data.modelName) lastModelName = data.modelName;
         const classified = agent.classifyAnswer(data.answer);
         const proposals = Array.isArray(data.proposals) ? data.proposals : [];
@@ -1486,7 +1556,13 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         const results = [];
         for (const error of data.proposalErrors || []) results.push(`❌ No se pudo preparar una acción: ${error}`);
         let failed = false;
+        let replanAfterPause = false;
         for (let i = 0; i < proposals.length; i++) {
+          if (run.pauseRequested || run.paused) {
+            const resumed = await pauseAtSafePoint(run);
+            if (resumed) message = resumed;
+          }
+          if (run.stopped) throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
           const proposal = proposals[i];
           const label = `${proposal.provider} · ${String(proposal.type || '').replaceAll('_', ' ')}`;
           if (failed) { results.push(`⏸ ${label}: no se ejecutó porque falló un paso anterior.`); continue; }
@@ -1507,6 +1583,18 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           } else if (agent.needsOwnerApproval(proposal)) {
             step(`Esperando tu aprobación: ${proposal.summary.slice(0, 160)}`);
             result = await askOwnerToApprove(proposal, run, data.expiresInSeconds || 600);
+            if (result.paused || run.pauseRequested) {
+              const resumed = await pauseAtSafePoint(run);
+              if (resumed) {
+                message = `La propuesta anterior quedó pausada y NO fue aprobada ni ejecutada. Reevaluá el pedido completo con esta nueva instrucción: ${resumed}`;
+                state.loopHistory.push({ role: 'assistant', content: `La propuesta pendiente no se aprobó y no se ejecutó: ${proposal.summary}. El dueño agregó una instrucción; revisá si corresponde modificar o descartar la propuesta.` });
+                state.loopHistory = state.loopHistory.slice(-12);
+                replanAfterPause = true;
+                break;
+              }
+              i -= 1;
+              continue;
+            }
             if (result.stopped) throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
           } else {
             step(`Ejecutando: ${proposal.summary.slice(0, 160)}`);
@@ -1521,6 +1609,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
             results.push(`${result.denied ? '⛔' : '❌'} ${label}: ${result.error}`);
             step(`${result.denied ? 'Denegado' : 'Falló'}: ${result.error}`, result.denied ? 'done' : 'error');
           }
+        }
+        if (replanAfterPause) continue;
+        if (run.pauseRequested) {
+          const resumed = await pauseAtSafePoint(run);
+          if (resumed) message = resumed;
+          continue;
         }
         const decision = agent.decideNext({ classified, proposalsCount: proposals.length, failed, emptyStreak: state.emptyStreak });
         if (agent.isRepositoryDeletionRequest(state.goal) && !state.deleteRepositoryName && proposals.some(item => item.type === 'delete_repository')) decision.kind = 'question';
@@ -1537,6 +1631,11 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           step(needsRepoName ? 'Esperando únicamente el nombre exacto del repositorio…' : 'La IA necesita tu decisión para seguir. Elegí una opción o escribí tu respuesta…');
           const reply = await askOwnerQuestion(questionToShow, run);
           if (reply.stopped || run.stopped) { outcome = { kind: 'stopped', text: '' }; break; }
+          if (reply.paused || run.pauseRequested) {
+            const resumed = await pauseAtSafePoint(run);
+            if (resumed) message = resumed;
+            continue;
+          }
           if (needsRepoName) {
             const exactName = String(reply.rawAnswer || '').trim();
             if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(exactName)) {
@@ -1567,8 +1666,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     } finally {
       autonomousRun = null;
       run.waiting = null;
-      stopButton.classList.add('hidden');
-      sendButton.disabled = false;
+      run.resumeResolve = null;
+      setComposerMode('idle');
     }
     progress.remove();
     const finalText = agent.finalMessage(outcome, state);
@@ -1615,7 +1714,26 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (autonomousRun) { setStatus('Beta está trabajando. Tocá "Detener" si querés frenarla.', 'error'); return; }
+    if (autonomousRun?.paused) {
+      const instruction = input.value.trim();
+      if (!instruction) { setStatus('Escribí la corrección o instrucción que querés agregar antes de continuar.', 'error'); input.focus(); return; }
+      addMessage('user', instruction);
+      input.value = '';
+      history.push({ role: 'user', content: instruction });
+      history = history.slice(-30);
+      saveHistory();
+      resumeAutonomous(autonomousRun, instruction);
+      return;
+    }
+    if (autonomousRun) {
+      if (autonomousRun.pauseRequested) return;
+      autonomousRun.pauseRequested = true;
+      setComposerMode('busy');
+      setStatus('Pausando en un punto seguro…');
+      if (autonomousRun.waitingKind === 'question' || autonomousRun.waitingKind === 'approval') autonomousRun.waiting?.({ paused: true });
+      else if (autonomousRun.inFlight) autonomousRun.controller.abort();
+      return;
+    }
     const prompt = input.value.trim();
     if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
     const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
