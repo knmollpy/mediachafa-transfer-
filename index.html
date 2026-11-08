@@ -1488,6 +1488,36 @@ async function loadGoogleDriveStatus() {
   </script>
   <script src="/app-source/beta-visual-check.js?v=20261107-fotos" defer></script>
   <script src="/app-source/beta.js?v=20261107-links-copy" defer></script>
+  <style id="mobile-fit">
+    /* Ajuste para celulares y tablets: nada debe ser más ancho que la pantalla. */
+    @media(max-width:860px){
+      html,body{max-width:100%;overflow-x:hidden}
+      #app .layout>*,#app .ps4-layout>*,#app .content,#app .sidebar,#app .ps4-sidebar{min-width:0;max-width:100%}
+      #app .sidebar-list,#app .ps4-folder-list{max-width:100%;scrollbar-width:none}#app .sidebar-list .folder-row{display:flex;align-items:center;gap:4px;flex:0 0 auto}#app .sidebar-list .folder-edit{flex:0 0 auto;margin:0}
+      #app img,#app video,#app iframe,#app table{max-width:100%}
+      #app .file-name,#app .file-desc,#app .content-title{overflow-wrap:anywhere}
+    }
+    @media(max-width:600px){
+      #app .topbar{grid-template-columns:minmax(0,1fr);grid-template-areas:"brand" "actions" "nav";gap:8px;padding:10px 12px}
+      #app .topbar>.brand{display:flex;align-items:center;gap:9px;font-size:17px;white-space:nowrap;overflow:hidden}
+      #app .topright{display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:6px;width:100%}
+      #app .topright::-webkit-scrollbar,#app .topnav::-webkit-scrollbar,#app .sidebar-list::-webkit-scrollbar{display:none}
+      #app .topright>*{flex:0 0 auto;white-space:nowrap}
+      #app .topright .theme-toggle,#app .topright .navitem,#app .topright .logout{min-height:36px;padding:7px 11px;font-size:12px;border-radius:9px}
+      #app .topbar{position:relative}#app .topright .logout{position:absolute;top:13px;right:12px;border:1px solid var(--line)}#app .topright .navitem{border:1px solid var(--line)}#app .topbar>.brand{padding-right:120px}
+      #app .topnav{display:flex;overflow-x:auto;scrollbar-width:none;gap:4px}
+      #app .topnav .navitem{flex:1 0 auto;min-width:0;overflow:visible;text-overflow:clip;white-space:nowrap;padding:8px 12px;text-align:center}
+      #app .welcome-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+      #app .welcome-actions>a{flex:1 1 auto;justify-content:center}
+      #app.beta-mode #beta-panel .beta-sidebar{flex-wrap:wrap!important;gap:8px!important;height:auto!important;padding:10px!important}
+      #app.beta-mode #beta-panel .beta-sidebar>.beta-nav{order:3;flex:1 1 100%!important;width:100%!important;max-width:100%!important;overflow-x:auto!important;scrollbar-width:none}
+      #app.beta-mode #beta-panel .beta-nav button{flex:1 0 auto!important;white-space:nowrap}
+      #app.beta-mode #beta-panel .beta-composer{padding:12px!important;border-radius:18px!important}
+      #app.beta-mode #beta-panel .beta-compose-bottom{flex-wrap:wrap!important;gap:8px!important}
+      #app.beta-mode #beta-panel .beta-compose-bottom .beta-tools{flex-wrap:wrap!important;min-width:0!important;max-width:100%!important;margin-right:0!important;flex:1 1 0!important}#app.beta-mode #beta-panel .beta-compose-bottom>button:last-child{align-self:flex-end;flex:0 0 auto}
+      #app.beta-mode #beta-panel .beta-prompt-title{font-size:21px!important}
+    }
+  </style>
 </body>
 </html>
 
