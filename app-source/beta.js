@@ -159,6 +159,131 @@ Para una página web pública: create_repository con visibility "public", despu�
   modelControl.append(modelLabel, modelSelect, modelHealthNote, modelCount, modelProbe);
   const betaHeader = $('#beta-panel .beta-header');
   betaHeader.insertBefore(modelControl, betaHeader.querySelector('.beta-nav'));
+  // Zona de trabajo: cola persistente en Supabase, independiente del historial del chat.
+  const betaNav = betaHeader.querySelector('.beta-nav');
+  const workTab = document.createElement('button');
+  workTab.type = 'button';
+  workTab.dataset.betaView = 'work';
+  workTab.textContent = 'Zona de trabajo';
+  betaNav.append(workTab);
+  const workView = document.createElement('section');
+  workView.className = 'beta-view';
+  workView.id = 'beta-work-view';
+  workView.setAttribute('aria-label', 'Zona de trabajo de AI Task Hunter');
+  workView.innerHTML = `
+    <div class="beta-work-zone">
+      <div class="beta-work-zone-head"><div><h2>Zona de trabajo</h2><p>Asigná tareas a una IA y conservá su registro aunque cierres Beta.</p></div><button type="button" class="secondary" id="beta-work-refresh">Actualizar</button></div>
+      <div class="beta-work-disclaimer" role="status">La cola y los registros ya son persistentes. La ejecución autónoma en segundo plano todavía está pendiente de activar; no se enviará ninguna tarea a una plataforma ni se simulará trabajo.</div>
+      <form id="beta-work-form" class="beta-work-form">
+        <label>Trabajo o tarea<input id="beta-work-title" maxlength="180" required placeholder="Ej. Transcribir y revisar un audio"></label>
+        <label>Instrucciones<textarea id="beta-work-description" maxlength="12000" rows="4" placeholder="Describí el encargo, formato y requisitos de calidad…"></textarea></label>
+        <div class="beta-work-fields">
+          <label>Pago estimado<input id="beta-work-reward" type="number" min="0" step="0.01" placeholder="Sin confirmar"></label>
+          <label>Moneda<select id="beta-work-currency"><option>USD</option><option>ARS</option><option>EUR</option></select></label>
+          <label>Tiempo estimado (minutos)<input id="beta-work-duration" type="number" min="1" max="10080" step="1" placeholder="Ej. 45"></label>
+        </div>
+        <label>IA asignada<select id="beta-work-model"></select><small>MediaChafa Pro queda seleccionada y recomendada por defecto.</small></label>
+        <button type="submit" class="add-btn" id="beta-work-start">Guardar tarea</button>
+      </form>
+      <div class="beta-work-summary" id="beta-work-summary"></div>
+      <div class="beta-work-list-head"><h3>Mis trabajos</h3><span id="beta-work-count">Cargando…</span></div>
+      <div id="beta-work-list" class="beta-work-list" aria-live="polite"><p class="beta-work-empty">Cargando trabajos guardados…</p></div>
+    </div>`;
+  const betaWorkspace = $('#beta-panel .beta-workspace');
+  betaWorkspace.append(workView);
+  const workStyle = document.createElement('style');
+  workStyle.textContent = `
+    #beta-panel .beta-work-zone{width:min(900px,100%);margin:0 auto;padding:22px 18px 40px;overflow:auto;color:#f3f4f6}
+    #beta-panel .beta-work-zone-head,#beta-panel .beta-work-list-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    #beta-panel .beta-work-zone h2{font-size:22px;margin:0 0 5px}#beta-panel .beta-work-zone h3{font-size:15px;margin:0}
+    #beta-panel .beta-work-zone p,#beta-panel .beta-work-zone small{color:#a1a1aa;font-size:12px}
+    #beta-panel .beta-work-disclaimer{margin:18px 0;padding:11px 13px;border:1px solid rgba(245,158,11,.35);background:rgba(120,80,10,.12);border-radius:10px;color:#fcd9a0;font-size:12px;line-height:1.5}
+    #beta-panel .beta-work-form{display:grid;gap:12px;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(255,255,255,.025)}
+    #beta-panel .beta-work-form label{display:grid;gap:6px;font-size:12px;color:#ddd}
+    #beta-panel .beta-work-form input,#beta-panel .beta-work-form textarea,#beta-panel .beta-work-form select{width:100%;min-width:0;box-sizing:border-box;padding:10px 11px;border:1px solid rgba(255,255,255,.14);border-radius:9px;background:#171717;color:#f5f5f5;font:inherit}
+    #beta-panel .beta-work-fields{display:grid;grid-template-columns:1fr 100px 1fr;gap:10px}
+    #beta-panel .beta-work-form small{font-size:11px;color:#a1a1aa}
+    #beta-panel .beta-work-summary{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+    #beta-panel .beta-work-summary span{padding:7px 10px;border:1px solid rgba(255,255,255,.1);border-radius:9px;font-size:11px;color:#d4d4d8}
+    #beta-panel .beta-work-list-head{margin:22px 0 10px}
+    #beta-panel .beta-work-card{padding:14px;margin:9px 0;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.025)}
+    #beta-panel .beta-work-card-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+    #beta-panel .beta-work-card strong{font-size:13px}#beta-panel .beta-work-card p{white-space:pre-wrap;overflow-wrap:anywhere}
+    #beta-panel .beta-work-card-meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+    #beta-panel .beta-work-card-meta span{font-size:10px;color:#c4c4c8;background:rgba(255,255,255,.06);padding:5px 7px;border-radius:7px}
+    #beta-panel .beta-work-empty{padding:18px;text-align:center;border:1px dashed rgba(255,255,255,.14);border-radius:12px}
+    @media(max-width:600px){#beta-panel .beta-work-fields{grid-template-columns:1fr 1fr}#beta-panel .beta-work-fields label:last-child{grid-column:1/-1}#beta-panel .beta-work-zone{padding:14px 10px 28px}}
+  `;
+  document.head.append(workStyle);
+  const workModelSelect = $('#beta-work-model');
+  function renderWorkModels() {
+    const ownModels = modelCatalog.filter(model => model.own && ['mediachafa::pro','mediachafa::codigo','mediachafa::rapida'].includes(model.id));
+    const options = ownModels.map(model => new Option(`${model.id === 'mediachafa::pro' ? '★ RECOMENDADA · ' : ''}${model.name}`, model.id));
+    if (!options.some(option => option.value === 'mediachafa::pro')) options.unshift(new Option('★ RECOMENDADA · MediaChafa Pro', 'mediachafa::pro'));
+    workModelSelect.replaceChildren(...options);
+    workModelSelect.value = 'mediachafa::pro';
+  }
+  renderWorkModels();
+  const workList = $('#beta-work-list');
+  const workCount = $('#beta-work-count');
+  const workSummary = $('#beta-work-summary');
+  function formatWorkDuration(seconds) {
+    const value = Math.max(0, Number(seconds) || 0);
+    const h = Math.floor(value / 3600), m = Math.floor(value % 3600 / 60);
+    return h ? `${h} h ${m} min` : `${m} min`;
+  }
+  function renderWorkTasks(tasks = []) {
+    const active = tasks.filter(task => ['running','waiting'].includes(task.status));
+    const paid = tasks.filter(task => task.payout_status === 'paid').reduce((sum, task) => sum + Number(task.actual_reward || 0), 0);
+    const pending = tasks.filter(task => ['pending','approved'].includes(task.payout_status)).reduce((sum, task) => sum + Number(task.actual_reward || 0), 0);
+    workSummary.replaceChildren();
+    [`${tasks.length} trabajos registrados`, `${active.length} en ejecución`, `Pagado confirmado: ${paid.toFixed(2)}`, `Pagos pendientes: ${pending.toFixed(2)}`].forEach(label => { const chip=document.createElement('span');chip.textContent=label;workSummary.append(chip); });
+    workCount.textContent = `${tasks.length} en total`;
+    if (!tasks.length) { workList.innerHTML = '<p class="beta-work-empty">Todavía no hay trabajos. Podés registrar el primero arriba.</p>'; return; }
+    workList.replaceChildren();
+    for (const task of tasks) {
+      const card=document.createElement('article');card.className='beta-work-card';
+      const top=document.createElement('div');top.className='beta-work-card-top';
+      const title=document.createElement('strong');title.textContent=task.title;
+      const state=document.createElement('span');state.textContent=({queued:'En cola · motor pendiente',running:'Trabajando',waiting:'Esperando',paused:'Pausado',completed:'Terminado',submitted:'Entregado',accepted:'Aceptado',rejected:'Rechazado',failed:'Error',cancelled:'Cancelado'}[task.status]||task.status);
+      top.append(title,state);card.append(top);
+      if(task.description){const desc=document.createElement('p');desc.textContent=task.description;card.append(desc);}
+      const meta=document.createElement('div');meta.className='beta-work-card-meta';
+      const modelName=({ 'mediachafa::pro':'MediaChafa Pro','mediachafa::codigo':'MediaChafa Código','mediachafa::rapida':'MediaChafa Rápida' })[task.assigned_model]||task.assigned_model;
+      [modelName,`Estimado: ${task.estimated_reward == null ? 'sin confirmar' : Number(task.estimated_reward).toFixed(2)+' '+task.estimated_currency}`,`Real: ${task.actual_reward == null ? 'sin confirmar' : Number(task.actual_reward).toFixed(2)+' '+task.actual_currency}`,`Pago: ${task.payout_status}`,`Tiempo activo: ${formatWorkDuration(task.active_seconds)}`,`Tiempo total: ${formatWorkDuration(task.elapsed_seconds)}`].forEach(value=>{const chip=document.createElement('span');chip.textContent=value;meta.append(chip);});
+      card.append(meta);
+      if(task.status==='queued'){
+        const note=document.createElement('p');note.textContent='Guardado de forma persistente. Todavía no se ejecuta: falta activar el motor de trabajos en segundo plano.';card.append(note);
+      }
+      workList.append(card);
+    }
+  }
+  async function refreshWorkTasks() {
+    workCount.textContent='Actualizando…';
+    try { const data=await api('/work/tasks');renderWorkTasks(Array.isArray(data.tasks)?data.tasks:[]); }
+    catch(error){workList.textContent=error.message;workCount.textContent='No disponible';}
+  }
+  $('#beta-work-refresh').addEventListener('click',refreshWorkTasks);
+  workTab.addEventListener('click',refreshWorkTasks);
+  $('#beta-work-form').addEventListener('submit',async event=>{
+    event.preventDefault();
+    const button=$('#beta-work-start');button.disabled=true;button.textContent='Guardando…';
+    try {
+      const reward=$('#beta-work-reward').value;
+      const minutes=Number($('#beta-work-duration').value);
+      const result=await api('/work/tasks',{method:'POST',body:JSON.stringify({
+        title:$('#beta-work-title').value,description:$('#beta-work-description').value,
+        assigned_model:workModelSelect.value,estimated_reward:reward===''?null:Number(reward),
+        estimated_currency:$('#beta-work-currency').value,
+        estimated_duration_seconds:minutes>0?Math.floor(minutes*60):null
+      })});
+      $('#beta-work-form').reset();renderWorkModels();
+      await refreshWorkTasks();
+      setStatus(result.execution==='not_started'?'Tarea guardada. La ejecución en segundo plano aún no está activada.':'Tarea guardada.');
+    } catch(error){setStatus(error.message,'error');}
+    finally{button.disabled=false;button.textContent='Guardar tarea';}
+  });
+
 
   // Build missing cards at runtime too, so cached HTML shells still support
   // every provider and never strand the owner on the old OpenRouter-only form.
