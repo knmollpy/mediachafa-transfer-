@@ -1872,7 +1872,7 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
       providerModelCatalog("openrouter", token),
       openRouterQuota(token),
     ]);
-    if (quota.providerRemaining < 5) return [];
+    if (quota.providerRemaining <= 0) return [];
     const eligible = catalog
       .filter((model) => !needsVision || model.vision)
       .map((model) => ({
@@ -2090,7 +2090,7 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
     rotations: collaboration.attempts.length,
     transcript: collaboration.transcript,
     thinkingLevel: config.thinkingLevel,
-    unlimited: true,
+    unlimited: false,
     usedToday: collaboration.workersAiUsed,
     collaboration: collaboration.collaboration,
   }, 200, origin);
