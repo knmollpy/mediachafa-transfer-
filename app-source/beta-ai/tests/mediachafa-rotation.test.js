@@ -22,7 +22,7 @@ globalThis.fetch = async (input) => {
 const chat = (env, model, extra = {}) => worker.fetch(new Request(`${origin}/chat`, {
   method: "POST",
   headers: { Origin: origin, Authorization: "Bearer t", "Content-Type": "application/json" },
-  body: JSON.stringify({ message: "hacé una tarea de código", model, ...extra }),
+  body: JSON.stringify({ message: "hacé una tarea de código", model, mode: "autonomous", ...extra }),
 }), env);
 
 test("status lists the three MediaChafa models first, starred and unlimited", async () => {
