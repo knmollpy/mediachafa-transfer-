@@ -38,6 +38,7 @@ jobs:
           node --check beta-ai/worker.js
           node --check worker.js
           node --check task-hunter/worker.js
+          node --check change-review/worker.js
       - name: Run Beta agent integration tests
         run: npm run test:beta-agent
       - name: Install Playwright test runner
@@ -88,11 +89,14 @@ jobs:
             -H "Authorization: Bearer $OIDC_TOKEN" -H "Content-Type: application/json" \
             --data "$(jq -n --argjson number "$PR_NUMBER" --arg sha "$HEAD_SHA" '{pull_number:$number,head_sha:$sha}')")"
           REVIEW_ID="$(echo "$START" | jq -r '.review_id // empty')"
-          if [ -z "$REVIEW_ID" ]; then echo "El revisor no inició; publicación bloqueada: $START"; exit 1; fi
-          for attempt in $(seq 1 90); do
-            RESULT="$(curl --silent --show-error "$REVIEW_URL/review/$REVIEW_ID?pull_number=$PR_NUMBER" -H "Authorization: Bearer $OIDC_TOKEN")"
+          POLL_TOKEN="$(echo "$START" | jq -r '.poll_token // empty')"
+          if [ -z "$REVIEW_ID" ] || [ -z "$POLL_TOKEN" ]; then echo "El revisor no inició; publicación bloqueada: $START"; exit 1; fi
+          for attempt in $(seq 1 70); do
+            RESULT="$(curl --silent --show-error "$REVIEW_URL/review/$REVIEW_ID?pull_number=$PR_NUMBER" -H "Authorization: Bearer $POLL_TOKEN")"
             STATUS="$(echo "$RESULT" | jq -r '.status // "blocked"')"
-            if [ "$STATUS" = "approved" ]; then
+            RESULT_SHA="$(echo "$RESULT" | jq -r '.head_sha // empty')"
+            RESULT_PR="$(echo "$RESULT" | jq -r '.pull_number // 0')"
+            if [ "$STATUS" = "approved" ] && [ "$RESULT_SHA" = "$HEAD_SHA" ] && [ "$RESULT_PR" = "$PR_NUMBER" ]; then
               echo "$RESULT" | jq .
               exit 0
             fi
