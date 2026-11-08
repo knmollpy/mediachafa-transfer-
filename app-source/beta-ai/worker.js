@@ -895,6 +895,7 @@ async function agentModelTurn(env, state, requestSignal) {
     { role: "user", content: promptText },
   ];
   const attempts = [];
+  let usedWorkersAi = false;
   for (const candidate of candidates) {
     if (requestSignal?.aborted) {
       const abortError = new Error("La ejecución fue interrumpida por el usuario.");
@@ -2266,6 +2267,7 @@ async function reviewWithPeer({ env, userId, variant, usedModels, messages, draf
     } catch (error) {
       outcome = { ok: false, status: 503, detail: String(error?.message || error) };
     }
+    if (candidate.provider === "workersai") usedWorkersAi = true;
     if (!outcome.ok) {
       attempts.push(`${candidate.name}: HTTP ${outcome.status} ${String(outcome.detail || "").slice(0, 100)}`);
       continue;
@@ -2275,9 +2277,9 @@ async function reviewWithPeer({ env, userId, variant, usedModels, messages, draf
       attempts.push(`${candidate.name}: respuesta de revisión inválida`);
       continue;
     }
-    return { ok: true, variant, model: candidate.name, provider: candidate.provider, review };
+    return { ok: true, variant, model: candidate.name, provider: candidate.provider, review, usedWorkersAi };
   }
-  return { ok: false, variant, error: attempts.length ? attempts.slice(-4).join(" · ") : "No hay un modelo gratuito independiente disponible." };
+  return { ok: false, variant, error: attempts.length ? attempts.slice(-4).join(" · ") : "No hay un modelo gratuito independiente disponible.", usedWorkersAi };
 }
 
 async function mediachafaChat({ request, env, user, origin, payload, prompt, image, history, autonomous, variant }) {
@@ -2349,7 +2351,9 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
       const peerResults = await Promise.all(peerVariants.map((peerVariant) =>
         reviewWithPeer({ env, userId: user.id, variant: peerVariant, usedModels, messages, draft, image, promptText, maxTokens: 1100, fetchImpl })
       ));
-            const decision = teamReviewDecision(peerResults.filter((item) => item.ok).map((item) => item.review));
+            workersAiUsed += peerResults.filter((item) => item.usedWorkersAi).length;
+      if (workersAiUsed > 0) await env.BETA_LIMITS.put(counterKey, String(workersAiUsed), { expirationTtl: 172800 });
+      const decision = teamReviewDecision(peerResults.filter((item) => item.ok).map((item) => item.review));
       const peerFailures = peerResults.filter((item) => !item.ok).map((item) => item.error);
       if (peerFailures.length || !decision.approved) {
         const details = [...peerFailures, ...(decision.findings || []).map((item) => item.detail)].filter(Boolean).slice(0, 4);
