@@ -28,6 +28,7 @@ let activeBranch = "";
 let deploymentRequest;
 let memoryRows = [{ memory_key: "response_style", memory_value: { text: "Respuestas breves en español." }, user_confirmed: true, reusable: true, sensitive: false }];
 let savedMemory = null;
+let openedPrBody = null;
 let modelGate = null;
 const modelPromptMessages = [];
 const originalFetch = globalThis.fetch;
@@ -86,7 +87,7 @@ globalThis.fetch = async (input, init = {}) => {
   if (url === "https://api.github.com/repos/knmollpy/mediachafa-transfer-/git/commits" && init.method === "POST") { createdCommit = true; commitCount++; return Response.json({ sha: "new-commit" }); }
   if (url.endsWith(`/git/refs/heads/${activeBranch}`) && init.method === "PATCH") return Response.json({ ref: activeBranch });
   if (url.includes("/pulls?state=open&head=knmollpy:")) return Response.json([]);
-  if (url.endsWith("/pulls") && init.method === "POST") return Response.json({ number: 5, html_url: "https://github.com/knmollpy/mediachafa-transfer-/pull/5", state: "open", merged: false });
+  if (url.endsWith("/pulls") && init.method === "POST") { openedPrBody = JSON.parse(init.body).body; return Response.json({ number: 5, html_url: "https://github.com/knmollpy/mediachafa-transfer-/pull/5", state: "open", merged: false }); }
   if (url.endsWith("/pulls/5")) return Response.json({ number: 5, html_url: "https://github.com/knmollpy/mediachafa-transfer-/pull/5", state: "closed", merged: true, head: { sha: "new-commit" }, merge_commit_sha: "merge-sha" });
   if (url.endsWith("/issues/5/comments?per_page=100")) return Response.json([]);
   if (url.endsWith("/pulls/5/reviews?per_page=100")) return Response.json([]);
@@ -142,6 +143,12 @@ test("autonomous execution persists pause state and verifies isolated GitHub cha
   assert.equal(state.lastChecksSucceeded, true);
   assert.equal(state.lastPreviewSucceeded, true, JSON.stringify(state.lastToolResult));
   assert.equal(state.pullRequest.merged, true, JSON.stringify(state.pullRequest));
+  const manifestMatch = openedPrBody?.match(/<!--\\s*MEDIACHAFA_REVIEW_MANIFEST\\s*([\\s\\S]*?)\\s*-->/);
+  assert.ok(manifestMatch, "El PR debe incluir un manifiesto legible por el revisor independiente.");
+  const manifest = JSON.parse(manifestMatch[1]);
+  assert.equal(manifest.version, 1);
+  assert.ok(manifest.allowed_paths.includes("app-source/beta-ai/worker.js"));
+  assert.equal(manifest.allow_deletions, false);
   assert.equal(state.vercelDeployment.target, "preview");
   assert.equal(state.vercelDeployment.url, "mediachafa-preview.vercel.app");
   assert.equal(deploymentRequest.target, "preview");
