@@ -36,7 +36,8 @@ test("rotates to the next engine when Cloudflare reports quota exhausted", async
   const env = makeEnv(async (model) => {
     aiCalls.push(model);
     if (aiCalls.length === 1) throw new Error("4006: you have used up your daily free allocation of 10,000 neurons");
-    return { response: '{"answer":"Hola desde respaldo","actions":[]}' };
+    if (aiCalls.length <= 2) return { response: '{"answer":"Hola desde respaldo","actions":[]}' };
+    return { response: '{"decision":"approve","confidence":0.95,"findings":[]}' };
   });
   const res = await chat(env, "mediachafa::codigo");
   const data = await res.json();
@@ -45,11 +46,16 @@ test("rotates to the next engine when Cloudflare reports quota exhausted", async
   assert.equal(data.rotations, 1);
   assert.equal(aiCalls[0], "@cf/qwen/qwen2.5-coder-32b-instruct");
   assert.equal(aiCalls[1], "@cf/openai/gpt-oss-120b");
+  assert.equal(aiCalls.length, 4);
+  assert.equal(data.consensus.status, "approved");
 });
 
 test("images go only to engines that can see images", async () => {
   const seen = [];
-  const env = makeEnv(async (model) => { seen.push(model); return { response: '{"answer":"rojo","actions":[]}' }; });
+  const env = makeEnv(async (model) => {
+    seen.push(model);
+    return { response: seen.length === 1 ? '{"answer":"rojo","actions":[]}' : '{"decision":"approve","confidence":0.95,"findings":[]}' };
+  });
   const res = await chat(env, "mediachafa::pro", { image: { data: "data:image/png;base64,iVBORw0KGgo=" } });
   assert.equal(res.status, 200);
   assert.equal(seen[0], "@cf/meta/llama-4-scout-17b-16e-instruct");
@@ -57,7 +63,11 @@ test("images go only to engines that can see images", async () => {
 
 test("broken JSON answers never show raw code or JSON to the user", async () => {
   const broken = 'Lamento el error.\n\n{"answer":"Preparé el repositorio.","actions":[{"action":"addFile","params":{"content":"<html>"}},"addFile","params":{}}]}';
-  const env = makeEnv(async () => ({ response: broken }));
+  let calls = 0;
+  const env = makeEnv(async () => {
+    calls += 1;
+    return { response: calls === 1 ? broken : '{"decision":"approve","confidence":0.95,"findings":[]}' };
+  });
   const data = await (await chat(env, "mediachafa::rapida")).json();
   assert.equal(data.answer, "Preparé el repositorio.");
 });
