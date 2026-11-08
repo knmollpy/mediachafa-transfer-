@@ -1,5 +1,5 @@
 const APP_ORIGIN = "https://mediachafa-transfer.vercel.app";
-const APP_ORIGINS = new Set([APP_ORIGIN, "https://mediachafa-beta-live.pages.dev"]);
+
 const QWEN_IMAGE_SPACE = "https://daverrrr75-qwen-image-2-1-uncensored-aio-loras.hf.space";
 const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
 const SUPABASE_KEY = "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
@@ -1035,7 +1035,7 @@ async function storeActionProposal(env, userId, action) {
 
 function corsHeaders(origin) {
   return {
-    "Access-Control-Allow-Origin": APP_ORIGINS.has(origin) ? origin : "null",
+    "Access-Control-Allow-Origin": origin === APP_ORIGIN ? origin : "null",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type",
     "Access-Control-Max-Age": "86400",
@@ -1358,10 +1358,10 @@ export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
     if (request.method === "OPTIONS") {
-      if (!APP_ORIGINS.has(origin)) return new Response(null, { status: 403 });
+      if (!origin === APP_ORIGIN) return new Response(null, { status: 403 });
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
-    if (!APP_ORIGINS.has(origin)) return json({ error: "Origen no autorizado." }, 403, origin);
+    if (!origin === APP_ORIGIN) return json({ error: "Origen no autorizado." }, 403, origin);
     const url = new URL(request.url);
     if (url.pathname === "/status" && request.method === "GET") {
       const user = await requireOwner(request);
