@@ -24,7 +24,7 @@ const THINKING_LEVELS = [
 const TOOL_PROVIDERS = ["github", "supabase", "cloudflare"];
 const MAX_BODY_BYTES = 14 * 1024 * 1024;
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
-const PROVIDERS = ["github", "supabase", "cloudflare", "vercel", "openrouter", "groq", "gemini", "cohere"];
+const PROVIDERS = ["github", "supabase", "cloudflare", "vercel", "openrouter", "groq", "gemini", "cohere", "openai"];
 const MODEL_PROVIDERS = ["openrouter", "groq", "gemini", "cohere"];
 // IAs propias de MediaChafa: usan primero Workers AI (binding env.AI, cuenta Workers Free:
 // al agotar la cuota gratis Cloudflare devuelve error, no cobra) y después rotan solas a los
@@ -1119,6 +1119,12 @@ async function storedToken(env, userId, provider) {
 }
 
 async function verifyProvider(provider, token) {
+  if (provider === "openai") {
+    const response = await fetch("https://api.openai.com/v1/models/gpt-image-2.5-sunburst", { headers: { Authorization: `Bearer ${token}` } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.id) return { ok: false, error: `OpenAI no validó el acceso a GPT Image (HTTP ${response.status}). Revisá la clave, el proyecto y la facturación de API.` };
+    return { ok: true, detail: "OpenAI validado · edición de imágenes GPT Image 2.5", capabilities: { imageEditing: true, model: "gpt-image-2.5-sunburst" } };
+  }
   if (provider === "groq") {
     const response = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${token}` } });
     const data = await response.json().catch(() => ({}));
@@ -1550,6 +1556,49 @@ export default {
       const provider = String(payload.provider || "").toLowerCase();
       if (!PROVIDERS.includes(provider)) return json({ error: "Proveedor OAuth desconocido." }, 400, origin);
       return json({ error: `La conexión OAuth de ${provider} todavía no está habilitada. Falta registrar su aplicación y completar el callback seguro en el Worker. Google no puede autorizar esa cuenta por ${provider}.` }, 503, origin);
+    }
+    if (url.pathname === "/image-edit" && request.method === "POST") {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "La edición de imágenes está disponible solo para la cuenta dueña." }, 403, origin);
+      const token = await storedToken(env, user.id, "openai");
+      if (!token) return json({ error: "Conectá OpenAI en Integraciones para habilitar la edición de imágenes." }, 409, origin);
+      let payload;
+      try {
+        const rawBody = await request.text();
+        if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) return json({ error: "La imagen o la instrucción supera el límite permitido." }, 413, origin);
+        payload = JSON.parse(rawBody);
+      } catch { return json({ error: "La solicitud de edición no tiene un formato válido." }, 400, origin); }
+      const prompt = String(payload.prompt || "").trim().slice(0, 6000);
+      const dataUrl = String(payload.image?.data || "");
+      const match = dataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/i);
+      if (!prompt) return json({ error: "Explicá qué querés agregar, quitar o modificar en la imagen." }, 400, origin);
+      if (!match || dataUrl.length > MAX_MEDIA_BYTES * 1.4) return json({ error: "Para editar, adjuntá una imagen PNG, JPEG o WebP de hasta 5 MB." }, 400, origin);
+      try {
+        const mime = `image/${match[1].toLowerCase()}`;
+        const binary = atob(match[2]);
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        if (bytes.byteLength > MAX_MEDIA_BYTES) return json({ error: "La imagen supera el límite de 5 MB." }, 413, origin);
+        const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
+        const form = new FormData();
+        form.append("model", "gpt-image-2.5-sunburst");
+        form.append("prompt", `Editá la imagen de referencia siguiendo exactamente estas instrucciones: ${prompt}. Conservá sin cambios todos los elementos que no se hayan mencionado. Mantené la identidad, rasgos, proporciones, encuadre, iluminación y estilo originales siempre que no contradigan la edición solicitada. Integrá los cambios de forma coherente y natural.`);
+        form.append("quality", "high");
+        form.append("moderation", "low");
+        form.append("output_format", "png");
+        form.append("n", "1");
+        form.append("image[]", new Blob([bytes], { type: mime }), `mediachafa-input.${extension}`);
+        const response = await fetch("https://api.openai.com/v1/images/edits", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = String(result.error?.message || result.message || "OpenAI no pudo completar la edición.").slice(0, 500);
+          return json({ error: `Falló la edición de imagen (HTTP ${response.status}): ${detail}` }, response.status === 429 ? 429 : 502, origin);
+        }
+        const imageResult = result.data?.[0]?.b64_json;
+        if (!imageResult) return json({ error: "OpenAI respondió sin una imagen final. Probá con otra instrucción." }, 502, origin);
+        return json({ ok: true, image: imageResult, mime: "image/png", model: "gpt-image-2.5-sunburst" }, 200, origin);
+      } catch (error) {
+        return json({ error: error?.message || "No se pudo procesar la edición." }, 502, origin);
+      }
     }
     if (url.pathname !== "/chat" || request.method !== "POST") return json({ error: "Ruta no encontrada." }, 404, origin);
 
