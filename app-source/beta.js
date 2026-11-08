@@ -190,8 +190,9 @@ Para una página web pública: create_repository con visibility "public", despu�
       <div class="beta-work-list-head"><h3>Mis trabajos</h3><span id="beta-work-count">Cargando…</span></div>
       <div id="beta-work-list" class="beta-work-list" aria-live="polite"><p class="beta-work-empty">Cargando trabajos guardados…</p></div>
     </div>`;
-  const betaWorkspace = $('#beta-panel .beta-workspace');
-  betaWorkspace.append(workView);
+  const taskHunterWorkspace = $('#beta-panel .beta-workspace');
+  if (!taskHunterWorkspace) throw new Error('No se encontró el contenedor de Zona de trabajo.');
+  taskHunterWorkspace.append(workView);
   const workStyle = document.createElement('style');
   workStyle.textContent = `
     #beta-panel .beta-work-zone{width:min(900px,100%);margin:0 auto;padding:22px 18px 40px;overflow:auto;color:#f3f4f6}
