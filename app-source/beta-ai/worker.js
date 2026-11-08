@@ -2349,7 +2349,7 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
         return json({ answer: "Encontré una acción que no supera las validaciones de seguridad. No se preparó ningún cambio; voy a necesitar revisar esa propuesta.", plan: plan.plan, proposals: [], proposalErrors: ["Una o más acciones no pasaron la validación de seguridad."], consensus: { status: "blocked", reason: "unsafe_action" }, modelId, modelName: config.name, provider: "mediachafa", unlimited: true, usedToday: workersAiUsed }, 200, origin);
       }
       const draft = { answer: plan.answer, plan: plan.plan, actions: sanitizedActions };
-      const teamIntent = autonomous || sanitizedActions.length > 0 || /\\b(creá|crea|crear|hacé|hace|haz|modificá|modifica|arreglá|arregla|repará|repara|revisá|revisa|analizá|analiza|implementá|implementa|programá|programa|depurá|depura|configurá|configura|investigá|investiga|buscá|busca|verificá|verifica|comprobá|comprueba|construí|construye|diseñá|diseña)\\b/i.test(promptText);
+      const teamIntent = autonomous || sanitizedActions.length > 0 || /\b(creá|crea|crear|hacé|hace|haz|modificá|modifica|arreglá|arregla|repará|repara|revisá|revisa|analizá|analiza|implementá|implementa|programá|programa|depurá|depura|configurá|configura|investigá|investiga|buscá|busca|verificá|verifica|comprobá|comprueba|construí|construye|diseñá|diseña)\b/i.test(promptText);
       if (!teamIntent) {
         const proposals = [];
         const proposalErrors = [];
