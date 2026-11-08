@@ -162,7 +162,7 @@ jobs:
               echo "$RESULT" | jq .
               PROVIDER="$(echo "$RESULT" | jq -r '.reviewer_provider // "motor gratuito"')"
               MODEL="$(echo "$RESULT" | jq -r '.reviewer_model // "modelo verificado"')"
-              BODY="$(printf '%s\\n' "Revisión independiente aprobada para el commit $HEAD_SHA." "Motor: $PROVIDER · $MODEL." "La aprobación corresponde únicamente a este SHA.")"
+              BODY="$(printf '%s\n' "Revisión independiente aprobada para el commit $HEAD_SHA." "Motor: $PROVIDER · $MODEL." "La aprobación corresponde únicamente a este SHA.")"
               gh api --method POST "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews" -f event=APPROVE -f body="$BODY"
               exit 0
             fi
