@@ -1863,6 +1863,8 @@ async function callModel(env, candidate, messages, history, promptText, image, m
   return text ? { ok: true, text } : { ok: false, status: 502, detail: "El modelo no devolvió texto." };
 }
 
+// SAFETY INVARIANT: do not add inference providers here unless the request path can prove
+// zero-cost eligibility and fail closed before any billable fallback is possible.
 async function mediachafaCandidates(env, userId, variant, needsVision) {
   // Única inferencia permitida en modo de coste cero: modelos OpenRouter :free.
   const token = await storedToken(env, userId, "openrouter");
