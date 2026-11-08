@@ -264,7 +264,7 @@ function safeAction(action) {
     const memoryValue = action.memory_value;
     const serialized = JSON.stringify(memoryValue ?? null);
     if (!/^[a-zA-Z0-9_.:-]{1,120}$/.test(memoryKey) || !memoryValue || typeof memoryValue !== "object" || Array.isArray(memoryValue) || serialized.length > 2000) return null;
-    if (/(password|secret|token|api[_ -]?key|medical|health|religion|politic|sexual|ethnic|race)/i.test(memoryKey)) return null;
+    if (/(password|secret|token|api[_ -]?key|medical|health|diagnos|medication|religion|politic|sexual|ethnic|race|disability|criminal|social.?security|passport|credit.?card|bank.?account|financial)/i.test(`${memoryKey} ${serialized}`)) return null;
     if (action.user_confirmed !== true || action.reusable !== true || action.sensitive !== false) return null;
     return { provider, type, memory_key: memoryKey, memory_value: memoryValue, user_confirmed: true, reusable: true, sensitive: false, summary: description || `Guardar memoria permanente no sensible: ${memoryKey}.` };
   }
