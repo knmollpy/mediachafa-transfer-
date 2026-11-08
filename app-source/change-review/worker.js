@@ -114,8 +114,8 @@ async function persist(env, id, state) {
 }
 export class ChangeReviewWorkflow extends WorkflowEntrypoint {
   async run(event, step) {
-    const { reviewId, pullNumber, headSha } = event.payload || {};
-    await persist(this.env, reviewId, { status: "running", pull_number: pullNumber, head_sha: headSha });
+    const { reviewId, pullNumber, headSha, pollToken } = event.payload || {};
+    await persist(this.env, reviewId, { status: "running", pull_number: pullNumber, head_sha: headSha, poll_token: pollToken });
     try {
       await step.do("reserve-review-quota", async () => {
         const reservationKey = `mediachafa-change-review:reserved:${reviewId}`;
@@ -161,6 +161,7 @@ export class ChangeReviewWorkflow extends WorkflowEntrypoint {
           summary: String(parsed.summary || (approved ? "Revisión independiente aprobada." : "La revisión independiente bloqueó la publicación.")).slice(0, 1800),
           pull_number: pullNumber,
           head_sha: headSha,
+          poll_token: pollToken,
           reviewed_at: new Date().toISOString(),
           reviewer_model: MODEL,
         };
@@ -168,7 +169,7 @@ export class ChangeReviewWorkflow extends WorkflowEntrypoint {
       await step.do("persist-review-decision", async () => { await persist(this.env, reviewId, review); return { saved: true, status: review.status }; });
       return review;
     } catch (error) {
-      const failed = { status: "blocked", decision: "block", summary: String(error?.message || "La revisión falló; publicación bloqueada.").slice(0, 1800), pull_number: pullNumber, head_sha: headSha, findings: [{ severity: "critical", file: "", detail: "No se pudo completar la verificación independiente." }], reviewed_at: new Date().toISOString() };
+      const failed = { status: "blocked", decision: "block", summary: String(error?.message || "La revisión falló; publicación bloqueada.").slice(0, 1800), pull_number: pullNumber, head_sha: headSha, poll_token: pollToken, findings: [{ severity: "critical", file: "", detail: "No se pudo completar la verificación independiente." }], reviewed_at: new Date().toISOString() };
       await step.do("persist-review-failure", async () => { await persist(this.env, reviewId, failed); return { saved: true }; });
       return failed;
     }
@@ -190,10 +191,11 @@ export default {
       catch (error) { return json({ error: String(error?.message || "OIDC rechazado.") }, 403); }
       if (!env.CHANGE_REVIEW_WORKFLOW || !env.REVIEW_STATE || !env.AI) return json({ error: "El revisor no está configurado; no se puede publicar." }, 503);
       const reviewId = crypto.randomUUID();
-      await persist(env, reviewId, { status: "queued", pull_number: pullNumber, head_sha: headSha });
+      const pollToken = crypto.randomUUID() + crypto.randomUUID();
+      await persist(env, reviewId, { status: "queued", pull_number: pullNumber, head_sha: headSha, poll_token: pollToken });
       try {
-        await env.CHANGE_REVIEW_WORKFLOW.create({ id: reviewId, params: { reviewId, pullNumber, headSha } });
-        return json({ review_id: reviewId, status: "queued" }, 202);
+        await env.CHANGE_REVIEW_WORKFLOW.create({ id: reviewId, params: { reviewId, pullNumber, headSha, pollToken } });
+        return json({ review_id: reviewId, poll_token: pollToken, status: "queued" }, 202);
       } catch (error) {
         await persist(env, reviewId, { status: "blocked", decision: "block", summary: String(error?.message || "No se pudo iniciar el Workflow.").slice(0, 1000), pull_number: pullNumber, head_sha: headSha });
         return json({ error: "No se pudo iniciar el Workflow de revisión; publicación bloqueada." }, 503);
@@ -201,12 +203,11 @@ export default {
     }
     if (request.method === "GET" && match) {
       const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
-      try { await verifyGitHubOidc(token, Number(url.searchParams.get("pull_number"))); }
-      catch (error) { return json({ error: String(error?.message || "OIDC rechazado.") }, 403); }
       const raw = await env.REVIEW_STATE.get(`mediachafa-change-review:${match[1]}`);
       if (!raw) return json({ status: "unknown", decision: "block", error: "No existe el checkpoint de revisión." }, 404);
       let state;
       try { state = JSON.parse(raw); } catch { return json({ status: "blocked", decision: "block", error: "Checkpoint inválido." }, 500); }
+      if (!token || token !== state.poll_token || Number(url.searchParams.get("pull_number")) !== Number(state.pull_number)) return json({ error: "Token de consulta no válido." }, 403);
       return json(state, state.status === "approved" ? 200 : state.status === "blocked" ? 409 : 202);
     }
     return json({ error: "Ruta no encontrada." }, 404);
