@@ -143,7 +143,7 @@ test("autonomous execution persists pause state and verifies isolated GitHub cha
   assert.equal(state.lastChecksSucceeded, true);
   assert.equal(state.lastPreviewSucceeded, true, JSON.stringify(state.lastToolResult));
   assert.equal(state.pullRequest.merged, true, JSON.stringify(state.pullRequest));
-  const manifestMatch = openedPrBody?.match(/<!--\\s*MEDIACHAFA_REVIEW_MANIFEST\\s*([\\s\\S]*?)\\s*-->/);
+  const manifestMatch = openedPrBody?.match(/<!--\s*MEDIACHAFA_REVIEW_MANIFEST\s*([\s\S]*?)\s*-->/);
   assert.ok(manifestMatch, "El PR debe incluir un manifiesto legible por el revisor independiente.");
   const manifest = JSON.parse(manifestMatch[1]);
   assert.equal(manifest.version, 1);
