@@ -2225,6 +2225,7 @@ function parseTeamReview(text) {
 async function reviewWithPeer({ env, userId, variant, usedModels, messages, draft, image, promptText, fetchImpl }) {
   const candidates = await mediachafaCandidates(env, userId, variant, Boolean(image));
   const attempts = [];
+  let usedWorkersAi = false;
   for (const candidate of candidates) {
     const key = `${candidate.provider}:${candidate.nativeId}`;
     if (usedModels.has(key)) continue;
@@ -2351,7 +2352,7 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
       const peerResults = await Promise.all(peerVariants.map((peerVariant) =>
         reviewWithPeer({ env, userId: user.id, variant: peerVariant, usedModels, messages, draft, image, promptText, maxTokens: 1100, fetchImpl })
       ));
-            workersAiUsed += peerResults.filter((item) => item.usedWorkersAi).length;
+      workersAiUsed += peerResults.filter((item) => item.usedWorkersAi).length;
       if (workersAiUsed > 0) await env.BETA_LIMITS.put(counterKey, String(workersAiUsed), { expirationTtl: 172800 });
       const decision = teamReviewDecision(peerResults.filter((item) => item.ok).map((item) => item.review));
       const peerFailures = peerResults.filter((item) => !item.ok).map((item) => item.error);
