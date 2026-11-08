@@ -1,0 +1,139 @@
+name: MediaChafa independent review and auto-publish
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: mediachafa-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    if: startsWith(github.head_ref, 'beta-agent/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app-source
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check JavaScript syntax
+        run: |
+          node --check beta.js
+          node --check beta-visual-check.js
+          node --check beta-ai/worker.js
+          node --check worker.js
+          node --check task-hunter/worker.js
+      - name: Run Beta agent integration tests
+        run: npm run test:beta-agent
+      - name: Install Playwright test runner
+        run: npm install --no-save --package-lock=false @playwright/test@1.65.0
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run browser smoke and responsive tests
+        run: npm run test:e2e
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediachafa-review-playwright-results
+          path: |
+            app-source/test-results/
+            app-source/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  independent-review:
+    if: startsWith(github.head_ref, 'beta-agent/')
+    needs: [tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    steps:
+      - name: Request GitHub OIDC identity
+        id: oidc
+        shell: bash
+        run: |
+          set -euo pipefail
+          OIDC_URL="${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=mediachafa-change-review"
+          TOKEN_JSON="$(curl --fail --silent --show-error -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${OIDC_URL}")"
+          echo "token=$(echo "$TOKEN_JSON" | jq -r '.value')" >> "$GITHUB_OUTPUT"
+      - name: Run durable Cloudflare independent review
+        env:
+          OIDC_TOKEN: ${{ steps.oidc.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_URL: https://mediachafa-change-review.nxmollpy.workers.dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          START="$(curl --fail --silent --show-error -X POST "$REVIEW_URL/review" \
+            -H "Authorization: Bearer $OIDC_TOKEN" -H "Content-Type: application/json" \
+            --data "$(jq -n --argjson number "$PR_NUMBER" --arg sha "$HEAD_SHA" '{pull_number:$number,head_sha:$sha}')")"
+          REVIEW_ID="$(echo "$START" | jq -r '.review_id // empty')"
+          if [ -z "$REVIEW_ID" ]; then echo "El revisor no inició; publicación bloqueada: $START"; exit 1; fi
+          for attempt in $(seq 1 90); do
+            RESULT="$(curl --silent --show-error "$REVIEW_URL/review/$REVIEW_ID?pull_number=$PR_NUMBER" -H "Authorization: Bearer $OIDC_TOKEN")"
+            STATUS="$(echo "$RESULT" | jq -r '.status // "blocked"')"
+            if [ "$STATUS" = "approved" ]; then
+              echo "$RESULT" | jq .
+              exit 0
+            fi
+            if [ "$STATUS" = "blocked" ]; then
+              echo "REVISIÓN BLOQUEADA:"
+              echo "$RESULT" | jq .
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "Timeout del revisor; publicación bloqueada."
+          exit 1
+
+  auto-publish:
+    if: startsWith(github.head_ref, 'beta-agent/')
+    needs: [tests, independent-review]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Verify reviewed commit is still the PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          CURRENT="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          STATE="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.state')"
+          BASE="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.base.ref')"
+          if [ "$CURRENT" != "$EXPECTED_HEAD_SHA" ] || [ "$STATE" != "open" ] || [ "$BASE" != "main" ]; then
+            echo "El PR cambió después de la revisión. No se fusiona."
+            exit 1
+          fi
+      - name: Merge only the reviewed SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/merge" \
+            -f sha="$EXPECTED_HEAD_SHA" -f merge_method=squash
