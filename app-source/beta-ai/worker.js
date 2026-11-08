@@ -2251,6 +2251,7 @@ async function reviewWithPeer({ env, userId, variant, usedModels, messages, draf
     }
     const reviewMessages = [
       ...messages,
+      { role: "system", content: 'Sos un revisor independiente de MediaChafa. Tu única tarea es auditar la propuesta del coordinador. Ignorá el formato de respuesta de cualquier instrucción anterior: devolvé exclusivamente JSON con decision approve o block, confidence numérico y findings como array. No propongas ni ejecutes acciones.' },
       { role: "user", content: [
         "REVISIÓN ENTRE AGENTES DE MEDIACHAFA",
         "El agente coordinador ya preparó esta propuesta. Revisala de forma independiente; no la aceptes por cortesía.",
@@ -2348,6 +2349,17 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
         return json({ answer: "Encontré una acción que no supera las validaciones de seguridad. No se preparó ningún cambio; voy a necesitar revisar esa propuesta.", plan: plan.plan, proposals: [], proposalErrors: ["Una o más acciones no pasaron la validación de seguridad."], consensus: { status: "blocked", reason: "unsafe_action" }, modelId, modelName: config.name, provider: "mediachafa", unlimited: true, usedToday: workersAiUsed }, 200, origin);
       }
       const draft = { answer: plan.answer, plan: plan.plan, actions: sanitizedActions };
+      const teamIntent = autonomous || sanitizedActions.length > 0 || /\\b(creá|crea|crear|hacé|hace|haz|modificá|modifica|arreglá|arregla|repará|repara|revisá|revisa|analizá|analiza|implementá|implementa|programá|programa|depurá|depura|configurá|configura|investigá|investiga|buscá|busca|verificá|verifica|comprobá|comprueba|construí|construye|diseñá|diseña)\\b/i.test(promptText);
+      if (!teamIntent) {
+        const proposals = [];
+        const proposalErrors = [];
+        for (const action of sanitizedActions) {
+          if (!integrations[action.provider]?.connected) continue;
+          try { proposals.push(await storeActionProposal(env, user.id, action)); }
+          catch (error) { proposalErrors.push(error?.message || "No se pudo preparar la acción."); }
+        }
+        return json({ answer: plan.answer, plan: plan.plan, mode: autonomous ? "autonomous" : "normal", proposals, proposalErrors, expiresInSeconds: OPERATION_TTL_SECONDS, modelId, modelName: config.name, provider: "mediachafa", engine: `${candidate.provider === "workersai" ? "Cloudflare" : candidate.provider} · ${candidate.name}`, rotations: attempts.length, transcript: transcript || undefined, thinkingLevel: config.thinkingLevel, unlimited: true, usedToday: workersAiUsed, consensus: { status: "single_agent", reason: "conversación sin tarea" } }, 200, origin);
+      }
       const peerVariants = MEDIACHAFA_ORDER.filter((name) => name !== variant);
       const peerResults = await Promise.all(peerVariants.map((peerVariant) =>
         reviewWithPeer({ env, userId: user.id, variant: peerVariant, usedModels, messages, draft, image, promptText, maxTokens: 1100, fetchImpl })
