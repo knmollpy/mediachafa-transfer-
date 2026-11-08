@@ -259,10 +259,30 @@ test("pause during a model turn persists instructions and skips the pending tool
   assert.ok(modelPromptMessages.at(-1).some((message) => message.content.includes("No ejecutes la escritura pendiente")));
 });
 
-test("autonomous start rejects non-free or non-OpenRouter models", async () => {
+test("MediaChafa Pro autonomous agent rotates after a provider quota error without local daily caps", async () => {
+  kv.set(`integration:${userId}:github`, await encryptToken("github-token"));
+  kv.set(`integration:${userId}:groq`, await encryptToken("groq-token"));
+  kv.set(`integration:${userId}:openrouter`, await encryptToken("router-token"));
+  const today = new Date().toISOString().slice(0, 10);
+  kv.set(`beta-ai-requests:${userId}:openrouter:day:${today}`, "999999");
+  nextGroqStatus = 429;
+  nextModelResponse = JSON.stringify({ type: "final", answer: "Tarea revisada.", summary: "Fallback correcto.", verified: false });
+  const started = await api("/agent/start", "POST", { mode: "autonomous", model: "mediachafa::pro", message: "Comprobá el enrutamiento gratuito." });
+  assert.equal(started.status, 200);
+  const start = await started.json();
+  const stepped = await api(`/agent/${start.executionId}/step`, "POST", {});
+  assert.equal(stepped.status, 200);
+  const state = await stepped.json();
+  assert.equal(state.status, "completed");
+  assert.equal(state.modelId, "mediachafa::pro");
+  assert.equal(state.engine.provider, "openrouter");
+});
+
+test("autonomous start rejects models outside the verified free catalogs", async () => {
+  kv.set(`integration:${userId}:groq`, await encryptToken("groq-token"));
   const response = await api("/agent/start", "POST", { mode: "autonomous", model: "groq::paid-model", message: "No ejecutes esto." });
   assert.equal(response.status, 400);
-  assert.match((await response.json()).error, /OpenRouter :free/);
+  assert.match((await response.json()).error, /catálogo gratuito/);
 });
 
 test("Vercel integration validates project access and stores its token encrypted", async () => {
