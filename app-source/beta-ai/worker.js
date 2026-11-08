@@ -91,6 +91,7 @@ const PROJECT_MAP = {
     { method: "POST", path: "/integrations/disconnect", purpose: "Desconectar una integración" },
     { method: "GET", path: "/project-map", purpose: "Mapa privado del producto y rutas del repositorio" },
     { method: "POST", path: "/chat", purpose: "Consulta de un turno al modelo seleccionado" },
+    { method: "POST", path: "/image-edit", purpose: "Editar una imagen adjunta con GPT Image y devolver el resultado al chat" },
     { method: "POST", path: "/agent/start", purpose: "Crear una ejecución autónoma persistente y una rama de trabajo aislada" },
     { method: "POST", path: "/agent/:id/step", purpose: "Ejecutar un turno de razonamiento o herramienta" },
     { method: "POST", path: "/agent/:id/pause", purpose: "Pausar y persistir instrucciones/resultados" },
