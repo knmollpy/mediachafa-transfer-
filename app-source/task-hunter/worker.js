@@ -252,12 +252,12 @@ export class TaskHunterWorkflow extends WorkflowEntrypoint {
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
+    const { pathname } = new URL(request.url);
+    if (pathname === "/health" && request.method === "GET" && (!origin || origin === APP_ORIGIN)) return response({ ok: true, service: "MediaChafa Task Hunter", execution: env.TASK_HUNTER_WORKFLOW ? "durable_workflow_enabled" : "not_configured" });
     if (request.method === "OPTIONS") return origin === APP_ORIGIN
       ? new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": APP_ORIGIN, "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS", "Access-Control-Allow-Headers": "Authorization,Content-Type", Vary: "Origin" } })
       : response({ error: "Origen no autorizado." }, 403, origin);
     if (origin !== APP_ORIGIN) return response({ error: "Origen no autorizado." }, 403, origin);
-    const { pathname } = new URL(request.url);
-    if (pathname === "/health" && request.method === "GET") return response({ ok: true, service: "MediaChafa Task Hunter", execution: env.TASK_HUNTER_WORKFLOW ? "durable_workflow_enabled" : "not_configured" });
     const session = await authenticate(request, env);
     if (!session) return response({ error: "Sesión no válida o cuenta no autorizada." }, 401, origin);
     const { user, auth } = session;
