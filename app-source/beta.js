@@ -51,7 +51,7 @@
 Trabajá sola hasta terminar TODO el pedido; no te frenes después de un paso ni pidas permiso para seguir. En cada turno devolvé en "actions" todas las acciones del próximo paso (podés mandar varias, en orden). Las acciones normales se aprueban y ejecutan solas y en el turno siguiente recibís su resultado real: nunca digas que algo se hizo antes de verlo en los resultados. Borrados, SQL y cambios en ${LIVE_REPO} (la web en vivo) esperan la aprobación del dueño.
 "answer" tiene que empezar con UNA etiqueta:
 - "SIGO: ..." cuando mandás acciones y todavía falta trabajo.
-- "PREGUNTA: ..." solo si falta una decisión imprescindible. En ese caso, escribí primero la pregunta en una línea y después entre 2 y 5 opciones concretas en líneas separadas con el formato "- Opción". Incluí opciones Sí/No cuando correspondan y una alternativa razonable. El usuario también podrá escribir una respuesta personalizada.
+- "PREGUNTA: ..." solo si falta una decisión imprescindible. En ese caso, escribí primero la pregunta en una línea y después entre 2 y 5 opciones CONCRETAS, DIFERENTES Y CONTEXTUALES en líneas separadas con el formato "- Opción". Las opciones deben responder directamente a esa pregunta y al proyecto/tarea actual: por ejemplo, si preguntás qué contenido debe tener un repositorio, ofrecé tipos reales de contenido o funcionalidades (no "Sí, hacelo", "No" ni respuestas genéricas). No incluyas "Proponé otra alternativa": la interfaz agrega ese botón por separado. Incluí Sí/No únicamente cuando la pregunta realmente sea de aprobación. El usuario también podrá escribir una respuesta personalizada.
 - "LISTO: ..." cuando ya viste en los resultados que todo quedó hecho; incluí un resumen corto y los links finales.
 Acciones válidas (usá exactamente estos campos; no inventes otros tipos):
 {"provider":"github","type":"create_repository","name":"nombre-repo","description":"...","visibility":"public"}
@@ -1328,11 +1328,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const lines = String(questionText || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
       const question = (lines.shift() || '¿Cómo querés que continúe?').replace(/^PREGUNTA\s*[:：-]?\s*/i, '');
       const options = lines
+        .filter(line => /^(?:[-*•]|\d+[.)])\s+/.test(line))
         .map(line => line.replace(/^(?:[-*•]|\d+[.)])\s*/, '').replace(/^\[|\]$/g, '').trim())
-        .filter(line => line && line.length <= 180)
+        .filter(line => line && line.length <= 180 && !/^propon[eé] otra alternativa$/i.test(line))
         .slice(0, 5);
-      const defaults = ['Sí, hacelo', 'No, dejalo como está', 'Proponé otra alternativa'];
-      const choices = options.length ? options : defaults;
       const node = addMessage('assistant', question);
       node.classList.add('beta-interactive-question');
       node.querySelector('.beta-copy-btn')?.remove();
@@ -1341,57 +1340,70 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const optionRow = document.createElement('div');
       optionRow.className = 'beta-question-options';
       let settled = false;
-      const finish = (answer) => {
+      const finish = (result) => {
         if (settled) return;
         settled = true;
         run.waiting = null;
-        for (const button of optionRow.querySelectorAll('button')) button.disabled = true;
-        customSend.disabled = true;
+        for (const button of controls.querySelectorAll('button')) button.disabled = true;
         customInput.disabled = true;
-        const response = String(answer || '').trim();
-        if (response) {
-          addMessage('user', response);
-          history.push({ role: 'user', content: response });
+        if (result?.answer) {
+          addMessage('user', result.answer);
+          history.push({ role: 'user', content: result.answer });
+          history = history.slice(-30);
+          saveHistory();
+        } else if (result?.action === 'alternative') {
+          const label = 'Proponé otra alternativa';
+          addMessage('user', label);
+          history.push({ role: 'user', content: label });
           history = history.slice(-30);
           saveHistory();
         }
-        resolve({ answer: response });
+        resolve(result || { answer: '' });
       };
-      for (const choice of choices) {
+      for (const choice of options) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'secondary beta-question-option';
         button.textContent = choice;
-        button.addEventListener('click', () => finish(choice));
+        button.addEventListener('click', () => finish({
+          answer: 'Elijo esta opción: ' + choice + '. Aplicala a la decisión pendiente y continuá con el pedido original. No repitas esta pregunta.'
+        }));
         optionRow.append(button);
       }
+      if (!options.length) {
+        const hint = document.createElement('p');
+        hint.className = 'beta-question-hint';
+        hint.textContent = 'La IA no proporcionó opciones concretas. Podés pedirle otra propuesta o escribir tu respuesta.';
+        controls.append(hint);
+      }
+      const alternativeButton = document.createElement('button');
+      alternativeButton.type = 'button';
+      alternativeButton.className = 'secondary beta-question-option beta-question-alternative';
+      alternativeButton.textContent = 'Proponé otra alternativa';
+      alternativeButton.addEventListener('click', () => finish({ action: 'alternative' }));
       const customInput = document.createElement('textarea');
       customInput.className = 'beta-question-custom';
       customInput.rows = 2;
       customInput.maxLength = 2000;
       customInput.placeholder = 'O escribí tu propia respuesta…';
-      const customSend = document.createElement('button');
-      customSend.type = 'button';
-      customSend.className = 'primary beta-question-send';
-      customSend.textContent = 'Enviar respuesta y continuar';
-      customSend.addEventListener('click', () => {
-        const value = customInput.value.trim();
-        if (value) finish(value);
-      });
       customInput.addEventListener('keydown', event => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
-          customSend.click();
+          const value = customInput.value.trim();
+          if (value) finish({ answer: 'Mi respuesta personalizada: ' + value + '. Usala para resolver la decisión pendiente y continuá con el pedido original. No repitas esta pregunta.' });
         }
       });
-      controls.append(optionRow, customInput, customSend);
+      customInput.addEventListener('blur', () => {
+        customInput.dataset.hint = 'Escribí tu opinión y presioná Enter para continuar';
+      });
+      customInput.placeholder = 'Tu opinión o una respuesta propia… (Enter para enviar)';
+      controls.append(optionRow, alternativeButton, customInput);
       node.append(controls);
       run.waiting = (outcome) => {
         if (settled) return;
         settled = true;
         run.waiting = null;
-        for (const button of optionRow.querySelectorAll('button')) button.disabled = true;
-        customSend.disabled = true;
+        for (const button of controls.querySelectorAll('button')) button.disabled = true;
         customInput.disabled = true;
         resolve(outcome?.stopped ? { stopped: true } : { answer: '' });
       };
@@ -1490,9 +1502,14 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           const reply = await askOwnerQuestion(classified.text || data.answer || '', run);
           if (reply.stopped || run.stopped) { outcome = { kind: 'stopped', text: '' }; break; }
           const ownerReply = String(reply.answer || '').trim();
-          state.loopHistory.push({ role: 'user', content: `RESPUESTA DEL DUEÑO A TU PREGUNTA: ${ownerReply}` });
+          if (reply.action === 'alternative') {
+            message = `El dueño eligió "Proponé otra alternativa". No repitas la pregunta ni las opciones anteriores. Revisá el pedido original y el contexto de esta decisión; proponé una alternativa nueva, concreta y diferente a las que ya ofreciste. Explicá brevemente por qué puede servir y, si podés avanzar sin otra decisión imprescindible, implementala y continuá el trabajo. Si todavía necesitás que el dueño elija, hacé una pregunta nueva con opciones contextuales distintas.`;
+            state.loopHistory.push({ role: 'user', content: 'El dueño pidió una alternativa NUEVA y distinta a las opciones anteriores. No repetir la pregunta.' });
+          } else {
+            state.loopHistory.push({ role: 'user', content: `RESPUESTA DEL DUEÑO A TU PREGUNTA: ${ownerReply}` });
+            message = `RESPUESTA DEL DUEÑO A TU PREGUNTA:\n${ownerReply}\n\nAplicá esta decisión a la tarea pendiente y continuá automáticamente con el pedido original. No repitas la pregunta ya respondida ni vuelvas a mostrar las mismas opciones.`;
+          }
           state.loopHistory = state.loopHistory.slice(-12);
-          message = `RESPUESTA DEL DUEÑO A TU PREGUNTA:\n${ownerReply}\n\nContinuá automáticamente con el pedido original. No repitas la pregunta ya respondida.`;
           step('Respuesta recibida. Continuando el trabajo…', 'done');
           continue;
         }
