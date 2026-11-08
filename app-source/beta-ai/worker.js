@@ -228,17 +228,17 @@ function safeAction(action) {
   const description = String(action.description || "").slice(0, 500);
   const validRepo = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) && repository.split("/")[0].toLowerCase() === "knmollpy";
   const validPath = Boolean(path) && path.length <= 500 && !path.startsWith("/") && !path.includes("\\") && path.split("/").every((part) => part && part !== "." && part !== ".." && !/[\u0000-\u001f]/.test(part));
-  if (provider === "github" && type === "write_file" && validRepo && validPath && content.length <= 500_000) {
+  if (provider === "github" && type === "write_file" && validRepo && repository === GITHUB_REPO && validPath && path.startsWith("app-source/") && path !== "app-source/change-review/worker.js" && content.length <= 500_000) {
     return { provider, type, repository, path, content, message: String(action.message || `Beta: actualizar ${path}`).slice(0, 120), summary: description || `Crear o actualizar ${path} en ${repository}.` };
   }
-  if (provider === "github" && type === "write_files" && validRepo && Array.isArray(action.files)) {
+  if (provider === "github" && type === "write_files" && validRepo && repository === GITHUB_REPO && Array.isArray(action.files)) {
     if (action.files.length > MAX_FILES_PER_ACTION) return null;
     const seen = new Set();
     const files = [];
     for (const file of action.files.slice(0, MAX_FILES_PER_ACTION)) {
       const filePath = String(file?.path || "").trim().replace(/^\.\//, "");
       const fileContent = String(file?.content ?? "");
-      const okPath = Boolean(filePath) && filePath.length <= 500 && !filePath.startsWith("/") && !filePath.endsWith("/") && !filePath.includes("\\") && filePath.split("/").every((part) => part && part !== "." && part !== ".." && part !== ".git" && !/[\u0000-\u001f]/.test(part));
+      const okPath = Boolean(filePath) && filePath.startsWith("app-source/") && filePath !== "app-source/change-review/worker.js" && filePath.length <= 500 && !filePath.startsWith("/") && !filePath.endsWith("/") && !filePath.includes("\\") && filePath.split("/").every((part) => part && part !== "." && part !== ".." && part !== ".git" && !/[\u0000-\u001f]/.test(part));
       if (!okPath || seen.has(filePath) || fileContent.length > 500_000) return null;
       seen.add(filePath);
       files.push({ path: filePath, content: fileContent });
@@ -253,7 +253,7 @@ function safeAction(action) {
   if (provider === "github" && type === "create_repository" && /^[a-zA-Z0-9_.-]{1,100}$/.test(name)) {
     return { provider, type, name, description, summary: description || `Crear el repositorio privado ${name} en GitHub.` };
   }
-  if (provider === "github" && type === "delete_path" && validRepo && validPath) {
+  if (provider === "github" && type === "delete_path" && validRepo && repository === GITHUB_REPO && validPath && path.startsWith("app-source/") && path !== "app-source/change-review/worker.js") {
     return { provider, type, repository, path, message: String(action.message || `Beta: borrar ${path}`).slice(0, 120), summary: `BORRADO: quitar ${path} (archivo o carpeta completa) de ${repository}.` };
   }
   if (provider === "github" && type === "delete_repository" && validRepo) {
@@ -503,6 +503,7 @@ function agentFilePath(path) {
     && value.length <= 500
     && !value.includes("\\")
     && !/(^|\/)\.env(?:\.[^/]*)?$|(^|\/)(?:credentials?|secrets?)(?:\.[^/]*)?$|\.pem$|\.p12$|(^|\/)id_rsa(?:\.|$)/i.test(lowered)
+    && value !== "app-source/change-review/worker.js"
     && value.split("/").every((part) => part && part !== "." && part !== ".." && !AGENT_BLOCKED_PATH_PARTS.has(part.toLowerCase()) && !/[\u0000-\u001f]/.test(part));
 }
 
