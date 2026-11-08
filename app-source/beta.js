@@ -167,7 +167,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     groq: { title: 'Groq · plan Free', url: 'https://console.groq.com/keys', link: 'Abrir claves de Groq', note: 'La cuenta conectada debe mantenerse en el plan Free. Beta solo ofrece modelos publicados en los límites gratuitos de tu cuenta y se detiene ante el límite del proveedor.' },
     cohere: { title: 'Cohere · clave Trial gratis', url: 'https://dashboard.cohere.com/api-keys', link: 'Abrir claves Trial', note: 'Usá una clave Trial de la cuenta gratuita; nunca una Production. Cohere indica un máximo de 1.000 llamadas al mes para claves Trial.' },
     gemini: { title: 'Google AI Studio · Free Tier', url: 'https://aistudio.google.com/apikey', link: 'Abrir AI Studio', note: 'Solo conectes una API key de un proyecto que AI Studio muestre como Free Tier y sin facturación vinculada. Beta permite únicamente modelos de una lista gratuita cerrada.' },
-    openai: { title: 'OpenAI Images · edición de imágenes', url: 'https://platform.openai.com/api-keys', link: 'Crear API key de OpenAI', note: 'Usa GPT Image 2.5 para editar imágenes con alta calidad y conservar detalles. La API se factura por uso y no está incluida en ChatGPT Plus ni en el plan gratuito. La clave se guarda cifrada; cada edición que solicites puede generar un costo.' },
+    huggingface: { title: 'Hugging Face · Qwen Image 2.1 Uncensored', url: 'https://huggingface.co/settings/tokens', link: 'Crear token gratuito (Read)', note: 'Conectá tu cuenta gratuita con un token de solo lectura. Habilita la edición de imágenes Qwen en las tres IA de MediaChafa. ZeroGPU ofrece una cuota diaria gratuita compartida (5 minutos por cuenta Free); puede haber cola o disponibilidad variable. No se te pide tarjeta ni se activa facturación.' },
   };
   const connectorGrid = $('#beta-integrations-view .beta-connectors');
   if (connectorGrid) for (const [provider, info] of Object.entries(modelProviderInfo)) {
@@ -178,7 +178,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     const description = document.createElement('p');
     const link = document.createElement('a'); link.href = info.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = info.link;
     description.append(link, '. ', info.note, ' La clave se guarda cifrada en el Worker privado de Beta.');
-    const tokenInput = document.createElement('input'); tokenInput.id = 'beta-token-' + provider; tokenInput.type = 'password'; tokenInput.autocomplete = 'off'; tokenInput.spellcheck = false; tokenInput.placeholder = provider === 'openai' ? 'Pegá tu API key de OpenAI' : 'Pegá tu clave gratuita de ' + provider; tokenInput.setAttribute('aria-label', provider === 'openai' ? 'API key de OpenAI' : 'Clave gratuita de ' + provider);
+    const tokenInput = document.createElement('input'); tokenInput.id = 'beta-token-' + provider; tokenInput.type = 'password'; tokenInput.autocomplete = 'off'; tokenInput.spellcheck = false; tokenInput.placeholder = 'Pegá tu token gratuito de ' + provider; tokenInput.setAttribute('aria-label', 'Token de ' + provider);
     const actions = document.createElement('div'); actions.className = 'beta-actions';
     const connect = document.createElement('button'); connect.className = 'add-btn'; connect.type = 'button'; connect.dataset.betaConnect = provider; connect.textContent = 'Validar y guardar';
     const disconnect = document.createElement('button'); disconnect.className = 'secondary hidden'; disconnect.type = 'button'; disconnect.dataset.betaDisconnect = provider; disconnect.textContent = 'Desconectar';
@@ -1285,8 +1285,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     }
     imageEditButton.disabled = true;
     imageEditButton.textContent = 'Editando…';
-    setStatus('Editando la imagen con GPT Image 2.5…');
-    activity('Procesando la edición de imagen solicitada.', 'active');
+    setStatus('Editando la imagen con Qwen Image 2.1 Uncensored…');
+    activity('Procesando la edición con Qwen Image 2.1.', 'active');
     try {
       const auth = await currentSession();
       const response = await fetch(`${API}/image-edit`, {
@@ -1301,7 +1301,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const resultMessage = addMessage('assistant', 'Listo. Esta es la imagen editada. Podés abrirla o guardarla.');
       const preview = document.createElement('img');
       preview.src = imageUrl;
-      preview.alt = 'Imagen editada por Beta';
+      preview.alt = 'Imagen editada por Qwen en MediaChafa';
       preview.loading = 'lazy';
       preview.style.cssText = 'display:block;max-width:100%;height:auto;max-height:720px;object-fit:contain;border-radius:12px;margin:10px 0;border:1px solid rgba(130,160,190,.25)';
       const download = document.createElement('a');
