@@ -293,7 +293,7 @@ export default {
       if (!r.ok) return response({ error: rows.message || "No se pudo guardar la oportunidad." }, r.status, origin);
       return response({ opportunity: rows[0] || null }, 201, origin);
     }
-    const assignMatch = pathname.match(/^\\/opportunities\\/([0-9a-f-]{36})\\/assign$/i);
+    const assignMatch = pathname.match(/^\/opportunities\/([0-9a-f-]{36})\/assign$/i);
     if (assignMatch && request.method === "POST") {
       let payload;
       try { payload = await request.json(); } catch { return response({ error: "Solicitud inválida." }, 400, origin); }
@@ -304,7 +304,7 @@ export default {
       const opportunity = rows[0];
       try {
         const created = await createTask(env, user, auth, {
-          title: opportunity.title, description: [opportunity.description, opportunity.url ? "ENLACE DE REFERENCIA: " + opportunity.url : "", "La IA debe preparar el entregable y señalar cualquier paso externo que requiera aprobación o intervención humana."].filter(Boolean).join("\\n\\n"),
+          title: opportunity.title, description: [opportunity.description, opportunity.url ? "ENLACE DE REFERENCIA: " + opportunity.url : "", "La IA debe preparar el entregable y señalar cualquier paso externo que requiera aprobación o intervención humana."].filter(Boolean).join("\n\n"),
           assigned_model: payload.assigned_model || "mediachafa::pro",
           estimated_reward: opportunity.estimated_reward, estimated_currency: opportunity.currency,
           source_platform: opportunity.platform, source_url: opportunity.url, task_category: opportunity.category
