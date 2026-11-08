@@ -38,7 +38,6 @@ const MEDIACHAFA_MODELS = {
 const MEDIACHAFA_ORDER = ["codigo", "pro", "rapida"];
 const CF_VISION_MODELS = ["@cf/meta/llama-4-scout-17b-16e-instruct", "@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/google/gemma-4-26b-a4b-it"];
 const CF_WHISPER = "@cf/openai/whisper-large-v3-turbo";
-const WORKERS_AI_DAILY_SAFETY_LIMIT = 900;
 const GITHUB_REPO = "knmollpy/mediachafa-transfer-";
 const SUPABASE_PROJECT = "velxgwkujcabdaxbppyj";
 const CLOUDFLARE_ACCOUNT = "3ed811eed85e393b5d97f052e812cfaf";
@@ -2157,7 +2156,7 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
   let workersAiUsed = Number(await env.BETA_LIMITS.get(counterKey) || 0);
   for (const candidate of candidates) {
     if (request.signal.aborted) break;
-    if (candidate.provider === "workersai" && workersAiUsed >= WORKERS_AI_DAILY_SAFETY_LIMIT) { attempts.push(`${candidate.name}: cupo diario de Cloudflare usado`); continue; }
+    if (candidate.provider === "workersai" && !env.AI) { attempts.push(`${candidate.name}: Workers AI no está vinculado`); continue; }
     if (candidate.provider === "openrouter") {
       try { const q = await openRouterQuota(candidate.token); if (q.used >= Math.min(DAILY_REQUEST_LIMIT, q.providerLimit)) { attempts.push("OpenRouter: cuota del día agotada"); continue; } }
       catch (error) { attempts.push(`OpenRouter: ${error?.message || "no se pudo verificar"}`); continue; }
