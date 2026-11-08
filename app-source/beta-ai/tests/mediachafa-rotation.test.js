@@ -201,7 +201,7 @@ test("audio transcription is blocked rather than calling billable Workers AI", a
   installFetch();
   const env = makeEnv();
   await connectFreeOpenRouter(env);
-  const res = await chat(env, "mediachafa::pro", { audio: { data: "data:audio/wav;base64,AAAA" } });
+  const res = await chat(env, "mediachafa::pro", { audio: { mime: "audio/wav", data: "data:audio/wav;base64,AAAA" } });
   assert.equal(res.status, 503);
   assert.equal(aiCalls, 0);
   assert.equal(requests.length, 0);
