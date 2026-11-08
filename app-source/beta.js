@@ -136,6 +136,7 @@ Para una página web pública: create_repository con visibility "public", despu�
   const activityList = $('#beta-activity-list');
   let activityItems = [];
   let modelCatalog = [];
+  let busyTaskModels = new Set();
   let providerQuotas = {};
   let modelHealth = {};
   const HEALTH_FRESH_MS = 15 * 60 * 1000;
@@ -173,7 +174,7 @@ Para una página web pública: create_repository con visibility "public", despu�
   workView.innerHTML = `
     <div class="beta-work-zone">
       <div class="beta-work-zone-head"><div><h2>Zona de trabajo</h2><p>Asigná tareas a una IA y conservá su registro aunque cierres Beta.</p></div><button type="button" class="secondary" id="beta-work-refresh">Actualizar</button></div>
-      <div class="beta-work-disclaimer" role="status">La cola y los registros ya son persistentes. La ejecución autónoma en segundo plano todavía está pendiente de activar; no se enviará ninguna tarea a una plataforma ni se simulará trabajo.</div>
+      <div class="beta-work-disclaimer" role="status">Los trabajos se ejecutan en segundo plano con checkpoints persistentes y se recuperan al volver a abrir Beta. La IA crea entregables y los revisa con controles básicos; todavía no inicia sesión ni envía tareas a plataformas remuneradas. Los pagos nunca se inventan.</div>
       <form id="beta-work-form" class="beta-work-form">
         <label>Trabajo o tarea<input id="beta-work-title" maxlength="180" required placeholder="Ej. Transcribir y revisar un audio"></label>
         <label>Instrucciones<textarea id="beta-work-description" maxlength="12000" rows="4" placeholder="Describí el encargo, formato y requisitos de calidad…"></textarea></label>
@@ -183,7 +184,7 @@ Para una página web pública: create_repository con visibility "public", despu�
           <label>Tiempo estimado (minutos)<input id="beta-work-duration" type="number" min="1" max="10080" step="1" placeholder="Ej. 45"></label>
         </div>
         <label>IA asignada<select id="beta-work-model"></select><small>MediaChafa Pro queda seleccionada y recomendada por defecto.</small></label>
-        <button type="submit" class="add-btn" id="beta-work-start">Guardar tarea</button>
+        <button type="submit" class="add-btn" id="beta-work-start">Comenzar trabajo</button>
       </form>
       <div class="beta-work-summary" id="beta-work-summary"></div>
       <div class="beta-work-list-head"><h3>Mis trabajos</h3><span id="beta-work-count">Cargando…</span></div>
@@ -212,17 +213,16 @@ Para una página web pública: create_repository con visibility "public", despu�
     #beta-panel .beta-work-card-meta{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
     #beta-panel .beta-work-card-meta span{font-size:10px;color:#c4c4c8;background:rgba(255,255,255,.06);padding:5px 7px;border-radius:7px}
     #beta-panel .beta-work-empty{padding:18px;text-align:center;border:1px dashed rgba(255,255,255,.14);border-radius:12px}
+    #beta-panel .beta-work-result{margin-top:12px;border-top:1px solid rgba(255,255,255,.1);padding-top:9px;color:#e5e7eb;font-size:12px}#beta-panel .beta-work-result summary{cursor:pointer;color:#fca5a5}#beta-panel .beta-work-result pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:480px;overflow:auto;background:#101010;padding:12px;border-radius:9px;font:12px/1.5 ui-monospace,monospace}
     @media(max-width:600px){#beta-panel .beta-work-fields{grid-template-columns:1fr 1fr}#beta-panel .beta-work-fields label:last-child{grid-column:1/-1}#beta-panel .beta-work-zone{padding:14px 10px 28px}}
   `;
   document.head.append(workStyle);
   const workModelSelect = $('#beta-work-model');
   function renderWorkModels() {
     workModelSelect.replaceChildren(
-      new Option('★ RECOMENDADA · MediaChafa Pro', 'mediachafa::pro'),
-      new Option('MediaChafa Código', 'mediachafa::codigo'),
-      new Option('MediaChafa Rápida', 'mediachafa::rapida')
+      ...[['★ RECOMENDADA · MediaChafa Pro','mediachafa::pro'],['MediaChafa Código','mediachafa::codigo'],['MediaChafa Rápida','mediachafa::rapida']].map(([label,value]) => { const option = new Option(label + (busyTaskModels.has(value) ? ' · OCUPADA' : ''), value); option.disabled = busyTaskModels.has(value); return option; })
     );
-    workModelSelect.value = 'mediachafa::pro';
+    workModelSelect.value = busyTaskModels.has('mediachafa::pro') ? [...workModelSelect.options].find(option => !option.disabled)?.value || '' : 'mediachafa::pro';
   }
   renderWorkModels();
   const WORK_API = 'https://mediachafa-task-hunter.nxmollpy.workers.dev';
@@ -246,7 +246,10 @@ Para una página web pública: create_repository con visibility "public", despu�
     return h ? `${h} h ${m} min` : `${m} min`;
   }
   function renderWorkTasks(tasks = []) {
-    const active = tasks.filter(task => ['running','waiting'].includes(task.status));
+    const active = tasks.filter(task => ['queued','running','waiting'].includes(task.status));
+    busyTaskModels = new Set(active.map(task => task.assigned_model));
+    renderWorkModels();
+    renderModelOptions();
     const paid = tasks.filter(task => task.payout_status === 'paid').reduce((sum, task) => sum + Number(task.actual_reward || 0), 0);
     const pending = tasks.filter(task => ['pending','approved'].includes(task.payout_status)).reduce((sum, task) => sum + Number(task.actual_reward || 0), 0);
     workSummary.replaceChildren();
@@ -258,16 +261,17 @@ Para una página web pública: create_repository con visibility "public", despu�
       const card=document.createElement('article');card.className='beta-work-card';
       const top=document.createElement('div');top.className='beta-work-card-top';
       const title=document.createElement('strong');title.textContent=task.title;
-      const state=document.createElement('span');state.textContent=({queued:'En cola · motor pendiente',running:'Trabajando',waiting:'Esperando',paused:'Pausado',completed:'Terminado',submitted:'Entregado',accepted:'Aceptado',rejected:'Rechazado',failed:'Error',cancelled:'Cancelado'}[task.status]||task.status);
+      const state=document.createElement('span');state.textContent=({queued:'En cola',running:'Trabajando en segundo plano',waiting:'Revisión necesaria',paused:'Pausado',completed:'Terminado',submitted:'Enviado',accepted:'Aceptado',rejected:'Rechazado',failed:'Error',cancelled:'Cancelado'}[task.status]||task.status);
       top.append(title,state);card.append(top);
       if(task.description){const desc=document.createElement('p');desc.textContent=task.description;card.append(desc);}
       const meta=document.createElement('div');meta.className='beta-work-card-meta';
       const modelName=({ 'mediachafa::pro':'MediaChafa Pro','mediachafa::codigo':'MediaChafa Código','mediachafa::rapida':'MediaChafa Rápida' })[task.assigned_model]||task.assigned_model;
       [modelName,`Estimado: ${task.estimated_reward == null ? 'sin confirmar' : Number(task.estimated_reward).toFixed(2)+' '+task.estimated_currency}`,`Real: ${task.actual_reward == null ? 'sin confirmar' : Number(task.actual_reward).toFixed(2)+' '+task.actual_currency}`,`Pago: ${task.payout_status}`,`Tiempo activo: ${formatWorkDuration(task.active_seconds)}`,`Tiempo total: ${formatWorkDuration(task.elapsed_seconds)}`].forEach(value=>{const chip=document.createElement('span');chip.textContent=value;meta.append(chip);});
       card.append(meta);
-      if(task.status==='queued'){
-        const note=document.createElement('p');note.textContent='Guardado de forma persistente. Todavía no se ejecuta: falta activar el motor de trabajos en segundo plano.';card.append(note);
-      }
+      if(task.error){const note=document.createElement('p');note.textContent='Error: '+task.error;card.append(note);}
+      const output=task.result_data?.output;
+      if(output){const result=document.createElement('details');result.className='beta-work-result';const summary=document.createElement('summary');summary.textContent='Ver resultado completo';const pre=document.createElement('pre');pre.textContent=output;result.append(summary,pre);card.append(result);}
+      if(task.quality_checks?.length){const checks=document.createElement('p');checks.textContent='Controles: '+task.quality_checks.map(item=>(item.passed?'✓ ':'⚠ ')+item.name).join(' · ');card.append(checks);}
       workList.append(card);
     }
   }
@@ -277,6 +281,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     catch(error){workList.textContent=error.message;workCount.textContent='No disponible';}
   }
   $('#beta-work-refresh').addEventListener('click',refreshWorkTasks);
+  setInterval(() => { if (!document.hidden) refreshWorkTasks(); }, 15000);
   workTab.addEventListener('click',refreshWorkTasks);
   $('#beta-work-form').addEventListener('submit',async event=>{
     event.preventDefault();
@@ -292,9 +297,9 @@ Para una página web pública: create_repository con visibility "public", despu�
       })});
       $('#beta-work-form').reset();renderWorkModels();
       await refreshWorkTasks();
-      setStatus(result.execution==='not_started'?'Tarea guardada. La ejecución en segundo plano aún no está activada.':'Tarea guardada.');
+      setStatus(result.execution==='started'?'Trabajo iniciado. La IA seguirá ejecutándolo aunque cierres Beta.':'Trabajo guardado.');
     } catch(error){setStatus(error.message,'error');}
-    finally{button.disabled=false;button.textContent='Guardar tarea';}
+    finally{button.disabled=false;button.textContent='Comenzar trabajo';}
   });
 
 
@@ -476,12 +481,16 @@ Para una página web pública: create_repository con visibility "public", despu�
     modelSelect.replaceChildren(...modelCatalog.map(model => {
       const option = document.createElement('option');
       option.value = model.id;
+      const busy = busyTaskModels.has(model.id);
       const health = modelHealthLabel(model.health || modelHealth[model.id]);
       const quotaLabel = model.unlimited ? ` · ${model.usedToday || 0} hoy · sin límite` : Number.isFinite(model.dailyLimit) ? ` · ${model.usedToday || 0}/${model.dailyLimit} ${model.quotaPeriod === 'month' ? 'mes' : 'hoy'}` : '';
-      option.textContent = `${health.icon} ${model.own ? '⭐ ' : ''}${model.provider} · ${model.name} · pensamiento ${model.thinkingLevel || 'medio'}${quotaLabel}`;
+      option.textContent = `${health.icon} ${model.own ? '⭐ ' : ''}${model.provider} · ${model.name} · pensamiento ${model.thinkingLevel || 'medio'}${quotaLabel}${busy ? ' · OCUPADA EN ZONA DE TRABAJO' : ''}`;
+      option.disabled = busy;
       return option;
     }));
-    modelSelect.value = modelCatalog.some(model => model.id === prior) ? prior : modelCatalog[0].id;
+    const availableModel = modelCatalog.find(model => !busyTaskModels.has(model.id));
+    modelSelect.value = modelCatalog.some(model => model.id === prior && !busyTaskModels.has(model.id)) ? prior : (availableModel?.id || modelCatalog[0].id);
+    modelSelect.disabled = !availableModel;
     const model = modelCatalog.find(item => item.id === modelSelect.value);
     const health = model ? modelHealthLabel(model.health || modelHealth[model.id]) : { state: 'unknown', text: 'Conectá un proveedor para comprobar modelos' };
     modelHealthNote.dataset.state = health.state;
