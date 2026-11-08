@@ -504,6 +504,7 @@ function agentFilePath(path) {
     && !value.includes("\\")
     && !/(^|\/)\.env(?:\.[^/]*)?$|(^|\/)(?:credentials?|secrets?)(?:\.[^/]*)?$|\.pem$|\.p12$|(^|\/)id_rsa(?:\.|$)/i.test(lowered)
     && value !== "app-source/change-review/worker.js"
+     && value !== "app-source/vercel.json"
     && value.split("/").every((part) => part && part !== "." && part !== ".." && !AGENT_BLOCKED_PATH_PARTS.has(part.toLowerCase()) && !/[\u0000-\u001f]/.test(part));
 }
 
