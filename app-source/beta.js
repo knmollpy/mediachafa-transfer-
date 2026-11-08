@@ -13,8 +13,23 @@
     return Math.max(1, Math.min(OTHER_MODEL_TURNS, Number.isFinite(remaining) ? remaining : 6));
   }
 
+  function requestedRepositoryName(goal) {
+    const text = String(goal || '');
+    const full = text.match(/(?:github\\.com\\/)?knmollpy\\/([A-Za-z0-9._-]{1,100})/i);
+    if (full) return full[1];
+    const named = text.match(/\\b(?:repositorio|repo)\\s+(?:(?:llamado|llamada|de nombre|que se llama)\\s+)?(?:(?:el|la|un|una|mi|ese|este)\\s+)?["'`]?([A-Za-z0-9][A-Za-z0-9._-]{0,99})/i);
+    if (named && !/^(?:un|una|el|la|mi|ese|este|que|de|github)$/i.test(named[1])) return named[1];
+    return '';
+  }
+
+  function isRepositoryDeletionRequest(goal) {
+    return /\\b(?:borr\\w*|elimin\\w*|delete|remove)\\b/i.test(String(goal || '')) &&
+      /\\b(?:repo|repositorio|repository)\\w*\\b/i.test(String(goal || ''));
+  }
+
   function newState(goal, model) {
-    return { goal: String(goal || '').slice(0, 6000), modelId: model.id, turn: 0, maxTurns: turnLimit(model), loopHistory: [], links: [], emptyStreak: 0 };
+    const safeGoal = String(goal || '').slice(0, 6000);
+    return { goal: safeGoal, modelId: model.id, turn: 0, maxTurns: turnLimit(model), loopHistory: [], links: [], emptyStreak: 0, deleteRepositoryName: requestedRepositoryName(safeGoal) };
   }
 
   function classifyAnswer(answer) {
@@ -48,7 +63,8 @@
 
   function protocol(state) {
     return `[MODO AUTÓNOMO DE MEDIACHAFA · turno ${state.turn} de ${state.maxTurns}]
-Trabajá sola hasta terminar TODO el pedido; no te frenes después de un paso ni pidas permiso para seguir. En cada turno devolvé en "actions" todas las acciones del próximo paso (podés mandar varias, en orden). Las acciones normales se aprueban y ejecutan solas y en el turno siguiente recibís su resultado real: nunca digas que algo se hizo antes de verlo en los resultados. Borrados, SQL y cambios en ${LIVE_REPO} (la web en vivo) esperan la aprobación del dueño.
+Trabajá sola hasta terminar TODO el pedido; no te frenes después de un paso ni pidas permiso para seguir. En cada turno devolvé en "actions" todas las acciones del próximo paso (podés mandar varias, en orden). Las acciones normales se aprueban y ejecutan solas y en el turno siguiente recibís su resultado real: nunca digas que algo se hizo antes de verlo en los resultados. Borrados de repositorios: si el pedido es borrar/eliminar un repositorio y falta el nombre exacto, hacé UNA sola pregunta: "¿Cuál es el nombre exacto del repositorio que querés borrar?". No pidas URL, propietario, motivo, visibilidad, rama, descripción ni otros datos; la cuenta es knmollpy. Cuando recibas el nombre, usá exactamente "knmollpy/nombre" en delete_repository y seguí sin volver a preguntar. La solicitud original de borrado más el nombre exacto indicado por el dueño autorizan ese borrado: no pidas una segunda confirmación. Si el nombre ya aparece claramente en el pedido original, no lo vuelvas a preguntar.
+Borrados de archivos/rutas, SQL y cambios en ${LIVE_REPO} (la web en vivo) siguen requiriendo aprobación del dueño.
 "answer" tiene que empezar con UNA etiqueta:
 - "SIGO: ..." cuando mandás acciones y todavía falta trabajo.
 - "PREGUNTA: ..." solo si falta una decisión imprescindible. En ese caso, escribí primero la pregunta en una línea y después entre 2 y 5 opciones CONCRETAS, DIFERENTES Y CONTEXTUALES en líneas separadas con el formato "- Opción". Las opciones deben responder directamente a esa pregunta y al proyecto/tarea actual: por ejemplo, si preguntás qué contenido debe tener un repositorio, ofrecé tipos reales de contenido o funcionalidades (no "Sí, hacelo", "No" ni respuestas genéricas). No incluyas "Proponé otra alternativa": la interfaz agrega ese botón por separado. Incluí Sí/No únicamente cuando la pregunta realmente sea de aprobación. El usuario también podrá escribir una respuesta personalizada.
@@ -89,7 +105,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     return `Hice ${state.turn} turnos y llegué al límite de esta tanda. Escribí "seguí" y continúo desde donde quedé.${linksBlock(state)}`;
   }
 
-  window.MediaChafaBetaAgent = { LIVE_REPO, turnLimit, newState, classifyAnswer, needsOwnerApproval, shouldRetry, decideNext, buildTurnMessage, compactUserTurn, nudgeMessage, finalMessage };
+  window.MediaChafaBetaAgent = { LIVE_REPO, turnLimit, newState, classifyAnswer, isRepositoryDeletionRequest, needsOwnerApproval, shouldRetry, decideNext, buildTurnMessage, compactUserTurn, nudgeMessage, finalMessage };
 })();
 
 (() => {
@@ -1390,7 +1406,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
           const value = customInput.value.trim();
-          if (value) finish({ answer: 'Mi respuesta personalizada: ' + value + '. Usala para resolver la decisión pendiente y continuá con el pedido original. No repitas esta pregunta.' });
+          if (value) finish({ answer: 'Mi respuesta personalizada: ' + value + '. Usala para resolver la decisión pendiente y continuá con el pedido original. No repitas esta pregunta.', rawAnswer: value });
         }
       });
       customInput.addEventListener('blur', () => {
@@ -1473,7 +1489,20 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           const label = `${proposal.provider} · ${String(proposal.type || '').replaceAll('_', ' ')}`;
           if (failed) { results.push(`⏸ ${label}: no se ejecutó porque falló un paso anterior.`); continue; }
           let result;
-          if (agent.needsOwnerApproval(proposal)) {
+          const deleteRequest = agent.isRepositoryDeletionRequest(state.goal);
+          if (proposal.type === 'delete_repository' && deleteRequest) {
+            const proposedRepo = String(proposal.repository || '').trim().replace(/^https?:\\/\\/github\\.com\\//i, '').replace(/\\.git$/i, '').replace(/\\/$/, '');
+            const normalizedTarget = proposedRepo.includes('/') ? proposedRepo.toLowerCase() : `knmollpy/${proposedRepo}`.toLowerCase();
+            const expectedTarget = state.deleteRepositoryName ? `knmollpy/${state.deleteRepositoryName}`.toLowerCase() : '';
+            if (expectedTarget && normalizedTarget === expectedTarget) {
+              step(`Borrando el repositorio exacto solicitado: ${normalizedTarget}`);
+              result = await autoApprove(proposal);
+            } else {
+              result = { ok: false, error: expectedTarget
+                ? `No se ejecutó: el repositorio propuesto (${normalizedTarget}) no coincide con el nombre exacto indicado (${expectedTarget}).`
+                : 'No se ejecutó: primero necesito únicamente el nombre exacto del repositorio.' };
+            }
+          } else if (agent.needsOwnerApproval(proposal)) {
             step(`Esperando tu aprobación: ${proposal.summary.slice(0, 160)}`);
             result = await askOwnerToApprove(proposal, run, data.expiresInSeconds || 600);
             if (result.stopped) throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
@@ -1498,9 +1527,21 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         state.loopHistory.push({ role: 'assistant', content: `${data.answer || ''}${summary ? `\nAcciones: ${summary}` : ''}`.slice(0, 3000) });
         state.loopHistory = state.loopHistory.slice(-12);
         if (decision.kind === 'question') {
-          step('La IA necesita tu decisión para seguir. Elegí una opción o escribí tu respuesta…');
-          const reply = await askOwnerQuestion(classified.text || data.answer || '', run);
+          const needsRepoName = agent.isRepositoryDeletionRequest(state.goal) && !state.deleteRepositoryName;
+          const questionToShow = needsRepoName
+            ? '¿Cuál es el nombre exacto del repositorio que querés borrar? Escribí únicamente el nombre.'
+            : (classified.text || data.answer || '');
+          step(needsRepoName ? 'Esperando únicamente el nombre exacto del repositorio…' : 'La IA necesita tu decisión para seguir. Elegí una opción o escribí tu respuesta…');
+          const reply = await askOwnerQuestion(questionToShow, run);
           if (reply.stopped || run.stopped) { outcome = { kind: 'stopped', text: '' }; break; }
+          if (needsRepoName) {
+            const exactName = String(reply.rawAnswer || '').trim();
+            if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(exactName)) {
+              message = 'El nombre no parece un nombre válido de repositorio de GitHub. Volvé a pedir únicamente el nombre exacto del repositorio; no preguntes ningún otro dato.';
+              continue;
+            }
+            state.deleteRepositoryName = exactName;
+          }
           const ownerReply = String(reply.answer || '').trim();
           if (reply.action === 'alternative') {
             message = `El dueño eligió "Proponé otra alternativa". No repitas la pregunta ni las opciones anteriores. Revisá el pedido original y el contexto de esta decisión; proponé una alternativa nueva, concreta y diferente a las que ya ofreciste. Explicá brevemente por qué puede servir y, si podés avanzar sin otra decisión imprescindible, implementala y continuá el trabajo. Si todavía necesitás que el dueño elija, hacé una pregunta nueva con opciones contextuales distintas.`;
