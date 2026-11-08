@@ -191,6 +191,16 @@ test("sensitive or unconfirmed memory proposals are rejected", async () => {
   assert.equal((await response.json()).proposals.length, 0);
 });
 
+test("Beta rejects protected secret paths for single- and multi-file GitHub writes", async () => {
+  const response = await api("/actions/propose", "POST", { actions: [
+    { provider: "github", type: "write_file", repository: "knmollpy/mediachafa-transfer-", path: "app-source/.env.production", content: "SECRET=do-not-write" },
+    { provider: "github", type: "write_files", repository: "knmollpy/mediachafa-transfer-", files: [
+      { path: "app-source/config/credentials.json", content: "{}" }
+    ] }
+  ] });
+  assert.equal((await response.json()).proposals.length, 0);
+});
+
 test("pause during a model turn persists instructions and skips the pending tool call", async () => {
   modelTurns.push(
     { type: "tool_call", name: "github_write_files", arguments: { files: [{ path: "app-source/beta.js", content: "must not run while paused" }] } },
