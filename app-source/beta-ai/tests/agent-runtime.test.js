@@ -179,15 +179,26 @@ test("Beta saves persistent memory only after explicit owner approval", async ()
 });
 
 test("sensitive or unconfirmed memory proposals are rejected", async () => {
-  const response = await api("/actions/propose", "POST", { actions: [{
-    provider: "supabase",
-    type: "memory_save",
-    memory_key: "api_token",
-    memory_value: { text: "do not store" },
-    user_confirmed: false,
-    reusable: true,
-    sensitive: false
-  }] });
+  const response = await api("/actions/propose", "POST", { actions: [
+    {
+      provider: "supabase",
+      type: "memory_save",
+      memory_key: "api_token",
+      memory_value: { text: "do not store" },
+      user_confirmed: false,
+      reusable: true,
+      sensitive: false
+    },
+    {
+      provider: "supabase",
+      type: "memory_save",
+      memory_key: "profile",
+      memory_value: { text: "medical diagnosis: example" },
+      user_confirmed: true,
+      reusable: true,
+      sensitive: false
+    }
+  ] });
   assert.equal((await response.json()).proposals.length, 0);
 });
 
