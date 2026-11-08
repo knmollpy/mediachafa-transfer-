@@ -219,10 +219,12 @@ Para una página web pública: create_repository con visibility "public", despu�
   document.head.append(workStyle);
   const workModelSelect = $('#beta-work-model');
   function renderWorkModels() {
+    const prior = workModelSelect.value;
     workModelSelect.replaceChildren(
       ...[['★ RECOMENDADA · MediaChafa Pro','mediachafa::pro'],['MediaChafa Código','mediachafa::codigo'],['MediaChafa Rápida','mediachafa::rapida']].map(([label,value]) => { const option = new Option(label + (busyTaskModels.has(value) ? ' · OCUPADA' : ''), value); option.disabled = busyTaskModels.has(value); return option; })
     );
-    workModelSelect.value = busyTaskModels.has('mediachafa::pro') ? [...workModelSelect.options].find(option => !option.disabled)?.value || '' : 'mediachafa::pro';
+    const preferred = prior && !busyTaskModels.has(prior) ? prior : (!busyTaskModels.has('mediachafa::pro') ? 'mediachafa::pro' : [...workModelSelect.options].find(option => !option.disabled)?.value || '');
+    workModelSelect.value = preferred;
   }
   renderWorkModels();
   const WORK_API = 'https://mediachafa-task-hunter.nxmollpy.workers.dev';
