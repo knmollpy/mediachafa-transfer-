@@ -58,9 +58,9 @@ function publicState(state) {
     updatedAt: state.updatedAt
   };
 }
-async async function authenticate(request, env) {
+async function authenticate(request, env) {
   const auth = request.headers.get("Authorization") || "";
-  if (!/^Bearer\\s+\\S+$/i.test(auth)) return null;
+  if (!/^Bearer\s+\S+$/i.test(auth)) return null;
   const r = await fetch(SUPABASE_URL + "/auth/v1/user", {
     headers: { apikey: SUPABASE_KEY, Authorization: auth }
   });
