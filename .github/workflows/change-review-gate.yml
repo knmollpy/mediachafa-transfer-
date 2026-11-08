@@ -68,31 +68,39 @@ jobs:
       pull-requests: read
       statuses: read
     steps:
-      - name: Detect whether this PR changes Vercel-served files
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Find the latest commit that changes Vercel-served files
         id: preview
         env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          FILES="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename')"
-          if [ -z "$FILES" ]; then
-            echo "No se pudo obtener la lista de archivos del PR."
-            exit 1
-          fi
-          if printf '%s\n' "$FILES" | grep -Ev '^(\.github/workflows/|app-source/(beta-ai/|change-review/|migrations/|task-hunter/|\.github/|vercel\.json$))' | grep -q .; then
+          git fetch origin "$BASE_SHA" --depth=1
+          LATEST_FRONTEND_SHA=""
+          while IFS= read -r COMMIT; do
+            [ -n "$COMMIT" ] || continue
+            if git diff-tree --no-commit-id --name-only -r "$COMMIT" | grep -Ev '^(\.github/workflows/|app-source/(beta-ai/|change-review/|migrations/|task-hunter/|\.github/|vercel\.json$))' | grep -q .; then
+              LATEST_FRONTEND_SHA="$COMMIT"
+            fi
+          done < <(git rev-list --reverse "${BASE_SHA}..${HEAD_SHA}")
+          if [ -n "$LATEST_FRONTEND_SHA" ]; then
             echo "required=true" >> "$GITHUB_OUTPUT"
-            echo "El PR modifica archivos servidos por Vercel; se exigirá Preview."
+            echo "preview_sha=$LATEST_FRONTEND_SHA" >> "$GITHUB_OUTPUT"
+            echo "Se exigirá Preview del último commit con cambios frontend: $LATEST_FRONTEND_SHA"
           else
             echo "required=false" >> "$GITHUB_OUTPUT"
-            echo "El PR solo modifica Workers, pruebas o migraciones; no necesita compilar Vercel."
+            echo "El PR solo modifica Workers, pruebas, migraciones o configuración; no necesita Preview."
           fi
       - name: Wait for Vercel Preview to report success
         if: steps.preview.outputs.required == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ steps.preview.outputs.preview_sha }}
         shell: bash
         run: |
           set -euo pipefail
