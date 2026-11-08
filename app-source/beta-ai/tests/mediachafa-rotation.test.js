@@ -42,7 +42,7 @@ test("rotates to the next engine when Cloudflare reports quota exhausted", async
   const res = await chat(env, "mediachafa::codigo");
   const data = await res.json();
   assert.equal(res.status, 200);
-  assert.equal(data.answer, "Hola desde respaldo");
+  assert.match(data.answer, /Las tres IAs llegaron a un acuerdo\\. Hola desde respaldo/);
   assert.equal(data.rotations, 1);
   assert.equal(aiCalls[0], "@cf/qwen/qwen2.5-coder-32b-instruct");
   assert.equal(aiCalls[1], "@cf/openai/gpt-oss-120b");
@@ -69,5 +69,5 @@ test("broken JSON answers never show raw code or JSON to the user", async () => 
     return { response: calls === 1 ? broken : '{"decision":"approve","confidence":0.95,"findings":[]}' };
   });
   const data = await (await chat(env, "mediachafa::rapida")).json();
-  assert.equal(data.answer, "Preparé el repositorio.");
+  assert.match(data.answer, /Las tres IAs llegaron a un acuerdo\\. Preparé el repositorio\\./);
 });
