@@ -1875,29 +1875,55 @@ async function callModel(env, candidate, messages, history, promptText, image, m
 }
 
 async function mediachafaCandidates(env, userId, variant, needsVision) {
-  const config = MEDIACHAFA_MODELS[variant];
   const list = [];
-  const cfModels = needsVision ? [...CF_VISION_MODELS] : [...config.cf];
-  for (const id of cfModels) list.push({ provider: "workersai", nativeId: id, name: id.split("/").pop(), vision: CF_VISION_MODELS.includes(id) });
-  // Otros motores gratuitos conectados (los catálogos ya filtran solo modelos gratuitos).
+  // Cada IA propia usa su propio modelo principal, sin cambiar de identidad según quién inició el chat.
+  const primaries = MEDIACHAFA_ORDER.map((role, index) => {
+    const config = MEDIACHAFA_MODELS[role];
+    const nativeId = needsVision ? CF_VISION_MODELS[index] : config.cf[0];
+    return {
+      provider: "workersai",
+      nativeId,
+      name: nativeId.split("/").pop(),
+      vision: CF_VISION_MODELS.includes(nativeId),
+      mediachafaRole: role,
+      primary: true,
+    };
+  });
+  list.push(...primaries);
+  // Los demás modelos de Workers AI quedan como respaldo, no se presentan como otra IA propia.
+  const backups = [];
+  for (const role of MEDIACHAFA_ORDER) {
+    const config = MEDIACHAFA_MODELS[role];
+    const ids = needsVision ? CF_VISION_MODELS : config.cf.slice(1);
+    for (const id of ids) {
+      if (primaries.some((item) => item.nativeId === id) || backups.some((item) => item.nativeId === id)) continue;
+      backups.push({ provider: "workersai", nativeId: id, name: id.split("/").pop(), vision: CF_VISION_MODELS.includes(id), backup: true });
+    }
+  }
+  // Proveedores externos gratuitos conectados; cada catálogo filtra modelos elegibles.
   const external = [];
   for (const provider of ["groq", "gemini", "cohere", "openrouter"]) {
     const token = await storedToken(env, userId, provider);
     if (!token) continue;
     try {
       const catalog = await providerModelCatalog(provider, token);
-      for (const model of catalog) external.push({ provider, nativeId: model.nativeId || model.id.split("::")[1] || model.id, modelId: model.id, name: model.name, vision: Boolean(model.vision), token });
+      const preferred = catalog.slice().sort((a, b) => {
+        const preference = MEDIACHAFA_MODELS[variant].prefer;
+        return Number(preference.test(b.nativeId || b.id)) - Number(preference.test(a.nativeId || a.id));
+      });
+      for (const model of preferred) {
+        external.push({ provider, nativeId: model.nativeId || model.id.split("::")[1] || model.id, modelId: model.id, name: model.name, vision: Boolean(model.vision), token });
+      }
     } catch {}
   }
-  external.sort((a, b) => Number(config.prefer.test(b.nativeId)) - Number(config.prefer.test(a.nativeId)));
-  // Máximo 3 modelos por proveedor externo para no gastar tiempo ni cuotas.
   const perProvider = {};
+  const filteredExternal = [];
   for (const model of external) {
     if (needsVision && !model.vision) continue;
     perProvider[model.provider] = (perProvider[model.provider] || 0) + 1;
-    if (perProvider[model.provider] <= 3) list.push(model);
+    if (perProvider[model.provider] <= 3) filteredExternal.push(model);
   }
-  return list;
+  return [...primaries, ...filteredExternal, ...backups];
 }
 
 
@@ -1906,7 +1932,7 @@ async function runMediaChafaConsensus(args) {
   const date = new Date().toISOString().slice(0, 10);
   const counterKey = "beta-ai-requests:" + user.id + ":workersai:day:" + date;
   let workersAiUsed = Number(await env.BETA_LIMITS.get(counterKey) || 0);
-  const cloud = candidates.filter((candidate) => candidate.provider === "workersai").slice(0, 3);
+  const roleCandidates = candidates.filter((candidate) => candidate.provider === "workersai" && candidate.primary && candidate.mediachafaRole);
   const external = [];
   const seenProviders = new Set();
   for (const candidate of candidates.filter((item) => item.provider !== "workersai")) {
@@ -1915,15 +1941,10 @@ async function runMediaChafaConsensus(args) {
     external.push(candidate);
   }
   const roleOrder = [variant, ...MEDIACHAFA_ORDER.filter((item) => item !== variant)];
-  const roleCandidates = [...cloud];
-  for (const candidate of external) {
-    if (roleCandidates.length >= 3) break;
-    roleCandidates.push(candidate);
-  }
-  const roleProviderKeys = new Set(roleCandidates.map((candidate) => candidate.provider));
-  const peerCandidates = external.filter((candidate) => !roleProviderKeys.has(candidate.provider)).slice(0, 3);
+  const selectedProviders = new Set(roleCandidates.map((candidate) => candidate.provider));
+  const peerCandidates = external.filter((candidate) => !selectedProviders.has(candidate.provider)).slice(0, 3);
   const team = [
-    ...roleCandidates.map((candidate, index) => ({ candidate, role: roleOrder[index] || "pro", label: MEDIACHAFA_MODELS[roleOrder[index] || "pro"].name, kind: "MediaChafa" })),
+    ...roleCandidates.map((candidate) => ({ candidate, role: candidate.mediachafaRole, label: MEDIACHAFA_MODELS[candidate.mediachafaRole].name, kind: "MediaChafa" })),
     ...peerCandidates.map((candidate) => ({ candidate, role: "peer", label: "Revisor externo · " + candidate.provider, kind: "Externo" })),
   ].slice(0, 6);
   if (team.length < 3) return null;
@@ -1990,7 +2011,9 @@ async function runMediaChafaConsensus(args) {
   const successfulDrafts = drafts.filter(Boolean);
   // Si un motor falla, probá otros modelos gratuitos ya conectados antes de aceptar un equipo reducido.
   const usedCandidates = new Set(team.map((item) => item.candidate.provider + "::" + item.candidate.nativeId));
-  const spareCandidates = candidates.filter((item) => !usedCandidates.has(item.provider + "::" + item.nativeId));
+  const spareCandidates = candidates
+    .filter((item) => !usedCandidates.has(item.provider + "::" + item.nativeId))
+    .sort((a, b) => Number(a.provider === "workersai") - Number(b.provider === "workersai"));
   const failedSlots = team.filter((_item, index) => !drafts[index]);
   for (const failed of failedSlots) {
     while (spareCandidates.length && successfulDrafts.length < 6) {
@@ -2086,7 +2109,7 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
   ];
   const fetchImpl = (input, init = {}) => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60_000);
+    const timeout = setTimeout(() => controller.abort(), 35_000);
     if (request.signal.aborted) controller.abort();
     else request.signal.addEventListener("abort", () => controller.abort(), { once: true });
     return globalThis.fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeout));
