@@ -80,7 +80,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin "$BASE_SHA" --depth=1
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch origin "$BASE_SHA" --depth=1
+          fi
           LATEST_FRONTEND_SHA=""
           while IFS= read -r COMMIT; do
             [ -n "$COMMIT" ] || continue
