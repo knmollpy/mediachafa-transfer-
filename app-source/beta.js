@@ -1596,6 +1596,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
             step(`${result.denied ? 'Denegado' : 'Falló'}: ${result.error}`, result.denied ? 'done' : 'error');
           }
         }
+        if (run.stopped) throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
         if (replanAfterPause) continue;
         const lateInstructions = absorbQueuedInstructions(run, state);
         if (lateInstructions) {
