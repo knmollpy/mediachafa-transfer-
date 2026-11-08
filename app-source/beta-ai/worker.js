@@ -2042,8 +2042,8 @@ async function internalReviewModel(env, payload) {
     signal: init.signal || AbortSignal.timeout(45000),
   });
   for (const candidate of candidates) {
-    if (candidate.provider === "workersai" && (!env.AI || workersAiUsed >= WORKERS_AI_DAILY_SAFETY_LIMIT)) {
-      attempts.push(`${candidate.name}: Workers AI no disponible o límite local alcanzado`);
+    if (candidate.provider === "workersai" && !env.AI) {
+      attempts.push(`${candidate.name}: Workers AI no está vinculado`);
       continue;
     }
     if (candidate.provider === "openrouter") {
@@ -2058,13 +2058,8 @@ async function internalReviewModel(env, payload) {
         continue;
       }
     }
-    if (candidate.provider !== "workersai") {
-      const quota = await reserveRequest(env, OWNER_USER_ID, candidate.modelId);
-      if (!quota.allowed) {
-        attempts.push(`${candidate.provider}: límite de seguridad del proveedor alcanzado`);
-        continue;
-      }
-    }
+    // En la revisión no imponemos cuotas locales: cada proveedor responde con su límite real.
+    // Un 429/402/5xx provoca rotación automática hacia la siguiente alternativa gratuita.
     let outcome;
     try {
       outcome = await callModel(env, candidate, messages, [], promptText, null, 2200, fetchImpl);
