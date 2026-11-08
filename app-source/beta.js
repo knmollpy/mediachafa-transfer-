@@ -1292,43 +1292,41 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       sendButton.disabled = false;
       sendButton.classList.add('beta-send-pause');
       sendButton.textContent = '■';
-      sendButton.setAttribute('aria-label', 'Pausar el trabajo de Beta');
-      sendButton.title = 'Pausar y agregar otra instrucción';
+      sendButton.setAttribute('aria-label', 'Detener el trabajo de Beta');
+      sendButton.title = 'Detener el trabajo';
     } else {
       sendButton.classList.remove('beta-send-pause');
       sendButton.textContent = '↑';
       sendButton.setAttribute('aria-label', 'Enviar mensaje');
-      sendButton.title = mode === 'paused' ? 'Enviar corrección y reanudar' : 'Enviar mensaje';
+      sendButton.title = 'Enviar mensaje';
       sendButton.disabled = mode === 'busy';
     }
   }
 
-  function resumeAutonomous(run, instruction = '') {
-    if (!run || !run.paused) return;
-    run.paused = false;
-    run.pauseRequested = false;
-    run.controller = new AbortController();
-    setComposerMode('busy');
-    setStatus('Continuando el modo autónomo…');
-    run.resumeResolve?.(String(instruction || '').trim());
-    run.resumeResolve = null;
+  function queueAutonomousInstruction(run, rawInstruction) {
+    const instruction = String(rawInstruction || '').trim();
+    if (!run || !instruction || run.stopped) return false;
+    addMessage('user', instruction);
+    history.push({ role: 'user', content: instruction });
+    history = history.slice(-30);
+    saveHistory();
+    if (run.waitingKind === 'question' && run.waiting) {
+      run.waiting({ answer: instruction, rawAnswer: instruction });
+    } else {
+      run.queuedInstructions.push(instruction);
+      if (run.waitingKind === 'approval' && run.waiting) run.waiting({ paused: true });
+      setStatus('Instrucción agregada. Beta la incorporará antes de ejecutar el próximo paso.');
+      activity('Nueva instrucción recibida; se actualizará el plan antes de continuar.', 'active');
+    }
+    return true;
   }
 
-  async function pauseAtSafePoint(run) {
-    if (!run.pauseRequested && !run.paused) return '';
-    run.pauseRequested = false;
-    run.paused = true;
-    setComposerMode('paused');
-    setStatus('Beta está pausada. Podés escribir una corrección o instrucción y enviarla para continuar.');
-    activity('Modo autónomo pausado por el dueño.', 'active');
-    const instruction = await new Promise(resolve => { run.resumeResolve = resolve; });
-    if (instruction && run.state?.loopHistory) {
-      run.state.loopHistory.push({ role: 'user', content: `CORRECCIÓN / INSTRUCCIÓN DEL DUEÑO: ${instruction}` });
-      run.state.loopHistory = run.state.loopHistory.slice(-12);
-    }
-    run.paused = false;
-    setComposerMode('busy');
-    return instruction ? `INSTRUCCIÓN NUEVA DEL DUEÑO (prioridad alta):\n${instruction}\nIncorporala al pedido original y continuá desde el estado actual, sin repetir acciones ya completadas.` : '';
+  function absorbQueuedInstructions(run, state) {
+    if (!run?.queuedInstructions?.length) return '';
+    const instruction = run.queuedInstructions.splice(0).join('\n');
+    state.loopHistory.push({ role: 'user', content: `INSTRUCCIONES NUEVAS DEL DUEÑO (prioridad máxima):\n${instruction}\nIncorporalas al objetivo original y al estado real actual. Si contradicen el plan anterior, prevalecen estas instrucciones. No repitas acciones ya completadas.` });
+    state.loopHistory = state.loopHistory.slice(-12);
+    return instruction;
   }
 
   // El botón de envío cambia a pausa mientras Beta trabaja; no hace falta un control aparte.
@@ -1471,7 +1469,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         run.waitingKind = null;
         for (const button of controls.querySelectorAll('button')) button.disabled = true;
         customInput.disabled = true;
-        resolve(outcome?.stopped ? { stopped: true } : outcome?.paused ? { paused: true } : { answer: '' });
+        resolve(outcome?.stopped ? { stopped: true } : outcome?.paused ? { paused: true } : { answer: String(outcome?.answer || ''), rawAnswer: String(outcome?.rawAnswer || outcome?.answer || '') });
       };
       setStatus('Beta está esperando tu decisión. Elegí una opción o escribí tu propia respuesta.');
       activity('Esperando tu respuesta para continuar.', 'active');
@@ -1489,7 +1487,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
 
   async function runAutonomous({ state, firstMessage, attachments, model }) {
-    const run = { stopped: false, pauseRequested: false, paused: false, inFlight: false, controller: new AbortController(), waiting: null, waitingKind: null, state, resumeResolve: null };
+    const run = { stopped: false, inFlight: false, controller: new AbortController(), waiting: null, waitingKind: null, state, queuedInstructions: [] };
     autonomousRun = run;
     setComposerMode('working');
     const progress = addMessage('assistant', 'Trabajando en modo autónomo…');
@@ -1514,11 +1512,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     try {
       while (state.turn < state.maxTurns) {
         if (run.stopped) { outcome = { kind: 'stopped', text: '' }; break; }
-        if (run.pauseRequested || run.paused) {
-          const resumed = await pauseAtSafePoint(run);
-          if (resumed) message = resumed;
-          if (run.stopped) { outcome = { kind: 'stopped', text: '' }; break; }
-        }
+        const incomingAtStart = absorbQueuedInstructions(run, state);
+        if (incomingAtStart) message = `INSTRUCCIONES NUEVAS DEL DUEÑO:\n${incomingAtStart}\nRevisá el plan y continuá desde el estado actual.`;
         state.turn += 1;
         step(`Turno ${state.turn}: pensando el próximo paso…`);
         let data;
@@ -1531,24 +1526,20 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           } catch (error) {
             run.inFlight = false;
             if (run.stopped) throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
-            if (run.pauseRequested && error.name === 'AbortError') {
-              const resumed = await pauseAtSafePoint(run);
-              state.turn = Math.max(0, state.turn - 1);
-              if (resumed) message = resumed;
-              data = null;
-              break;
-            }
             if (error.name === 'AbortError') throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
             if (!agent.shouldRetry(error.status, attempt, model)) throw error;
             step(`El modelo no respondió (${error.status || 'sin conexión'}); reintento en unos segundos…`);
             await waitMs(attempt === 0 ? 4000 : 10000, run);
-            if (run.pauseRequested) {
-              const resumed = await pauseAtSafePoint(run);
-              if (resumed) message = resumed;
-            }
           }
         }
         if (!data) continue;
+        const arrivedDuringThinking = absorbQueuedInstructions(run, state);
+        if (arrivedDuringThinking) {
+          state.turn = Math.max(0, state.turn - 1);
+          message = `INSTRUCCIONES NUEVAS DEL DUEÑO:\n${arrivedDuringThinking}\nDescartá el plan que acabás de generar porque se redactó antes de recibir estas instrucciones. Volvé a analizar el pedido y el estado actual; no ejecutes ninguna acción de ese plan anterior.`;
+          step('Instrucción incorporada. Recalculando el próximo paso antes de ejecutar acciones…');
+          continue;
+        }
         if (data.modelName) lastModelName = data.modelName;
         const classified = agent.classifyAnswer(data.answer);
         const proposals = Array.isArray(data.proposals) ? data.proposals : [];
@@ -1558,9 +1549,11 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         let failed = false;
         let replanAfterPause = false;
         for (let i = 0; i < proposals.length; i++) {
-          if (run.pauseRequested || run.paused) {
-            const resumed = await pauseAtSafePoint(run);
-            if (resumed) message = resumed;
+          const arrivedBeforeAction = absorbQueuedInstructions(run, state);
+          if (arrivedBeforeAction) {
+            message = `INSTRUCCIONES NUEVAS DEL DUEÑO:\n${arrivedBeforeAction}\nDescartá las acciones restantes del plan anterior y volvé a evaluar antes de continuar.`;
+            replanAfterPause = true;
+            break;
           }
           if (run.stopped) throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
           const proposal = proposals[i];
@@ -1583,17 +1576,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           } else if (agent.needsOwnerApproval(proposal)) {
             step(`Esperando tu aprobación: ${proposal.summary.slice(0, 160)}`);
             result = await askOwnerToApprove(proposal, run, data.expiresInSeconds || 600);
-            if (result.paused || run.pauseRequested) {
-              const resumed = await pauseAtSafePoint(run);
-              if (resumed) {
-                message = `La propuesta anterior quedó pausada y NO fue aprobada ni ejecutada. Reevaluá el pedido completo con esta nueva instrucción: ${resumed}`;
-                state.loopHistory.push({ role: 'assistant', content: `La propuesta pendiente no se aprobó y no se ejecutó: ${proposal.summary}. El dueño agregó una instrucción; revisá si corresponde modificar o descartar la propuesta.` });
-                state.loopHistory = state.loopHistory.slice(-12);
-                replanAfterPause = true;
-                break;
-              }
-              i -= 1;
-              continue;
+            if (result.paused) {
+              message = 'La propuesta pendiente no fue aprobada. Reevaluá el pedido con la instrucción nueva.';
+              replanAfterPause = true;
+              break;
             }
             if (result.stopped) throw Object.assign(new Error('Detenido por el dueño.'), { stopped: true });
           } else {
@@ -1611,9 +1597,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           }
         }
         if (replanAfterPause) continue;
-        if (run.pauseRequested) {
-          const resumed = await pauseAtSafePoint(run);
-          if (resumed) message = resumed;
+        const lateInstructions = absorbQueuedInstructions(run, state);
+        if (lateInstructions) {
+          message = `INSTRUCCIONES NUEVAS DEL DUEÑO:\n${lateInstructions}\nRevisá el estado actual y continuá con el plan actualizado.`;
           continue;
         }
         const decision = agent.decideNext({ classified, proposalsCount: proposals.length, failed, emptyStreak: state.emptyStreak });
@@ -1631,11 +1617,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           step(needsRepoName ? 'Esperando únicamente el nombre exacto del repositorio…' : 'La IA necesita tu decisión para seguir. Elegí una opción o escribí tu respuesta…');
           const reply = await askOwnerQuestion(questionToShow, run);
           if (reply.stopped || run.stopped) { outcome = { kind: 'stopped', text: '' }; break; }
-          if (reply.paused || run.pauseRequested) {
-            const resumed = await pauseAtSafePoint(run);
-            if (resumed) message = resumed;
-            continue;
-          }
+          if (reply.paused) continue;
           if (needsRepoName) {
             const exactName = String(reply.rawAnswer || '').trim();
             if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(exactName)) {
@@ -1666,7 +1648,6 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     } finally {
       autonomousRun = null;
       run.waiting = null;
-      run.resumeResolve = null;
       setComposerMode('idle');
     }
     progress.remove();
@@ -1714,24 +1695,13 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (autonomousRun?.paused) {
-      const instruction = input.value.trim();
-      if (!instruction) { setStatus('Escribí la corrección o instrucción que querés agregar antes de continuar.', 'error'); input.focus(); return; }
-      addMessage('user', instruction);
-      input.value = '';
-      history.push({ role: 'user', content: instruction });
-      history = history.slice(-30);
-      saveHistory();
-      resumeAutonomous(autonomousRun, instruction);
-      return;
-    }
     if (autonomousRun) {
-      if (autonomousRun.pauseRequested) return;
-      autonomousRun.pauseRequested = true;
+      autonomousRun.stopped = true;
+      autonomousRun.controller.abort();
+      autonomousRun.waiting?.({ stopped: true });
+      setStatus('Deteniendo Beta…');
+      activity('El usuario detuvo el trabajo.', 'active');
       setComposerMode('busy');
-      setStatus('Pausando en un punto seguro…');
-      if (autonomousRun.waitingKind === 'question' || autonomousRun.waitingKind === 'approval') autonomousRun.waiting?.({ paused: true });
-      else if (autonomousRun.inFlight) autonomousRun.controller.abort();
       return;
     }
     const prompt = input.value.trim();
@@ -1831,6 +1801,13 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   input.addEventListener('keydown', event => {
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
     event.preventDefault();
+    if (autonomousRun) {
+      const instruction = input.value.trim();
+      if (!instruction) return;
+      input.value = '';
+      queueAutonomousInstruction(autonomousRun, instruction);
+      return;
+    }
     if (!sendButton.disabled) form.requestSubmit(sendButton);
   });
 
