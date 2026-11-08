@@ -15,16 +15,16 @@
 
   function requestedRepositoryName(goal) {
     const text = String(goal || '');
-    const full = text.match(/(?:github\\.com\\/)?knmollpy\\/([A-Za-z0-9._-]{1,100})/i);
+    const full = text.match(/(?:github\.com\/)?knmollpy\/([A-Za-z0-9._-]{1,100})/i);
     if (full) return full[1];
-    const named = text.match(/\\b(?:repositorio|repo)\\s+(?:(?:llamado|llamada|de nombre|que se llama)\\s+)?(?:(?:el|la|un|una|mi|ese|este)\\s+)?["'`]?([A-Za-z0-9][A-Za-z0-9._-]{0,99})/i);
+    const named = text.match(/\b(?:repositorio|repo)\s+(?:(?:llamado|llamada|de nombre|que se llama)\\s+)?(?:(?:el|la|un|una|mi|ese|este)\\s+)?["'`]?([A-Za-z0-9][A-Za-z0-9._-]{0,99})/i);
     if (named && !/^(?:un|una|el|la|mi|ese|este|que|de|github)$/i.test(named[1])) return named[1];
     return '';
   }
 
   function isRepositoryDeletionRequest(goal) {
-    return /\\b(?:borr\\w*|elimin\\w*|delete|remove)\\b/i.test(String(goal || '')) &&
-      /\\b(?:repo|repositorio|repository)\\w*\\b/i.test(String(goal || ''));
+    return /\b(?:borr\w*|elimin\w*|delete|remove)\b/i.test(String(goal || '')) &&
+      /\b(?:repo|repositorio|repository)\w*\b/i.test(String(goal || ''));
   }
 
   function newState(goal, model) {
@@ -1491,7 +1491,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           let result;
           const deleteRequest = agent.isRepositoryDeletionRequest(state.goal);
           if (proposal.type === 'delete_repository' && deleteRequest) {
-            const proposedRepo = String(proposal.repository || '').trim().replace(/^https?:\\/\\/github\\.com\\//i, '').replace(/\\.git$/i, '').replace(/\\/$/, '');
+            const proposedRepo = String(proposal.repository || '').trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/$/, '');
             const normalizedTarget = proposedRepo.includes('/') ? proposedRepo.toLowerCase() : `knmollpy/${proposedRepo}`.toLowerCase();
             const expectedTarget = state.deleteRepositoryName ? `knmollpy/${state.deleteRepositoryName}`.toLowerCase() : '';
             if (expectedTarget && normalizedTarget === expectedTarget) {
