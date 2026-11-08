@@ -7,12 +7,23 @@ on:
         description: Beta autonomous execution ID
         required: false
         type: string
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "app-source/beta-ai/**"
+      - "app-source/beta.js"
+      - "app-source/beta-visual-check.js"
+      - "app-source/index.html"
+      - "app-source/package.json"
+      - ".github/workflows/beta-agent-tests.yml"
   push:
     branches:
       - "beta-agent/**"
     paths:
       - "app-source/beta-ai/**"
       - "app-source/beta.js"
+      - "app-source/beta-visual-check.js"
       - "app-source/index.html"
       - ".github/workflows/beta-agent-tests.yml"
       - "app-source/package.json"
@@ -34,6 +45,7 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check beta.js
+          node --check beta-visual-check.js
           node --check beta-ai/worker.js
       - name: Run Beta agent integration tests
         run: npm run test:beta-agent
