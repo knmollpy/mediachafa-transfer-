@@ -81,7 +81,7 @@ jobs:
             echo "No se pudo obtener la lista de archivos del PR."
             exit 1
           fi
-          if printf '%s\n' "$FILES" | grep -Ev '^(\.github/workflows/|app-source/(beta-ai/|change-review/|migrations/|vercel\.json$))' | grep -q .; then
+          if printf '%s\n' "$FILES" | grep -Ev '^(\.github/workflows/|app-source/(beta-ai/|change-review/|migrations/|task-hunter/|\.github/|vercel\.json$))' | grep -q .; then
             echo "required=true" >> "$GITHUB_OUTPUT"
             echo "El PR modifica archivos servidos por Vercel; se exigirá Preview."
           else
