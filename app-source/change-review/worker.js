@@ -3,7 +3,13 @@ import { WorkflowEntrypoint } from "cloudflare:workers";
 const REPOSITORY = "knmollpy/mediachafa-transfer-";
 const EXPECTED_WORKFLOW = ".github/workflows/change-review-gate.yml";
 const MODEL = "@cf/openai/gpt-oss-20b";
-const MAX_REVIEWS_PER_DAY = 8;
+const MODEL_FALLBACKS = [
+  "@cf/openai/gpt-oss-120b",
+  "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  MODEL,
+  "@cf/zai-org/glm-4.7-flash",
+];
+const BETA_REVIEW_MODEL_URL = "https://mediachafa-beta-ai.nxmollpy.workers.dev/internal/review-model";
 const REVIEW_TTL = 7 * 24 * 60 * 60;
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -77,6 +83,50 @@ function parseReview(text) {
   if (match) { try { return JSON.parse(match[0]); } catch {} }
   throw new Error("El revisor independiente devolvió un formato inválido.");
 }
+async function reviewWithModels(env, messages) {
+  const failures = [];
+  if (env.CHANGE_REVIEW_SERVICE_TOKEN) {
+    try {
+      const response = await fetch(BETA_REVIEW_MODEL_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.CHANGE_REVIEW_SERVICE_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ messages }),
+        signal: AbortSignal.timeout(60000),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && typeof data.text === "string" && data.text.trim()) {
+        return {
+          text: data.text,
+          model: String(data.model || "free-model"),
+          provider: String(data.provider || "MediaChafa multi-provider"),
+        };
+      }
+      failures.push(`MediaChafa router HTTP ${response.status}: ${String(data.error || "sin respuesta").slice(0, 180)}`);
+    } catch (error) {
+      failures.push(`MediaChafa router: ${String(error?.message || error).slice(0, 180)}`);
+    }
+  }
+  if (env.AI) {
+    for (const model of MODEL_FALLBACKS) {
+      try {
+        const result = await env.AI.run(model, {
+          messages,
+          max_tokens: 2200,
+          temperature: 0.1,
+        });
+        const text = extractModelText(result);
+        if (text.trim()) return { text, model, provider: "Cloudflare Workers AI" };
+        failures.push(`${model}: respuesta vacía`);
+      } catch (error) {
+        failures.push(`${model}: ${String(error?.message || error).slice(0, 140)}`);
+      }
+    }
+  }
+  throw new Error(`Todos los motores gratuitos de revisión fallaron; no se aprobará el PR. ${failures.slice(-6).join(" | ")}`.slice(0, 1600));
+}
 async function verifyTrustedControlFiles(env, headSha) {
   const expected = {
     ".github/workflows/change-review-gate.yml": String(env.TRUSTED_WORKFLOW_BLOB_SHA || ""),
@@ -129,17 +179,6 @@ export class ChangeReviewWorkflow extends WorkflowEntrypoint {
     const { reviewId, pullNumber, headSha, pollToken } = event.payload || {};
     await persist(this.env, reviewId, { status: "running", pull_number: pullNumber, head_sha: headSha, poll_token: pollToken });
     try {
-      await step.do("reserve-review-quota", async () => {
-        const reservationKey = `mediachafa-change-review:reserved:${reviewId}`;
-        if (await this.env.REVIEW_STATE.get(reservationKey)) return { reserved: true, reused: true };
-        const date = new Date().toISOString().slice(0, 10);
-        const dailyKey = `mediachafa-change-review:daily:${date}`;
-        const used = Number(await this.env.REVIEW_STATE.get(dailyKey) || 0);
-        if (used >= MAX_REVIEWS_PER_DAY) throw new Error("Se alcanzó el límite diario gratuito de revisiones; publicación bloqueada hasta el próximo día.");
-        await this.env.REVIEW_STATE.put(dailyKey, String(used + 1), { expirationTtl: 172800 });
-        await this.env.REVIEW_STATE.put(reservationKey, "1", { expirationTtl: REVIEW_TTL });
-        return { reserved: true, used: used + 1 };
-      });
       const input = await step.do("load-and-validate-pull-request", { retries: { limit: 2, delay: "5 seconds", backoff: "exponential" } }, async () => collectReviewInput(pullNumber, headSha, this.env));
       const review = await step.do("independent-ai-regression-review", { retries: { limit: 2, delay: "10 seconds", backoff: "exponential" }, timeout: "5 minutes" }, async () => {
         const prompt = [
@@ -150,15 +189,12 @@ export class ChangeReviewWorkflow extends WorkflowEntrypoint {
           "Respondé SOLO JSON: {decision:'approve'|'block',confidence:0..1,scope_ok:boolean,requirements_met:boolean,regressions_found:boolean,findings:[{severity:'low'|'medium'|'high'|'critical',file:string,detail:string}],summary:string}.",
           "Aprobá únicamente si scope_ok=true, requirements_met=true, regressions_found=false, confidence>=0.85 y no hay hallazgos high/critical."
         ].join("\n\n");
-        const result = await this.env.AI.run(MODEL, {
-          messages: [
-            { role: "system", content: prompt },
-            { role: "user", content: JSON.stringify({ request: input.request, requirements: input.requirements, allowed_paths: input.allowedPaths, allow_deletions: input.allowDeletions, title: input.title, files: input.fileCount, diff: input.patches }) }
-          ],
-          max_tokens: 2200,
-          temperature: 0.1,
-        });
-        const parsed = parseReview(extractModelText(result));
+        const messages = [
+          { role: "system", content: prompt },
+          { role: "user", content: JSON.stringify({ request: input.request, requirements: input.requirements, allowed_paths: input.allowedPaths, allow_deletions: input.allowDeletions, title: input.title, files: input.fileCount, diff: input.patches }) }
+        ];
+        const modelResult = await reviewWithModels(this.env, messages);
+        const parsed = parseReview(modelResult.text);
         const findings = Array.isArray(parsed.findings) ? parsed.findings.slice(0, 30) : [];
         const severe = findings.some(item => ["high", "critical"].includes(String(item.severity || "").toLowerCase()));
         const approved = parsed.decision === "approve" && parsed.scope_ok === true && parsed.requirements_met === true && parsed.regressions_found === false && Number(parsed.confidence) >= 0.85 && !severe;
@@ -175,7 +211,8 @@ export class ChangeReviewWorkflow extends WorkflowEntrypoint {
           head_sha: headSha,
           poll_token: pollToken,
           reviewed_at: new Date().toISOString(),
-          reviewer_model: MODEL,
+          reviewer_model: modelResult.model,
+          reviewer_provider: modelResult.provider,
         };
       });
       await step.do("persist-review-decision", async () => { await persist(this.env, reviewId, review); return { saved: true, status: review.status }; });
@@ -201,7 +238,7 @@ export default {
       const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
       try { await verifyGitHubOidc(token, pullNumber); }
       catch (error) { return json({ error: String(error?.message || "OIDC rechazado.") }, 403); }
-      if (!env.CHANGE_REVIEW_WORKFLOW || !env.REVIEW_STATE || !env.AI) return json({ error: "El revisor no está configurado; no se puede publicar." }, 503);
+      if (!env.CHANGE_REVIEW_WORKFLOW || !env.REVIEW_STATE || (!env.AI && !env.CHANGE_REVIEW_SERVICE_TOKEN)) return json({ error: "El revisor no tiene motores configurados; no se puede publicar." }, 503);
       const reviewId = crypto.randomUUID();
       const pollToken = crypto.randomUUID() + crypto.randomUUID();
       await persist(env, reviewId, { status: "queued", pull_number: pullNumber, head_sha: headSha, poll_token: pollToken });
