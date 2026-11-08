@@ -16,6 +16,10 @@ on:
       - "app-source/beta-visual-check.js"
       - "app-source/index.html"
       - "app-source/package.json"
+      - "app-source/e2e/**"
+      - "app-source/playwright.config.js"
+      - "app-source/sentry-*.js"
+      - "index.html"
       - ".github/workflows/beta-agent-tests.yml"
   push:
     branches:
