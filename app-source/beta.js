@@ -174,7 +174,7 @@ Para una página web pública: create_repository con visibility "public", despu�
   workView.innerHTML = `
     <div class="beta-work-zone">
       <div class="beta-work-zone-head"><div><h2>Zona de trabajo</h2><p>Asigná tareas a una IA y conservá su registro aunque cierres Beta.</p></div><button type="button" class="secondary" id="beta-work-refresh">Actualizar</button></div>
-      <div class="beta-work-disclaimer" role="status">Por ahora cargás las tareas manualmente y la IA produce entregables con una cuota gratuita limitada (máximo 3 trabajos por día). Los checkpoints quedan guardados y el Workflow continúa aunque cierres Beta. Todavía no descubre ofertas automáticamente ni inicia sesión o envía tareas a plataformas remuneradas. No se simulan ingresos ni pagos.</div>
+      <div class="beta-work-disclaimer" role="status">MediaChafa busca oportunidades automáticamente en fuentes compatibles. Podés asignar trabajos a MediaChafa Pro para preparar entregables; la postulación y cualquier acción externa requieren revisión y aprobación. Los checkpoints de los trabajos quedan guardados y el Workflow puede continuar aunque cierres Beta. No se simulan ingresos ni pagos.</div>
       <form id="beta-work-form" class="beta-work-form">
         <label>Trabajo o tarea<input id="beta-work-title" maxlength="180" required placeholder="Ej. Transcribir y revisar un audio"></label>
         <label>Instrucciones<textarea id="beta-work-description" maxlength="12000" rows="4" placeholder="Describí el encargo, formato y requisitos de calidad…"></textarea></label>
@@ -329,7 +329,8 @@ Para una página web pública: create_repository con visibility "public", despu�
     } catch(error) { opportunityList.textContent=error.message;opportunityCount.textContent='No disponible'; }
   }
     $('#beta-work-refresh').addEventListener('click',refreshWorkTasks);
-  setInterval(() => { if (!document.hidden) refreshWorkTasks(); }, 15000);\n  setInterval(() => { if (!document.hidden) refreshOpportunities(); }, 5 * 60 * 1000);
+  setInterval(() => { if (!document.hidden) refreshWorkTasks(); }, 15000);
+  setInterval(() => { if (!document.hidden) refreshOpportunities(); }, 5 * 60 * 1000);
   workTab.addEventListener('click',()=>{refreshWorkTasks();refreshOpportunities();});
   refreshOpportunities();
   $('#beta-work-form').addEventListener('submit',async event=>{
