@@ -28,9 +28,8 @@ const MAX_BODY_BYTES = 14 * 1024 * 1024;
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
 const PROVIDERS = ["github", "supabase", "cloudflare", "vercel", "openrouter", "groq", "gemini", "cohere", "huggingface"];
 const MODEL_PROVIDERS = ["openrouter", "groq", "gemini", "cohere"];
-// IAs propias de MediaChafa: usan primero Workers AI (binding env.AI, cuenta Workers Free:
-// al agotar la cuota gratis Cloudflare devuelve error, no cobra) y después rotan solas a los
-// modelos gratuitos conectados. Nunca se usan modelos pagos.
+// IAs propias de MediaChafa: rotan entre proveedores externos conectados con modelos gratuitos
+// y usan Workers AI como alternativa adicional. Nunca se seleccionan modelos pagos.
 const MEDIACHAFA_MODELS = {
   codigo: { name: "MediaChafa IA Código", thinkingLevel: "alto", cf: ["@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/openai/gpt-oss-120b", "@cf/zai-org/glm-4.7-flash"], prefer: /coder|code|gpt-oss-120b|qwen|command-a/i },
   pro: { name: "MediaChafa IA Pro", thinkingLevel: "super alto", cf: ["@cf/openai/gpt-oss-120b", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/zai-org/glm-4.7-flash"], prefer: /120b|70b|pro|r1|command-a|flash-preview/i },
