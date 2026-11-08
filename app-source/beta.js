@@ -190,19 +190,8 @@ Para una página web pública: create_repository con visibility "public", despu�
       <div class="beta-work-list-head"><h3>Mis trabajos</h3><span id="beta-work-count">Cargando…</span></div>
       <div id="beta-work-list" class="beta-work-list" aria-live="polite"><p class="beta-work-empty">Cargando trabajos guardados…</p></div>
       <div class="beta-work-list-head"><h3>Oportunidades para la IA</h3><span id="beta-opportunity-count">0 disponibles</span></div>
-      <p>Importá una oferta que encontraste en una plataforma. La IA la analiza y prepara el trabajo; la postulación y entrega externa siguen bajo tu control.</p>
-      <form id="beta-opportunity-form" class="beta-work-form">
-        <label>Nombre de la tarea<input id="beta-opportunity-title" maxlength="180" required placeholder="Ej. Investigación de productos"></label>
-        <label>Plataforma<select id="beta-opportunity-platform"><option value="upwork">Upwork</option><option value="freelancer">Freelancer</option><option value="other">Otra plataforma</option><option value="direct">Cliente directo</option></select></label>
-        <label>Enlace de la oferta<input id="beta-opportunity-url" type="url" maxlength="2000" placeholder="https://…"></label>
-        <label>Descripción e instrucciones<textarea id="beta-opportunity-description" maxlength="12000" rows="4" placeholder="Pegá aquí los requisitos de la tarea…"></textarea></label>
-        <div class="beta-work-fields">
-          <label>Pago estimado<input id="beta-opportunity-reward" type="number" min="0" step="0.01" placeholder="Sin confirmar"></label>
-          <label>Moneda<select id="beta-opportunity-currency"><option>USD</option><option>ARS</option><option>EUR</option></select></label>
-          <label>Categoría<select id="beta-opportunity-category"><option value="research">Investigación</option><option value="data_entry">Carga de datos</option><option value="writing">Redacción</option><option value="transcription">Transcripción</option><option value="virtual_assistance">Asistencia virtual</option><option value="web">Contenido web</option><option value="other">Otra</option></select></label>
-        </div>
-        <button type="submit" class="add-btn" id="beta-opportunity-save">Guardar oportunidad</button>
-      </form>
+      <p>MediaChafa busca ofertas automáticamente en plataformas compatibles y las filtra para tareas que la IA puede preparar. No tenés que copiar enlaces ni importar publicaciones.</p>
+      <p id="beta-opportunity-status" class="beta-opportunity-note" aria-live="polite">Buscando oportunidades nuevas…</p>
       <div id="beta-opportunity-list" class="beta-work-list" aria-live="polite"><p class="beta-work-empty">Todavía no hay oportunidades importadas.</p></div>
     </div>`;
   const taskHunterWorkspace = $('#beta-panel .beta-workspace');
@@ -309,10 +298,10 @@ Para una página web pública: create_repository con visibility "public", despu�
     opportunityCount.textContent = 'Actualizando…';
     try {
       const data = await workApi('/opportunities');
-      const items = Array.isArray(data.opportunities) ? data.opportunities : [];
+      const items = Array.isArray(data.opportunities) ? data.opportunities : [];\n      const discoveryStatus = $('#beta-opportunity-status');\n      if (discoveryStatus) { const d=data.discovery||{}; const ok=(d.sources||[]).filter(x=>x.ok).map(x=>x.source+' ('+x.count+')'); discoveryStatus.textContent=d.error ? 'No se pudo actualizar el feed: '+d.error : (d.refreshed ? 'Búsqueda automática actualizada · '+(ok.join(' · ')||'sin coincidencias') : 'Fuentes revisadas hace menos de una hora · actualización automática activa'); }
       const available = items.filter(item => ['new','saved'].includes(item.status));
       opportunityCount.textContent = available.length + ' disponibles';
-      if (!items.length) { opportunityList.innerHTML = '<p class="beta-work-empty">Todavía no hay oportunidades. Podés importar una oferta arriba.</p>'; return; }
+      if (!items.length) { opportunityList.innerHTML = '<p class="beta-work-empty">Todavía no encontramos ofertas compatibles. La búsqueda automática volverá a revisar las fuentes disponibles.</p>'; return; }
       opportunityList.replaceChildren();
       for (const item of items) {
         const card = document.createElement('article'); card.className = 'beta-work-card';
@@ -335,23 +324,8 @@ Para una página web pública: create_repository con visibility "public", despu�
       }
     } catch(error) { opportunityList.textContent=error.message;opportunityCount.textContent='No disponible'; }
   }
-  $('#beta-opportunity-form').addEventListener('submit',async event=>{
-    event.preventDefault();
-    const button=$('#beta-opportunity-save');button.disabled=true;button.textContent='Guardando…';
-    try {
-      const reward=$('#beta-opportunity-reward').value;
-      await workApi('/opportunities',{method:'POST',body:JSON.stringify({
-        title:$('#beta-opportunity-title').value, platform:$('#beta-opportunity-platform').value,
-        url:$('#beta-opportunity-url').value, description:$('#beta-opportunity-description').value,
-        estimated_reward:reward===''?null:Number(reward),currency:$('#beta-opportunity-currency').value,
-        category:$('#beta-opportunity-category').value
-      })});
-      $('#beta-opportunity-form').reset();await refreshOpportunities();setStatus('Oportunidad guardada. Ya puede asignarse a la IA.');
-    } catch(error){setStatus(error.message,'error');}
-    finally{button.disabled=false;button.textContent='Guardar oportunidad';}
-  });
     $('#beta-work-refresh').addEventListener('click',refreshWorkTasks);
-  setInterval(() => { if (!document.hidden) refreshWorkTasks(); }, 15000);
+  setInterval(() => { if (!document.hidden) refreshWorkTasks(); }, 15000);\n  setInterval(() => { if (!document.hidden) refreshOpportunities(); }, 5 * 60 * 1000);
   workTab.addEventListener('click',()=>{refreshWorkTasks();refreshOpportunities();});
   refreshOpportunities();
   $('#beta-work-form').addEventListener('submit',async event=>{
