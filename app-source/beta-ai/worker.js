@@ -377,7 +377,7 @@ async function deleteGitHubPath(token, action) {
   const paths = original.map(({ path }) => path);
   const requestText = `Eliminación solicitada y confirmada explícitamente por el dueño: ${action.path}`;
   const manifest = { version: 1, request: requestText, requirements: [requestText], allowed_paths: paths, allow_deletions: true };
-  const body = ["Eliminación propuesta por MediaChafa Beta. La publicación requiere pruebas y revisión independiente.", "", `<!-- MEDIACHAFA_REVIEW_MANIFEST\n${JSON.stringify(manifest)}\\n-->`].join("\n");
+  const body = ["Eliminación propuesta por MediaChafa Beta. La publicación requiere pruebas y revisión independiente.", "", `<!-- MEDIACHAFA_REVIEW_MANIFEST\n${JSON.stringify(manifest)}\n-->`].join("\n");
   const pr = await providerRequest("github", token, `${root}/pulls`, "POST", { title: `MediaChafa Beta: eliminación explícita de ${action.path}`, head: branch, base: action.snapshot.branch, body, draft: false });
   return { message: `La eliminación de ${original.length} archivo(s) quedó en PR #${pr.number}; no se borró nada de la rama principal.`, url: pr.html_url };
 }
@@ -760,7 +760,7 @@ async function executeAgentTool(env, state, name, args) {
     if (!pr) {
       const requestText = String(state.initialMessage || "").slice(0, 5000);
       const manifest = { version: 1, request: requestText, requirements: [requestText], allowed_paths: state.changedFiles, allow_deletions: false };
-      const body = ["Cambio preparado por el agente autónomo de MediaChafa.", "", "La publicación está bloqueada hasta que pasen las pruebas y la revisión independiente.", "", `<!-- MEDIACHAFA_REVIEW_MANIFEST\n${JSON.stringify(manifest)}\\n-->`].join("\n");
+      const body = ["Cambio preparado por el agente autónomo de MediaChafa.", "", "La publicación está bloqueada hasta que pasen las pruebas y la revisión independiente.", "", `<!-- MEDIACHAFA_REVIEW_MANIFEST\n${JSON.stringify(manifest)}\n-->`].join("\n");
       pr = await githubAgentRequest(github, `/repos/${GITHUB_REPO}/pulls`, "POST", { title: `MediaChafa Beta: ${requestText.slice(0, 160)}`, head: state.branch, base: "main", body, draft: false });
     }
     state.pullRequest = { number: pr.number, url: pr.html_url, state: pr.state, merged: Boolean(pr.merged), headSha: state.branchHeadSha, mergeCommitSha: pr.merge_commit_sha || null };
