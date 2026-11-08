@@ -771,8 +771,16 @@ async function executeAgentTool(env, state, name, args) {
     if (!state.pullRequest?.number) throw new Error("Primero abrí el PR de revisión independiente.");
     const pr = await githubAgentRequest(github, `/repos/${GITHUB_REPO}/pulls/${state.pullRequest.number}`);
     if (pr.head?.sha !== state.branchHeadSha) throw new Error("El PR cambió de commit; requiere nuevas pruebas y revisión.");
-    const comments = await githubAgentRequest(github, `/repos/${GITHUB_REPO}/issues/${state.pullRequest.number}/comments?per_page=100`);
-    const feedback = Array.isArray(comments) ? comments.filter(item => String(item.body || "").includes("<!-- MEDIACHAFA_REVIEW_FEEDBACK -->")).at(-1)?.body || null : null;
+    const [comments, reviews] = await Promise.all([
+      githubAgentRequest(github, `/repos/${GITHUB_REPO}/issues/${state.pullRequest.number}/comments?per_page=100`),
+      githubAgentRequest(github, `/repos/${GITHUB_REPO}/pulls/${state.pullRequest.number}/reviews?per_page=100`)
+    ]);
+    const feedbackItems = [
+      ...(Array.isArray(comments) ? comments : []),
+      ...(Array.isArray(reviews) ? reviews : [])
+    ].filter(item => String(item.body || "").includes("<!-- MEDIACHAFA_REVIEW_FEEDBACK -->"));
+    feedbackItems.sort((a, b) => String(a.submitted_at || a.created_at || "").localeCompare(String(b.submitted_at || b.created_at || "")));
+    const feedback = feedbackItems.at(-1)?.body || null;
     state.pullRequest = { number: pr.number, url: pr.html_url, state: pr.state, merged: Boolean(pr.merged), headSha: pr.head.sha, mergeCommitSha: pr.merge_commit_sha || null, feedback };
     await saveAgentState(env, state);
     return state.pullRequest;
