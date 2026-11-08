@@ -167,7 +167,9 @@ async function createTask(env, user, auth, payload) {
 
 export class TaskHunterWorkflow extends WorkflowEntrypoint {
   async run(event, step) {
-    const { userId, taskId } = event.payload || {};
+    let payload = event.payload || {};
+    if (typeof payload === "string") { try { payload = JSON.parse(payload); } catch { payload = {}; } }
+    const { userId, taskId } = payload;
     if (!userId || !taskId) throw new Error("Faltan los identificadores del trabajo.");
     const state = await step.do("load-task", async () => {
       const current = await loadState(this.env, userId, taskId);
