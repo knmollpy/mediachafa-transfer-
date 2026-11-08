@@ -1325,10 +1325,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 
   function askOwnerQuestion(questionText, run) {
     return new Promise(resolve => {
-      const lines = String(questionText || '').split(/\\r?\\n/).map(line => line.trim()).filter(Boolean);
-      const question = (lines.shift() || '¿Cómo querés que continúe?').replace(/^PREGUNTA\\s*[:：-]?\\s*/i, '');
+      const lines = String(questionText || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      const question = (lines.shift() || '¿Cómo querés que continúe?').replace(/^PREGUNTA\s*[:：-]?\s*/i, '');
       const options = lines
-        .map(line => line.replace(/^(?:[-*•]|\\d+[.)])\\s*/, '').replace(/^\\[|\\]$/g, '').trim())
+        .map(line => line.replace(/^(?:[-*•]|\d+[.)])\s*/, '').replace(/^\[|\]$/g, '').trim())
         .filter(line => line && line.length <= 180)
         .slice(0, 5);
       const defaults = ['Sí, hacelo', 'No, dejalo como está', 'Proponé otra alternativa'];
