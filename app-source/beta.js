@@ -1386,21 +1386,18 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       customInput.rows = 2;
       customInput.maxLength = 2000;
       customInput.placeholder = 'O escribí tu propia respuesta…';
-      const customSend = document.createElement('button');
-      customSend.type = 'button';
-      customSend.className = 'primary beta-question-send';
-      customSend.textContent = 'Enviar respuesta y continuar';
-      customSend.addEventListener('click', () => {
-        const value = customInput.value.trim();
-        if (value) finish({ answer: 'Mi respuesta personalizada: ' + value + '. Usala para resolver la decisión pendiente y continuá con el pedido original. No repitas esta pregunta.' });
-      });
       customInput.addEventListener('keydown', event => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
-          customSend.click();
+          const value = customInput.value.trim();
+          if (value) finish({ answer: 'Mi respuesta personalizada: ' + value + '. Usala para resolver la decisión pendiente y continuá con el pedido original. No repitas esta pregunta.' });
         }
       });
-      controls.append(optionRow, alternativeButton, customInput, customSend);
+      customInput.addEventListener('blur', () => {
+        customInput.dataset.hint = 'Escribí tu opinión y presioná Enter para continuar';
+      });
+      customInput.placeholder = 'Tu opinión o una respuesta propia… (Enter para enviar)';
+      controls.append(optionRow, alternativeButton, customInput);
       node.append(controls);
       run.waiting = (outcome) => {
         if (settled) return;
