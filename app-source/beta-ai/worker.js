@@ -1555,7 +1555,8 @@ export default {
         const action = safeAction(raw);
         if (!action) continue;
         const status = await integrationStatus(env, user.id);
-        if (!status[action.provider]?.connected) continue;
+        const isOwnerMemory = action.provider === "supabase" && action.type === "memory_save";
+        if (!isOwnerMemory && !status[action.provider]?.connected) continue;
         try { proposals.push(await storeActionProposal(env, user.id, action)); }
         catch (error) { failures.push(error?.message || "No se pudo preparar la acción de GitHub."); }
       }
