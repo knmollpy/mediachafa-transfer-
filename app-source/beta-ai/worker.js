@@ -1,4 +1,5 @@
-const APP_ORIGINS = new Set(["https://mediachafa-transfer.pages.dev", "https://mediachafa-transfer.vercel.app"]);
+const APP_ORIGIN = "https://mediachafa-transfer.pages.dev";
+const APP_ORIGINS = new Set([APP_ORIGIN, "https://mediachafa-transfer.vercel.app"]);
 
 const QWEN_IMAGE_SPACE = "https://daverrrr75-qwen-image-2-1-uncensored-aio-loras.hf.space";
 const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
