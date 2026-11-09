@@ -766,7 +766,7 @@ async function executeAgentTool(env, state, name, args) {
   }
   if (name === "github_run_checks") return dispatchAgentChecks(github, state);
   if (name === "github_check_status") return readAgentCheckStatus(github, state);
-  if (name === "github_build_android_apk") return dispatchAgentBuild(github, state, "apk");
+  if (name === "github_build_android_apk") return dispatchAgentBuild(github, state, "apk", args);
   if (name === "github_build_ps4_pkg") return dispatchAgentBuild(github, state, "ps4_pkg", args);
   if (name === "github_build_status") return readAgentBuildStatus(github, state);
   if (name === "web_fetch") return readPublicWebPage(String(args.url || ""));
