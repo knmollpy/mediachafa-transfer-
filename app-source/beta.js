@@ -1436,6 +1436,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const auth = await window.mediaChafaBetaAuth();
     if (!auth?.owner || !auth?.token || auth?.anonymous) throw new Error('Iniciá sesión con nxmollpy para usar Beta.');
     ownerId = auth.userId || 'owner';
+    try { teamEnabledInput.checked = localStorage.getItem(teamSettingKey()) === 'true'; } catch {}
     return auth;
   }
 
