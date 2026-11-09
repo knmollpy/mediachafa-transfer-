@@ -1490,7 +1490,7 @@ export default {
       if (!user) return json({ error: "El mapa privado del proyecto está disponible solo para la cuenta dueña." }, 403, origin);
       return json({ projectMap: await privateProjectMap(env, user.id, url.searchParams.get("refresh") === "1") }, 200, origin);
     }
-    if (url.pathname === "/memory" && ["GET", "POST", "DELETE"].includes(request.method)) {
+    if (url.pathname === "/memory" && ["GET", "POST"].includes(request.method)) {
       const user = await requireOwner(request);
       if (!user) return json({ error: "La memoria permanente está disponible solo para la cuenta dueña." }, 403, origin);
       const key = `beta-memory:${user.id}`;
@@ -1498,14 +1498,13 @@ export default {
       try { items = JSON.parse(await env.BETA_LIMITS.get(key) || "[]"); } catch {}
       if (!Array.isArray(items)) items = [];
       if (request.method === "GET") return json({ items: items.slice(-60) }, 200, origin);
-      if (request.method === "DELETE") {
-        const id = url.searchParams.get("id");
-        if (id) items = items.filter(item => item.id !== id); else items = [];
+      let payload;
+      try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+      if (payload.deleteId) {
+        items = items.filter(item => item.id !== String(payload.deleteId));
         await env.BETA_LIMITS.put(key, JSON.stringify(items));
         return json({ ok: true, items: items.length }, 200, origin);
       }
-      let payload;
-      try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
       const value = String(payload.text || "").trim().slice(0, 1200);
       if (!value) return json({ error: "El recuerdo no puede estar vacío." }, 400, origin);
       if (items.some(item => item.text.toLowerCase() === value.toLowerCase())) return json({ ok: true, duplicate: true, items: items.length }, 200, origin);
