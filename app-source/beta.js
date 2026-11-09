@@ -162,6 +162,7 @@ Para una página web pública: create_repository con visibility "public", despu�
   teamToggleLabel.className = 'beta-team-setting';
   const teamToggle = document.createElement('input');
   teamToggle.type = 'checkbox';
+  teamToggle.id = 'beta-team-enabled';
   teamToggle.checked = false;
   teamToggle.setAttribute('aria-label', 'Usar equipo colaborativo de seis IA');
   const teamToggleText = document.createElement('span');
