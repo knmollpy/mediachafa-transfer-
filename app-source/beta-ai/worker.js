@@ -77,12 +77,14 @@ const PROJECT_MAP = {
     uploaderFunction: "app-source/supabase/functions/create-uploader/index.ts",
     databaseMigrations: "app-source/migrations/",
     projectDocs: "app-source/README.md",
+    ps4Homebrew: "app-source/ps4/",
   },
   appAreas: [
     { name: "Archivos, carpetas, espacio, enlaces, autenticación y navegación web", paths: ["app-source/index.html", "app-source/worker.js", "app-source/supabase/functions/create-uploader/index.ts"] },
     { name: "Beta: chat, historial local, proveedores, aprobaciones e interfaz", paths: ["app-source/beta.js", "app-source/index.html"] },
     { name: "Beta: API privada, autenticación de dueño, integraciones, cuotas y acciones aprobadas", paths: ["app-source/beta-ai/worker.js"] },
     { name: "Juegos PS4: catálogo, carpetas múltiples, invitados, paginación y reportes", paths: ["app-source/index.html", "app-source/migrations/202610250001_ps4_game_catalog.sql", "app-source/migrations/202610250008_ps4_multi_folder_assignments.sql", "app-source/migrations/202610250003_guest_reports_user_permissions.sql"] },
+    { name: "Desarrollo de homebrew PS4 y compilación de paquetes PKG con OpenOrbis", paths: ["app-source/ps4/README.md", ".github/workflows/agent-build-ps4-pkg.yml"] },
     { name: "App Android: interfaz móvil y puente nativo", paths: ["app-source/mobile/native-ui.js", "app-source/mobile/native-ui.css", "app-source/mobile/android/"] },
     { name: "FTP Android y transferencia con teléfono", paths: ["app-source/mobile/android/FtpServerService.java", "app-source/mobile/android/MediaFtpPlugin.java", "app-source/phone-mirror.js", "app-source/phone-helper/"] },
     { name: "Base de datos y permisos", paths: ["app-source/migrations/", "app-source/supabase/"] },
@@ -191,6 +193,7 @@ function relevantSourcePaths(message) {
     paths.add("app-source/worker.js"); paths.add("app-source/supabase/functions/create-uploader/index.ts");
   }
   if (/(juego|ps4|invitado|homebrew|cat[aá]logo)/i.test(q)) paths.add("app-source/migrations/202610250008_ps4_multi_folder_assignments.sql");
+  if (/(pkg|homebrew|ps4)/i.test(q)) { paths.add("app-source/ps4/README.md"); paths.add(".github/workflows/agent-build-ps4-pkg.yml"); }
   if (/(android|apk|m[oó]vil|tel[eé]fono|ftp)/i.test(q)) {
     paths.add("app-source/mobile/native-ui.js"); paths.add("app-source/mobile/android/FtpServerService.java");
   }
