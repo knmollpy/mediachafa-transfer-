@@ -28,7 +28,7 @@ Deno.serve(async (req: Request) => {
     } catch {
       return json({ error: "No se pudo verificar el acceso. Intentá de nuevo." }, 503);
     }
-    if (!captcha.success || !["mediachafa-transfer.vercel.app", "localhost"].includes(captcha.hostname || "")) {
+    if (!captcha.success || !["mediachafa-transfer.pages.dev", "mediachafa-transfer.vercel.app", "localhost"].includes(captcha.hostname || "")) {
       return json({ error: "La verificación venció o no es válida. Intentá de nuevo." }, 403);
     }
     if (input.action === "guest") return json({ ok: true });
