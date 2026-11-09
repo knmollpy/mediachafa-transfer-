@@ -637,7 +637,7 @@ async function dispatchAgentBuild(token, state, platform, args = {}) {
   const workflow = workflows[platform];
   if (!workflow) throw new Error("Plataforma de compilación no admitida.");
   const projectPath = ["apk", "ps4_pkg"].includes(platform) ? String(args.project_path || "") : "";
-  if (platform === "apk" && !/^app-source\\/apk\\/[a-z0-9][a-z0-9._-]{0,63}$/.test(projectPath)) {
+  if (platform === "apk" && !/^app-source\/apk\/[a-z0-9][a-z0-9._-]{0,63}$/.test(projectPath)) {
     throw new Error("Indicá project_path con formato app-source/apk/nombre-proyecto.");
   }
   if (platform === "ps4_pkg" && !/^app-source\\/ps4\\/[a-z0-9][a-z0-9._-]{0,63}$/.test(projectPath)) {
