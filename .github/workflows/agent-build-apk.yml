@@ -1,0 +1,81 @@
+name: Build Android APK for Beta agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      execution_id:
+        description: Beta autonomous execution ID
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-agent-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Prepare web files
+        run: npm run mobile:copy
+      - name: Generate Android project
+        run: npx cap add android
+      - name: Configure MediaChafa Android plugins
+        run: |
+          sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 254/' android/app/build.gradle
+          sed -i -E 's/versionName[[:space:]]+"[^"]+"/versionName "2.5.4"/' android/app/build.gradle
+          sed -i '/dependencies[[:space:]]*{/a\    implementation "org.apache.ftpserver:ftpserver-core:1.2.1"\n    implementation "commons-net:commons-net:3.13.0"' android/app/build.gradle
+          echo "android.packaging.resources.excludes += ['META-INF/DEPENDENCIES']" >> android/app/build.gradle
+          mkdir -p android/app/src/main/java/com/mediachafa/app
+          cp mobile/android/DownloadLocationPlugin.java android/app/src/main/java/com/mediachafa/app/
+          cp mobile/android/ExternalLinkPlugin.java android/app/src/main/java/com/mediachafa/app/
+          cp mobile/android/MediaFtpPlugin.java android/app/src/main/java/com/mediachafa/app/
+          cp mobile/android/FtpServerService.java android/app/src/main/java/com/mediachafa/app/
+          cp mobile/android/MainActivity.java android/app/src/main/java/com/mediachafa/app/
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          permissions = [
+              "android.permission.INTERNET",
+              "android.permission.ACCESS_NETWORK_STATE",
+              "android.permission.CHANGE_NETWORK_STATE",
+              "android.permission.FOREGROUND_SERVICE",
+              "android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE",
+          ]
+          for permission in permissions:
+              if permission not in s:
+                  s = s.replace("<application", f'<uses-permission android:name="{permission}" />\n    <application', 1)
+          service = '    <service android:name=".FtpServerService" android:enabled="true" android:exported="false" android:foregroundServiceType="connectedDevice" />'
+          if "FtpServerService" not in s:
+              s = s.replace("</application>", service + "\n  </application>", 1)
+          p.write_text(s)
+          PY
+      - name: Sync Capacitor and build debug APK
+        run: |
+          npm run mobile:sync
+          cd android
+          ./gradlew --no-daemon assembleDebug
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediachafa-android-apk-${{ github.run_number }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
