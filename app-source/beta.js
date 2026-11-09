@@ -1579,9 +1579,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   // persistent sidebar so the gear is visible on desktop and mobile.
   const betaSidebarForSettings = $('#beta-panel .beta-sidebar');
   if (betaSidebarForSettings && settingsToggle && settingsPanel) {
-    betaSidebarForSettings.append(settingsToggle, settingsPanel);
+    betaSidebarForSettings.insertBefore(settingsToggle, betaSidebarSection);
+    betaSidebarForSettings.insertBefore(settingsPanel, betaSidebarSection);
     settingsToggle.hidden = false;
-    settingsPanel.hidden = true;
   }
   try { if (teamEnabledInput) teamEnabledInput.checked = localStorage.getItem(teamSettingKey()) === 'true'; } catch {}
   settingsToggle?.addEventListener('click', () => {
