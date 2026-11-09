@@ -2008,7 +2008,7 @@ async function runMediaChafaConsensus(args) {
   const maxByRemaining = Math.min(6, Math.floor((freeQuota.providerRemaining - 1) / 2));
   const team = allParticipants.slice(0, Math.max(0, maxByRemaining));
   if (team.length < 2) {
-    await publishProgress({ status: "unavailable", phase: "quota", phaseLabel: "No hay cuota gratuita suficiente para activar el equipo", participants: [], steps: [...progressState.steps, { label: "No se pudo iniciar la colaboración; se intentará el modo individual", state: "error" }] });
+    await publishProgress({ status: "unavailable", phase: "quota", phaseLabel: `Cuota gratuita insuficiente: quedan ${Math.max(0, freeQuota.providerRemaining)} solicitudes de OpenRouter; el equipo necesita al menos 3. No se usará ningún modelo pago.`, participants: [], steps: [...progressState.steps, { label: "Se continúa con una sola IA gratuita; conectá otro proveedor gratuito o reintentá cuando se renueve la cuota.", state: "error" }] });
     return null;
   }
   progressState.participants = team.map((participant, index) => ({
@@ -2211,7 +2211,9 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
   };
   const maxTokens = autonomous ? 6000 : 2400;
   const candidates = await mediachafaCandidates(env, user.id, variant, Boolean(image));
-  const collaboration = await runMediaChafaConsensus({ request, env, user, config, variant, modelId, transcript, promptText, messages, history, image, autonomous, fetchImpl, maxTokens, candidates, integrations, progressId: String(payload.progressId || "") });
+  const collaboration = payload.collaborationEnabled === true
+    ? await runMediaChafaConsensus({ request, env, user, config, variant, modelId, transcript, promptText, messages, history, image, autonomous, fetchImpl, maxTokens, candidates, integrations, progressId: String(payload.progressId || "") })
+    : null;
   if (collaboration) return json({
     answer: collaboration.answer,
     plan: collaboration.plan,
