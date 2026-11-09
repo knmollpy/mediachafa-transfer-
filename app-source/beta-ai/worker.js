@@ -2054,6 +2054,7 @@ async function runMediaChafaConsensus(args) {
   const attempts = [];
   async function invoke(participant, phase, extraPrompt, baseMessages, baseHistory, baseImage) {
     const candidate = participant.candidate;
+    const userId = userId;
     if (request.signal.aborted) return { ok: false, detail: "Solicitud cancelada." };
     if (candidate.provider === "openrouter" && !String(candidate.nativeId).endsWith(":free")) {
       attempts.push(candidate.name + ": bloqueado porque no es un modelo OpenRouter gratuito verificado");
@@ -2075,7 +2076,7 @@ async function runMediaChafaConsensus(args) {
         return { ok: false, status: 503, detail: "No se pudo verificar la cuota gratuita." };
       }
     }
-    const quota = await reserveRequest(env, user.id, candidate.modelId);
+    const quota = await reserveRequest(env, userId, candidate.modelId);
     if (!quota.allowed) {
       attempts.push(candidate.provider + ": cuota gratuita agotada");
       return { ok: false, status: 429, detail: "Cuota gratuita agotada." };
@@ -2117,7 +2118,7 @@ async function runMediaChafaConsensus(args) {
       if (!result.ok) {
         attempts.push(candidate.provider + " " + candidate.name + ": HTTP " + (result.status || 503) + " " + String(result.detail || "").slice(0, 100));
         if (result.status === 429 || /rate.?limit|too many requests|quota exceeded/i.test(String(result.detail || ""))) {
-          const cooldownKey = `beta-model-cooldown:${user.id}:${candidate.provider}:${candidate.nativeId}`;
+          const cooldownKey = `beta-model-cooldown:${userId}:${candidate.provider}:${candidate.nativeId}`;
           await env.BETA_LIMITS.put(cooldownKey, "1", { expirationTtl: 120 }).catch(() => {});
         }
       }
