@@ -1609,22 +1609,50 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 
   // La ejecución completa es el comportamiento único y predeterminado de Beta.
 
-  async function agentChat(state, run, message, attachments = {}) {
+  async function agentChat(state, run, message, attachments = {}, onProgress = () => {}) {
     const auth = await currentSession();
-    const response = await fetch(`${API}/chat`, {
-      method: 'POST',
-      signal: run.controller.signal,
-      headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history: state.loopHistory.slice(-8), model: state.modelId, mode: 'autonomous', ...attachments }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (data.modelId) updateModelUsage(data.modelId, data);
-    if (!response.ok) {
-      const error = new Error(data.error || `Beta respondió ${response.status}.`);
-      error.status = response.status;
-      throw error;
+    const collaborative = String(state.modelId || '').startsWith('mediachafa::');
+    const progressId = collaborative
+      ? (globalThis.crypto?.randomUUID?.() || ('mc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12)))
+      : '';
+    let progressPoll = null;
+    let progressPollBusy = false;
+    if (collaborative) {
+      const poll = async () => {
+        if (progressPollBusy || run.controller.signal.aborted) return;
+        progressPollBusy = true;
+        try {
+          const response = await fetch(`${API}/chat/progress?id=${encodeURIComponent(progressId)}`, {
+            signal: run.controller.signal,
+            headers: { Authorization: `Bearer ${auth.token}` },
+          });
+          if (response.ok) onProgress(await response.json());
+        } catch {} finally { progressPollBusy = false; }
+      };
+      void poll();
+      progressPoll = setInterval(() => { void poll(); }, 900);
     }
-    return data;
+    try {
+      const response = await fetch(`${API}/chat`, {
+        method: 'POST',
+        signal: run.controller.signal,
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message, history: state.loopHistory.slice(-8), model: state.modelId, mode: 'autonomous',
+          collaborationEnabled: collaborative, ...(progressId ? { progressId } : {}), ...attachments,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (data.modelId) updateModelUsage(data.modelId, data);
+      if (!response.ok) {
+        const error = new Error(data.error || `Beta respondió ${response.status}.`);
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    } finally {
+      if (progressPoll) clearInterval(progressPoll);
+    }
   }
 
   function waitMs(ms, run) {
@@ -1805,7 +1833,17 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         for (let attempt = 0; ; attempt++) {
           try {
             run.inFlight = true;
-            data = await agentChat(state, run, agent.buildTurnMessage(state, message), state.turn === 1 && attempt === 0 ? attachments : {});
+            data = await agentChat(
+              state, run, agent.buildTurnMessage(state, message),
+              state.turn === 1 && attempt === 0 ? attachments : {},
+              (snapshot) => {
+                const label = String(snapshot?.phaseLabel || '').trim();
+                if (label && label !== run.lastCollaborationPhase && snapshot.status !== 'completed') {
+                  run.lastCollaborationPhase = label;
+                  step(`Equipo de IA: ${label.toLowerCase()}…`);
+                }
+              },
+            );
             run.inFlight = false;
             break;
           } catch (error) {
@@ -1824,6 +1862,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           message = `INSTRUCCIONES NUEVAS DEL DUEÑO:\n${arrivedDuringThinking}\nDescartá el plan que acabás de generar porque se redactó antes de recibir estas instrucciones. Volvé a analizar el pedido y el estado actual; no ejecutes ninguna acción de ese plan anterior.`;
           step('Instrucción incorporada. Recalculando el próximo paso antes de ejecutar acciones…');
           continue;
+        }
+        if (data.collaboration?.enabled) {
+          const participants = Array.isArray(data.collaboration.participants) ? data.collaboration.participants : [];
+          const completed = participants.filter(item => ['done', 'reviewed', 'synthesizing'].includes(item.status)).length;
+          step(`Equipo de IA: ${completed}/${participants.length || 6} participantes completaron su trabajo.`, 'done');
+          step(`Revisiones cruzadas: ${Number(data.collaboration.reviewCount || 0)}. Síntesis del equipo recibida.`, 'done');
         }
         if (data.modelName) lastModelName = data.modelName;
         const classified = agent.classifyAnswer(data.answer);
