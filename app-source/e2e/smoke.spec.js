@@ -31,3 +31,26 @@ test("el acceso sigue siendo usable en una pantalla móvil", async ({ page }) =>
   expect(layout.card).toBeGreaterThan(0);
   expect(layout.content).toBeLessThanOrEqual(layout.viewport + 2);
 });
+
+
+test("Beta coloca el modo y el equipo dentro de Ajustes, fuera del compositor", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#beta-panel .beta-sidebar");
+
+  await page.evaluate(() => {
+    document.querySelector("#app")?.classList.add("beta-mode");
+    document.querySelector("#beta-panel")?.classList.remove("hidden");
+  });
+
+  const gear = page.locator("#beta-panel .beta-sidebar #beta-settings-toggle");
+  const settings = page.locator("#beta-panel #beta-settings");
+  await expect(gear).toBeAttached();
+  await expect(page.locator("#beta-form .beta-mode-select")).toHaveCount(0);
+  await expect(settings.locator("#beta-mode")).toBeAttached();
+  await expect(settings.locator("#beta-team-enabled")).toBeAttached();
+
+  await gear.click();
+  await expect(settings).toBeVisible();
+  await expect(gear).toBeVisible();
+});
