@@ -105,7 +105,7 @@ test("autonomous execution persists pause state and verifies isolated GitHub cha
 
   const firstStep = await api(`/agent/${id}/step`, "POST", {});
   const firstState = await firstStep.json();
-  assert.equal(firstState.status, "running");
+  assert.equal(firstState.status, "running", JSON.stringify(firstState));
   assert.equal(firstState.lastToolResult.name, "github_read_file");
   assert.equal(firstState.lastToolResult.ok, true, JSON.stringify(firstState.lastToolResult));
 
