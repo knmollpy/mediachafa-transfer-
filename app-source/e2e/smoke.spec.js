@@ -52,6 +52,7 @@ test("Beta coloca el modo y el equipo dentro de Ajustes, fuera del compositor", 
   const gear = page.locator("#beta-panel .beta-sidebar #beta-settings-toggle");
   const settings = page.locator("#beta-panel #beta-settings");
   await expect(gear).toBeAttached();
+  await expect(gear).toBeVisible();
   await expect(page.locator("#beta-form .beta-mode-select")).toHaveCount(0);
   await expect(settings.locator("#beta-mode")).toBeAttached();
   await expect(settings.locator("#beta-team-enabled")).toBeAttached();
