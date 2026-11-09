@@ -1735,7 +1735,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message, history: state.loopHistory.slice(-8), model: state.modelId, mode: 'autonomous',
-          collaborationEnabled: collaborative, ...(progressId ? { progressId } : {}), ...attachments,
+          collaborationEnabled: collaborative, memoryEnabled: document.querySelector('#beta-memory-enabled')?.checked !== false, ...(progressId ? { progressId } : {}), ...attachments,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -2422,10 +2422,99 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       // No bloquear el estado de las integraciones por cargas secundarias.
       void loadPrivateProjectMap(false);
       void loadGithubPages(Boolean(data.integrations?.github?.connected));
+      void loadBetaMemory();
+      void loadBlenderStatus();
     } catch (error) {
       for (const provider of ['github', 'supabase', 'cloudflare', 'openrouter', 'groq', 'cohere', 'gemini', 'huggingface']) { const node = $(`#beta-connection-${provider}`); if (node) node.textContent = error.message; }
     }
   }
+
+  async function loadBetaMemory() {
+    const status = $('#beta-memory-status'), list = $('#beta-memory-list');
+    if (!status || !list) return;
+    try {
+      const data = await api('/memory');
+      const items = Array.isArray(data.items) ? data.items : [];
+      list.replaceChildren();
+      for (const item of items) {
+        const row = document.createElement('div'); row.className = 'beta-memory-item';
+        const content = document.createElement('span'); content.textContent = item.text;
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'secondary'; remove.textContent = 'Borrar';
+        remove.addEventListener('click', async () => {
+          remove.disabled = true;
+          try { await api('/memory', { method: 'POST', body: JSON.stringify({ deleteId: item.id }) }); await loadBetaMemory(); }
+          catch (error) { status.textContent = error.message; remove.disabled = false; }
+        });
+        row.append(content, remove); list.append(row);
+      }
+      status.textContent = items.length ? `${items.length} recuerdo(s) guardado(s) en la nube` : 'Todavía no guardaste recuerdos';
+      status.dataset.state = 'connected';
+    } catch (error) { status.textContent = error.message; status.dataset.state = 'error'; }
+  }
+  $('#beta-memory-save')?.addEventListener('click', async () => {
+    const input = $('#beta-memory-input'), button = $('#beta-memory-save'), status = $('#beta-memory-status');
+    const value = input?.value.trim(); if (!value) { status.textContent = 'Escribí un recuerdo antes de guardarlo.'; return; }
+    button.disabled = true; status.textContent = 'Guardando en la memoria permanente…';
+    try { await api('/memory', { method: 'POST', body: JSON.stringify({ text: value }) }); input.value = ''; await loadBetaMemory(); }
+    catch (error) { status.textContent = error.message; status.dataset.state = 'error'; }
+    finally { button.disabled = false; }
+  });
+  $('#beta-memory-refresh')?.addEventListener('click', () => void loadBetaMemory());
+  try { $('#beta-memory-enabled').checked = localStorage.getItem('mediachafa-beta-memory-enabled') !== '0'; } catch {}
+  $('#beta-memory-enabled')?.addEventListener('change', event => { try { localStorage.setItem('mediachafa-beta-memory-enabled', event.target.checked ? '1' : '0'); } catch {} });
+
+  async function loadBlenderStatus() {
+    const status = $('#beta-blender-status'), endpoint = $('#beta-blender-endpoint');
+    if (!status || !endpoint) return;
+    try {
+      const data = await api('/blender/config');
+      endpoint.value = data.endpoint || '';
+      status.textContent = data.connected ? 'URL guardada · motor pendiente de prueba' : 'Sin conectar';
+      status.dataset.state = data.connected ? 'connected' : 'idle';
+    } catch (error) { status.textContent = error.message; status.dataset.state = 'error'; }
+  }
+  $('#beta-blender-save')?.addEventListener('click', async () => {
+    const endpoint = $('#beta-blender-endpoint').value.trim(), status = $('#beta-blender-status'), button = $('#beta-blender-save');
+    button.disabled = true; status.textContent = 'Validando y guardando URL…';
+    try { const data = await api('/blender/config', { method: 'POST', body: JSON.stringify({ endpoint, token: $('#beta-blender-token').value.trim() }) }); status.textContent = data.connected ? 'URL y credenciales guardadas de forma cifrada' : 'Desconectado'; $('#beta-blender-token').value = ''; status.dataset.state = data.connected ? 'connected' : 'idle'; }
+    catch (error) { status.textContent = error.message; status.dataset.state = 'error'; }
+    finally { button.disabled = false; }
+  });
+  $('#beta-blender-render')?.addEventListener('click', async () => {
+    const prompt = $('#beta-blender-prompt').value.trim(), status = $('#beta-blender-status'), button = $('#beta-blender-render'), results = $('#beta-blender-results');
+    if (!prompt) { status.textContent = 'Describí la escena 3D que querés crear.'; return; }
+    button.disabled = true; results.replaceChildren(); status.textContent = 'Enviando trabajo al motor Blender…';
+    try {
+      let job = await api('/blender/render', { method: 'POST', body: JSON.stringify({ prompt }) });
+      const jobId = String(job.jobId || job.id || '');
+      if (!jobId) throw new Error('El motor no devolvió un identificador de trabajo.');
+      for (let attempt = 0; attempt < 90 && !['completed','complete','succeeded','failed','error'].includes(String(job.status).toLowerCase()); attempt++) {
+        status.textContent = job.message || `Renderizando escena 3D… (${attempt + 1}/90)`;
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        job = await api('/blender/jobs/' + encodeURIComponent(jobId));
+      }
+      if (['failed','error'].includes(String(job.status).toLowerCase())) throw new Error(job.error || 'Blender no pudo completar el render.');
+      if (!['completed','complete','succeeded'].includes(String(job.status).toLowerCase())) throw new Error('El render sigue en curso. Podés volver a consultar el trabajo desde el motor Blender.');
+      const images = Array.isArray(job.images) ? job.images : [];
+      const chatMessage = images.length ? addMessage('assistant', '¡Terminé tu creación 3D! Te dejo los renders de Blender para que puedas abrirlos o guardarlos.') : null;
+      for (const image of images.slice(0, 8)) {
+        const src = image.data ? `data:${image.mimeType || 'image/png'};base64,${image.data}` : image.url;
+        if (!src || (!src.startsWith('https://') && !src.startsWith('data:image/'))) continue;
+        const img = document.createElement('img'); img.src = src; img.alt = image.name || 'Render de Blender'; img.loading = 'lazy'; img.style.cssText = 'display:block;max-width:100%;max-height:560px;object-fit:contain;border-radius:10px;margin:12px 0';
+        results.append(img);
+        if (chatMessage) chatMessage.append(img.cloneNode());
+        const link = document.createElement('a'); link.href = src; link.download = image.name || 'beta-blender-render.png'; link.textContent = 'Guardar imagen'; link.className = 'beta-link'; results.append(link);
+        if (chatMessage) chatMessage.append(link.cloneNode(true));
+      }
+      if (job.downloadUrl && String(job.downloadUrl).startsWith('https://')) {
+        const projectLink = document.createElement('a'); projectLink.href = job.downloadUrl; projectLink.target = '_blank'; projectLink.rel = 'noopener noreferrer'; projectLink.textContent = 'Descargar proyecto Blender (.blend)'; projectLink.className = 'beta-link'; results.append(projectLink);
+        if (chatMessage) chatMessage.append(projectLink.cloneNode(true));
+      }
+      status.textContent = images.length ? 'Render terminado · imágenes enviadas al chat' : 'Trabajo terminado; el motor no devolvió imágenes. Revisá el contrato de respuesta.';
+      status.dataset.state = images.length ? 'connected' : 'error';
+    } catch (error) { status.textContent = error.message; status.dataset.state = 'error'; }
+    finally { button.disabled = false; }
+  });
 
   async function loadPrivateProjectMap(refresh = false) {
     const statusNode = $('#beta-map-status');
