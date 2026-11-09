@@ -34,14 +34,20 @@ test("el acceso sigue siendo usable en una pantalla móvil", async ({ page }) =>
 
 
 test("Beta coloca el modo y el equipo dentro de Ajustes, fuera del compositor", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", error => pageErrors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.waitForSelector("#beta-panel .beta-sidebar", { state: "attached" });
 
+  // Simulate an authenticated owner opening Beta without depending on Supabase credentials.
   await page.evaluate(() => {
+    document.querySelector("#login")?.classList.add("hidden");
+    document.querySelector("#app")?.classList.remove("hidden");
     document.querySelector("#app")?.classList.add("beta-mode");
-    document.querySelector("#beta-panel")?.classList.remove("hidden");
+    document.querySelector("#beta-tab")?.classList.remove("hidden");
   });
+  await page.locator("#beta-tab").click();
+  await page.waitForSelector("#beta-panel .beta-sidebar", { state: "attached" });
 
   const gear = page.locator("#beta-panel .beta-sidebar #beta-settings-toggle");
   const settings = page.locator("#beta-panel #beta-settings");
@@ -53,4 +59,5 @@ test("Beta coloca el modo y el equipo dentro de Ajustes, fuera del compositor", 
   await gear.click();
   await expect(settings).toBeVisible();
   await expect(gear).toBeVisible();
+  expect(pageErrors, "Beta no debe lanzar errores JavaScript al abrirse").toEqual([]);
 });
