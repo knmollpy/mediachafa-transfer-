@@ -2476,7 +2476,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   $('#beta-blender-save')?.addEventListener('click', async () => {
     const endpoint = $('#beta-blender-endpoint').value.trim(), status = $('#beta-blender-status'), button = $('#beta-blender-save');
     button.disabled = true; status.textContent = 'Validando y guardando URL…';
-    try { const data = await api('/blender/config', { method: 'POST', body: JSON.stringify({ endpoint }) }); status.textContent = data.connected ? 'URL guardada · configurá el motor para aceptar trabajos' : 'Desconectado'; status.dataset.state = data.connected ? 'connected' : 'idle'; }
+    try { const data = await api('/blender/config', { method: 'POST', body: JSON.stringify({ endpoint, token: $('#beta-blender-token').value.trim() }) }); status.textContent = data.connected ? 'URL y credenciales guardadas de forma cifrada' : 'Desconectado'; $('#beta-blender-token').value = ''; status.dataset.state = data.connected ? 'connected' : 'idle'; }
     catch (error) { status.textContent = error.message; status.dataset.state = 'error'; }
     finally { button.disabled = false; }
   });
