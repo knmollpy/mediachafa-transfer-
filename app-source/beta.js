@@ -133,6 +133,7 @@ Para una página web pública: create_repository con visibility "public", despu�
   let dailyLimit = 50;
   let usedToday = 0;
   let ownerId = '';
+  let useSixAgentTeam = false;
   const activityList = $('#beta-activity-list');
   let activityItems = [];
   let modelCatalog = [];
@@ -157,6 +158,21 @@ Para una página web pública: create_repository con visibility "public", despu�
   modelProbe.type = 'button';
   modelProbe.className = 'beta-model-probe';
   modelProbe.textContent = 'Probar modelo · usa 1 consulta';
+  const teamToggleLabel = document.createElement('label');
+  teamToggleLabel.className = 'beta-team-setting';
+  const teamToggle = document.createElement('input');
+  teamToggle.type = 'checkbox';
+  teamToggle.id = 'beta-team-enabled';
+  teamToggle.checked = false;
+  teamToggle.setAttribute('aria-label', 'Usar equipo colaborativo de seis IA');
+  const teamToggleText = document.createElement('span');
+  teamToggleText.textContent = 'Usar equipo de 6 IA (opcional)';
+  teamToggleLabel.append(teamToggle, teamToggleText);
+  teamToggle.addEventListener('change', () => {
+    useSixAgentTeam = teamToggle.checked;
+    try { if (ownerId) localStorage.setItem(`mediachafa-beta-team6:${ownerId}`, useSixAgentTeam ? '1' : '0'); } catch {}
+    setStatus(useSixAgentTeam ? 'Equipo de 6 IA activado para tus próximas consultas.' : 'Equipo de 6 IA desactivado: responderá solo la IA seleccionada.');
+  });
   modelControl.append(modelLabel, modelSelect, modelHealthNote, modelCount, modelProbe);
   const betaHeader = $('#beta-panel .beta-header');
   betaHeader.insertBefore(modelControl, betaHeader.querySelector('.beta-nav'));
@@ -617,8 +633,7 @@ Para una página web pública: create_repository con visibility "public", despu�
   workspaceStyle.textContent = `
     #beta-panel .beta-model-control{display:flex;flex-direction:column;gap:4px;min-width:220px;max-width:310px;color:#e9dddd;font-size:11px;font-weight:700}
     #beta-panel #beta-model-select{width:100%;min-width:0;padding:8px 10px;border:1px solid #6c2929;border-radius:9px;background:#161010;color:#fff;font-size:12px}
-    #beta-panel .beta-model-count{color:#ffadad;font-size:10px;font-weight:500}
-    #beta-panel .beta-model-health{display:block;font-size:10px;line-height:1.4;font-weight:600;color:#b9b9b9}
+    #beta-panel .beta-model-count{color:#ffadad;font-size:10px;font-weight:500}\n    #beta-panel .beta-model-health{display:block;font-size:10px;line-height:1.4;font-weight:600;color:#b9b9b9}
     #beta-panel .beta-model-health[data-state="ok"]{color:#71e09a}
     #beta-panel .beta-model-health[data-state="error"]{color:#ff7777}
     #beta-panel .beta-model-probe{align-self:flex-start;padding:5px 9px;border:1px solid #563030;border-radius:8px;background:#201414;color:#f3dede;font-size:10px;cursor:pointer}
@@ -1454,6 +1469,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       ]);
       if (!auth?.owner || !auth?.token || auth?.anonymous) throw new Error('Iniciá sesión con nxmollpy para usar Beta.');
       ownerId = auth.userId || 'owner';
+      try {
+        useSixAgentTeam = localStorage.getItem(`mediachafa-beta-team6:${ownerId}`) === '1';
+        teamToggle.checked = useSixAgentTeam;
+      } catch { useSixAgentTeam = false; teamToggle.checked = false; }
           return auth;
     } finally { clearTimeout(timer); }
   }
@@ -1584,6 +1603,15 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   const agent = window.MediaChafaBetaAgent;
   const settingsToggle = $('#beta-settings-toggle');
   const settingsPanel = $('#beta-settings');
+  if (settingsPanel && !settingsPanel.contains(teamToggleLabel)) {
+    const teamToggleDescription = document.createElement('small');
+    teamToggleDescription.textContent = 'Al activarlo, Beta coordina seis IA para proponer, revisar y sintetizar. Consume más consultas gratuitas. Desactivado, responde solo el modelo elegido.';
+    const teamToggleCopy = document.createElement('span');
+    teamToggleCopy.append(teamToggleText, teamToggleDescription);
+    teamToggleLabel.replaceChildren(teamToggle, teamToggleCopy);
+    const settingsHeading = settingsPanel.querySelector('h3');
+    settingsHeading ? settingsHeading.after(teamToggleLabel) : settingsPanel.prepend(teamToggleLabel);
+  }
   // The compact Beta layout hides .beta-header; put its settings controls in the
   // persistent sidebar so the gear is visible on desktop and mobile.
   // The controls are mounted into the sidebar at construction time above;
@@ -1676,12 +1704,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     return instruction;
   }
 
-  // El botón de envío cambia a pausa mientras Beta trabaja; no hace falta un control aparte.
-  // La ejecución completa y el equipo colaborativo son el comportamiento predeterminado.
-
+  // El botón de envío cambia a pausa mientras Beta trabaja; el equipo de seis es opcional y se activa desde el selector.\n
   async function agentChat(state, run, message, attachments = {}, onProgress = () => {}) {
     const auth = await currentSession();
-    const collaborative = String(state.modelId || '').startsWith('mediachafa::');
+    const collaborative = useSixAgentTeam && String(state.modelId || '').startsWith('mediachafa::');
     const progressId = collaborative
       ? (globalThis.crypto?.randomUUID?.() || ('mc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12)))
       : '';
@@ -2135,7 +2161,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const liveList = document.createElement('ul');
     liveList.className = 'beta-live-steps';
     progressMessage.insertBefore(liveList, progressBody);
-    const usesMediaChafaTeam = String(selectedModel.id || '').startsWith('mediachafa::');
+    const usesMediaChafaTeam = useSixAgentTeam && String(selectedModel.id || '').startsWith('mediachafa::');
     let collaborationPanel = null;
     if (usesMediaChafaTeam) {
       collaborationPanel = document.createElement('section');
@@ -2276,7 +2302,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         response = await fetch(`${API}/chat`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value, progressId, collaborationEnabled: String(modelSelect.value || '').startsWith('mediachafa::') }),
+          body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value, progressId, collaborationEnabled: useSixAgentTeam && String(modelSelect.value || '').startsWith('mediachafa::') }),
           signal: chatController.signal,
         });
       } catch (error) {

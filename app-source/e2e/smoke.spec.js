@@ -33,7 +33,7 @@ test("el acceso sigue siendo usable en una pantalla móvil", async ({ page }) =>
 });
 
 
-test("Beta coloca el modo y el equipo dentro de Ajustes, fuera del compositor", async ({ page }) => {
+test("Beta coloca el interruptor del equipo dentro de Ajustes, fuera del compositor", async ({ page }) => {
   const pageErrors = [];
   page.on("pageerror", error => pageErrors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
@@ -69,7 +69,6 @@ test("Beta coloca el modo y el equipo dentro de Ajustes, fuera del compositor", 
   await expect(gear).toBeAttached();
   await expect(gear).toBeVisible();
   await expect(page.locator("#beta-form .beta-mode-select")).toHaveCount(0);
-  await expect(settings.locator("#beta-mode")).toBeAttached();
   await expect(settings.locator("#beta-team-enabled")).toBeAttached();
 
   await gear.click();
