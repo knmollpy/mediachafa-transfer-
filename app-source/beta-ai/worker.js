@@ -2175,7 +2175,7 @@ async function runMediaChafaConsensus(args) {
   // Todos los participantes reciben el mismo resumen acotado. Las revisiones no necesitan reenviar adjuntos.
   const reviewers = successfulDrafts;
   const reviews = await Promise.all(reviewers.map(async (participant) => {
-    const result = await invoke(participant, "review", reviewInput, messages, [], null);
+    const result = await invoke(participant, "review", reviewInput, messages, [], image);
     return result.ok ? { reviewer: participant.label, engine: participant.candidate.name, text: String(result.text).slice(0, 3000) } : null;
   }));
   // Si un revisor está limitado o no acepta el contexto, se intenta con otro motor gratuito disponible.
@@ -2185,7 +2185,7 @@ async function runMediaChafaConsensus(args) {
       const key = spare.provider + "::" + spare.nativeId;
       if (usedCandidates.has(key)) continue;
       usedCandidates.add(key);
-      const retry = await invoke({ ...reviewers[index], candidate: spare, label: reviewers[index].label + " · respaldo" }, "review", reviewInput, messages, [], null);
+      const retry = await invoke({ ...reviewers[index], candidate: spare, label: reviewers[index].label + " · respaldo" }, "review", reviewInput, messages, [], image);
       if (retry.ok) {
         reviews[index] = { reviewer: reviewers[index].label, engine: spare.name, text: String(retry.text).slice(0, 3000) };
         break;
@@ -2210,13 +2210,13 @@ async function runMediaChafaConsensus(args) {
   const consensusInput = "PEDIDO ORIGINAL: " + promptText.slice(0, 5000) + "\n\nPROPUESTAS DEL EQUIPO:\n" + JSON.stringify(draftSummary).slice(0, 14000) + "\n\nREVISIONES INDEPENDIENTES:\n" + JSON.stringify(successfulReviews).slice(0, 9000) + "\n\nPrepará la mejor respuesta y plan final. Corregí los problemas señalados. Si una revisión propone bloquear un cambio por un riesgo real, no lo incluyas en actions; explicá el riesgo. Mantené actions vacías si no hay una acción explícita y segura.";
   const lead = successfulDrafts.find((item) => item.role === variant) || successfulDrafts[0];
   const coordinator = { ...lead, label: MEDIACHAFA_MODELS[variant].name };
-  let finalResult = await invoke(coordinator, "synthesis", consensusInput, messages, [], null);
+  let finalResult = await invoke(coordinator, "synthesis", consensusInput, messages, [], image);
   if (!finalResult.ok) {
     for (const spare of candidates) {
       const key = spare.provider + "::" + spare.nativeId;
       if (usedCandidates.has(key)) continue;
       usedCandidates.add(key);
-      finalResult = await invoke({ ...coordinator, candidate: spare }, "synthesis", consensusInput, messages, [], null);
+      finalResult = await invoke({ ...coordinator, candidate: spare }, "synthesis", consensusInput, messages, [], image);
       if (finalResult.ok) break;
     }
   }
