@@ -38,6 +38,7 @@ jobs:
           node --check beta-ai/worker.js
           node --check worker.js
           node --check task-hunter/worker.js
+          node --check change-review/worker.js
       - name: Run Beta agent integration tests
         run: npm run test:beta-agent
       - name: Install Playwright test runner
