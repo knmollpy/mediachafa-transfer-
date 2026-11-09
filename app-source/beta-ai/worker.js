@@ -1528,8 +1528,13 @@ export default {
       let parsed;
       try { parsed = new URL(endpoint); } catch { return json({ error: "Ingresá una URL válida." }, 400, origin); }
       if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash || /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|\[::1\])/i.test(parsed.hostname) || parsed.hostname.endsWith(".local")) return json({ error: "Usá una URL HTTPS pública, sin credenciales, parámetros ni direcciones locales." }, 400, origin);
-      await env.BETA_LIMITS.put(key, JSON.stringify({ endpoint, updatedAt: new Date().toISOString() }));
-      return json({ connected: true, endpoint }, 200, origin);
+      const previousRaw = await env.BETA_LIMITS.get(key);
+      let previous = {}; try { previous = previousRaw ? JSON.parse(previousRaw) : {}; } catch {}
+      const token = String(payload.token || "").trim();
+      if (token.length > 4096) return json({ error: "El token del motor supera el límite permitido." }, 400, origin);
+      const tokenEncrypted = token ? await encryptToken(env, token) : (previous.tokenEncrypted || null);
+      await env.BETA_LIMITS.put(key, JSON.stringify({ endpoint, tokenEncrypted, updatedAt: new Date().toISOString() }));
+      return json({ connected: true, endpoint, authenticated: Boolean(tokenEncrypted) }, 200, origin);
     }
     if (url.pathname === "/blender/render" && request.method === "POST") {
       const user = await requireOwner(request);
@@ -1541,7 +1546,8 @@ export default {
       const prompt = String(payload.prompt || "").trim().slice(0, 4000);
       if (!prompt) return json({ error: "Describí la escena que querés crear." }, 400, origin);
       try {
-        const response = await fetch(`${config.endpoint}/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, format: "png", animation: true }), signal: AbortSignal.timeout(30_000) });
+        const runnerHeaders = { "Content-Type": "application/json" }; if (config.tokenEncrypted) runnerHeaders.Authorization = `Bearer ${await decryptToken(env, config.tokenEncrypted)}`;
+        const response = await fetch(`${config.endpoint}/jobs`, { method: "POST", headers: runnerHeaders, body: JSON.stringify({ prompt, format: "png", animation: true }), signal: AbortSignal.timeout(30_000) });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) return json({ error: String(result.error || `El motor Blender respondió HTTP ${response.status}.`).slice(0, 500) }, 502, origin);
         const jobId = String(result.jobId || result.id || "").slice(0, 160);
@@ -1557,7 +1563,8 @@ export default {
       let config = {}; try { config = saved ? JSON.parse(saved) : {}; } catch {}
       if (!config.endpoint) return json({ error: "Blender no está conectado." }, 409, origin);
       try {
-        const response = await fetch(`${config.endpoint}/jobs/${encodeURIComponent(blenderJob[1])}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
+        const runnerHeaders = { Accept: "application/json" }; if (config.tokenEncrypted) runnerHeaders.Authorization = `Bearer ${await decryptToken(env, config.tokenEncrypted)}`;
+        const response = await fetch(`${config.endpoint}/jobs/${encodeURIComponent(blenderJob[1])}`, { headers: runnerHeaders, signal: AbortSignal.timeout(20_000) });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) return json({ error: String(result.error || `El motor Blender respondió HTTP ${response.status}.`).slice(0, 500) }, 502, origin);
         return json(result, 200, origin);
