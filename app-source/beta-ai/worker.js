@@ -640,7 +640,7 @@ async function dispatchAgentBuild(token, state, platform, args = {}) {
   if (platform === "apk" && !/^app-source\/apk\/[a-z0-9][a-z0-9._-]{0,63}$/.test(projectPath)) {
     throw new Error("Indicá project_path con formato app-source/apk/nombre-proyecto.");
   }
-  if (platform === "ps4_pkg" && !/^app-source\\/ps4\\/[a-z0-9][a-z0-9._-]{0,63}$/.test(projectPath)) {
+  if (platform === "ps4_pkg" && !/^app-source\/ps4\/[a-z0-9][a-z0-9._-]{0,63}$/.test(projectPath)) {
     throw new Error("Indicá project_path con formato app-source/ps4/nombre-proyecto.");
   }
   if ((state.buildRunsStarted || 0) >= MAX_AGENT_BUILDS_PER_EXECUTION) throw new Error(`Se alcanzó el límite de ${MAX_AGENT_BUILDS_PER_EXECUTION} compilaciones por ejecución.`);
