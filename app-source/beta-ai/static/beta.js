@@ -3,14 +3,14 @@
   const LIVE_REPO = 'knmollpy/mediachafa-transfer-';
   const AUTO_TYPES = new Set(['create_repository', 'write_file', 'write_files', 'enable_pages', 'pages_build', 'create_worker']);
   const TAGS = { SIGO: 'continue', PREGUNTA: 'question', LISTO: 'done' };
-  const OWN_MODEL_TURNS = 12;
-  const OTHER_MODEL_TURNS = 12;
+  const OWN_MODEL_TURNS = 30;
+  const OTHER_MODEL_TURNS = 30;
 
   // Las IAs MediaChafa usan la misma cuota diaria gratuita verificada de OpenRouter.
   function turnLimit(model) {
     if (model?.unlimited) return OWN_MODEL_TURNS;
     const remaining = Number(model?.remaining);
-    return Math.max(1, Math.min(OTHER_MODEL_TURNS, Number.isFinite(remaining) ? remaining : 6));
+    return Math.max(1, Math.min(OTHER_MODEL_TURNS, Number.isFinite(remaining) ? remaining : 30));
   }
 
   function requestedRepositoryName(goal) {
@@ -1563,7 +1563,6 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   // para hacerte una pregunta necesaria, para pedirte aprobación de algo delicado
   // (borrados, SQL o cambios en la web en vivo de MediaChafa) o si tocás "Detener".
   const agent = window.MediaChafaBetaAgent;
-  const modeSelect = $('#beta-mode');
   const pendingAgentRuns = {};
   let autonomousRun = null;
   function setComposerMode(mode) {
@@ -1608,12 +1607,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     return instruction;
   }
 
-  // El botón de envío cambia a pausa mientras Beta trabaja; no hace falta un control aparte.
-  try {
-    const savedMode = localStorage.getItem('mediachafa-beta-mode');
-    if (modeSelect && savedMode && [...modeSelect.options].some(option => option.value === savedMode)) modeSelect.value = savedMode;
-  } catch {}
-  modeSelect?.addEventListener('change', () => { try { localStorage.setItem('mediachafa-beta-mode', modeSelect.value); } catch {} });
+  // La ejecución completa es el comportamiento único y predeterminado de Beta.
 
   async function agentChat(state, run, message, attachments = {}) {
     const auth = await currentSession();
@@ -1781,7 +1775,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const run = { stopped: false, inFlight: false, controller: new AbortController(), waiting: null, waitingKind: null, state, queuedInstructions: [] };
     autonomousRun = run;
     setComposerMode('working');
-    const progress = addMessage('assistant', 'Trabajando en modo autónomo…');
+    const progress = addMessage('assistant', 'Entendiendo el pedido y preparando el trabajo…');
     progress.classList.add('beta-working');
     progress.querySelector('.beta-copy-btn')?.remove();
     const progressBody = progress.querySelector('p');
@@ -1792,7 +1786,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const step = (text, kind = 'active') => {
       steps.push(text);
       liveList.replaceChildren(...steps.slice(-14).map((item, i, list) => { const li = document.createElement('li'); li.dataset.state = i === list.length - 1 && kind === 'active' ? 'active' : 'done'; li.textContent = item; return li; }));
-      progressBody.textContent = `Modo autónomo · turno ${state.turn} de ${state.maxTurns}`;
+      progressBody.textContent = `Trabajando · etapa ${state.turn} de ${state.maxTurns}`;
       setStatus(text);
       activity(text, kind === 'error' ? 'error' : 'active');
       messagesNode.scrollTop = messagesNode.scrollHeight;
@@ -2003,7 +1997,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (!selectedModel.unlimited && Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
     if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
     if (pendingAudio && !selectedModel?.audio) { setStatus('Este modelo no admite audio. Elegí uno que indique audio.', 'error'); return; }
-    if (modeSelect?.value === 'autonomous' && agent) {
+    if (agent) {
       input.value = '';
       const goalText = prompt || (pendingImage ? 'Analizá la imagen adjunta.' : 'Transcribí y analizá el audio adjunto.');
       const goalDisplay = `${goalText}${pendingImage ? `\n[Imagen: ${pendingImage.name}]` : ''}${pendingAudio ? `\n[Audio: ${pendingAudio.name}]` : ''}`;
