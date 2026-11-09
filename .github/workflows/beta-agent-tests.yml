@@ -21,6 +21,7 @@ on:
       - "app-source/sentry-*.js"
       - "index.html"
       - ".github/workflows/beta-agent-tests.yml"
+      - ".github/workflows/change-review-gate.yml"
   push:
     branches:
       - main
