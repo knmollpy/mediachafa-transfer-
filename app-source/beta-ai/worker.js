@@ -1550,7 +1550,7 @@ export default {
         return json({ jobId, status: "queued", message: "GitHub está preparando Blender gratis…" }, 202, origin);
       } catch (error) { return json({ error: String(error?.message || "No se pudo iniciar Blender en GitHub Actions.").slice(0,500) }, 502, origin); }
     }
-    const blenderJob = url.pathname.match(/^\\/blender\\/jobs\\/([A-Za-z0-9_-]{1,160})$/);
+    const blenderJob = url.pathname.match(/^\/blender\/jobs\/([A-Za-z0-9_-]{1,160})$/);
     if (blenderJob && request.method === "GET") {
       const user = await requireOwner(request);
       if (!user) return json({ error: "Solo la cuenta dueña puede consultar renders." }, 403, origin);
