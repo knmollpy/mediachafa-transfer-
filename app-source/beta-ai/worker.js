@@ -1949,14 +1949,25 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
     const token = await storedToken(env, userId, provider);
     if (!token) continue;
     try {
+      const date = new Date().toISOString().slice(0, 10);
+      let providerRemaining = Infinity;
       if (provider === "openrouter") {
         const quota = await openRouterQuota(token);
-        if (quota.providerRemaining <= 0) continue;
+        providerRemaining = quota.providerRemaining;
+        if (providerRemaining <= 0) continue;
       }
       const catalog = await providerModelCatalog(provider, token);
       for (const model of catalog) {
         if (needsVision && !model.vision) continue;
-        if (provider === "openrouter" && !String(model.nativeId || "").endsWith(":free")) continue;
+        if (provider === "openrouter" && (!String(model.nativeId || "").endsWith(":free") || providerRemaining <= 0)) continue;
+        if (provider === "groq") {
+          const used = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${userId}:groq:${model.nativeId}:${date}`) || 0);
+          if (used >= Number(model.dailyLimit || 0)) continue;
+        }
+        if (provider === "gemini") {
+          const used = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${userId}:gemini:day:${date}`) || 0);
+          if (used >= Number(PROVIDER_DAILY_LIMITS.gemini || 0)) continue;
+        }
         eligible.push({
           provider,
           nativeId: model.nativeId || model.id.split("::")[1] || model.id,
@@ -1966,6 +1977,7 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
           token,
           thinkingLevel: model.thinkingLevel || "medio",
         });
+        if (provider === "openrouter") providerRemaining -= 1;
       }
     } catch {
       // Un proveedor sin catálogo/cuota verificable se omite; nunca se usa un modelo pago.
