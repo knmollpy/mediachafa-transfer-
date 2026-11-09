@@ -86,7 +86,7 @@ jobs:
                 exit 1
               fi
               if printf '%s' "$COMMENT" | grep -q "Deploy successful"; then
-                PREVIEW_URL="$(printf '%s' "$COMMENT" | grep -oE 'https://[a-z0-9-]+\\.mediachafa-transfer\\.pages\\.dev' | head -n 1 || true)"
+                PREVIEW_URL="$(printf '%s' "$COMMENT" | grep -oE 'https://[a-z0-9-]+\.mediachafa-transfer\.pages\.dev' | head -n 1 || true)"
                 if [ -n "$PREVIEW_URL" ]; then
                   HTTP_STATUS="$(curl --silent --show-error --output /tmp/mediachafa-pages-preview.html --write-out '%{http_code}' --max-time 30 -A 'Mozilla/5.0 MediaChafa-CI' "$PREVIEW_URL/")"
                   if [[ "$HTTP_STATUS" =~ ^2[0-9][0-9]$ ]] && grep -q '/app-source/beta.js' /tmp/mediachafa-pages-preview.html; then
