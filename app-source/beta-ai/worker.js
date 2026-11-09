@@ -1468,8 +1468,16 @@ export default {
           quotas[provider] = { connected: true, used, limit: effectiveLimit, remaining: Math.max(0, effectiveLimit - used), period: "day" };
         } catch (error) { catalogErrors[provider] = error.message; }
       }
-      const freeQuota = quotas.openrouter || { connected: false, used: 0, limit: 0, remaining: 0 };
-      const own = MEDIACHAFA_ORDER.map((variant) => ({ id: `mediachafa::${variant}`, nativeId: variant, apiProvider: "mediachafa", name: MEDIACHAFA_MODELS[variant].name, provider: "OpenRouter Free", own: true, unlimited: false, vision: models.some((model) => model.vision), audio: false, thinkingLevel: MEDIACHAFA_MODELS[variant].thinkingLevel, usedToday: freeQuota.used, dailyLimit: freeQuota.limit, remaining: freeQuota.remaining || 0, quotaPeriod: "day" }));
+      const openRouterQuotaSummary = quotas.openrouter || { used: 0, limit: 0, remaining: 0 };
+      const groqModels = models.filter((model) => model.apiProvider === "groq");
+      const groqUsed = groqModels.reduce((sum, model) => sum + Number(model.usedToday || 0), 0);
+      const groqLimit = groqModels.reduce((sum, model) => sum + Number(model.dailyLimit || 0), 0);
+      const groqRemaining = groqModels.reduce((sum, model) => sum + Number(model.remaining || 0), 0);
+      const geminiQuota = quotas.gemini || { used: 0, limit: 0, remaining: 0 };
+      const ownUsed = Number(openRouterQuotaSummary.used || 0) + groqUsed + Number(geminiQuota.used || 0);
+      const ownLimit = Number(openRouterQuotaSummary.limit || 0) + groqLimit + Number(geminiQuota.limit || 0);
+      const ownRemaining = Number(openRouterQuotaSummary.remaining || 0) + groqRemaining + Number(geminiQuota.remaining || 0);
+      const own = MEDIACHAFA_ORDER.map((variant) => ({ id: `mediachafa::${variant}`, nativeId: variant, apiProvider: "mediachafa", name: MEDIACHAFA_MODELS[variant].name, provider: "Modelos gratuitos conectados", own: true, unlimited: false, vision: models.some((model) => model.vision), audio: false, thinkingLevel: MEDIACHAFA_MODELS[variant].thinkingLevel, usedToday: ownUsed, dailyLimit: ownLimit, remaining: ownRemaining, quotaPeriod: "day" }));
       models.unshift(...own);
       return json({ ok: true, models, quotas, catalogErrors, dailyLimit: DAILY_REQUEST_LIMIT, connectedProviders: Object.keys(quotas) }, 200, origin);
     }
