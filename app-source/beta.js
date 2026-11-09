@@ -1579,8 +1579,15 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   // persistent sidebar so the gear is visible on desktop and mobile.
   const betaSidebarForSettings = $('#beta-panel .beta-sidebar');
   if (betaSidebarForSettings && settingsToggle && settingsPanel) {
-    betaSidebarForSettings.insertBefore(settingsToggle, betaSidebarSection);
-    betaSidebarForSettings.insertBefore(settingsPanel, betaSidebarSection);
+    const settingsAnchor = betaSidebarForSettings.querySelector('.beta-sidebar-section');
+    // Keep the mode selector inside the settings panel, never in the chat composer.
+    if (modeSelect && !settingsPanel.contains(modeSelect)) settingsPanel.append(modeSelect);
+    if (settingsAnchor) {
+      betaSidebarForSettings.insertBefore(settingsToggle, settingsAnchor);
+      betaSidebarForSettings.insertBefore(settingsPanel, settingsAnchor);
+    } else {
+      betaSidebarForSettings.append(settingsToggle, settingsPanel);
+    }
     settingsToggle.hidden = false;
   }
   try { if (teamEnabledInput) teamEnabledInput.checked = localStorage.getItem(teamSettingKey()) === 'true'; } catch {}
@@ -1610,6 +1617,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   });
   const settingsStyle = document.createElement('style');
   settingsStyle.textContent = `
+    #beta-panel .beta-sidebar{position:relative}
     #beta-panel .beta-settings-toggle{display:inline-flex;align-items:center;justify-content:center;font-size:20px;min-width:42px;min-height:40px;padding:7px 11px;order:20}
     #beta-panel .beta-settings{position:relative;z-index:80;inset:auto;width:100%;max-width:100%;padding:12px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:#15171d;box-shadow:0 12px 35px #0008;display:grid;gap:10px;order:21}
     #beta-panel .beta-settings[hidden],#beta-panel .beta-settings.hidden{display:none!important}
