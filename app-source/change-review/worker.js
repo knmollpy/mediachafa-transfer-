@@ -133,7 +133,7 @@ async function reviewWithModels(env, messages) {
   }
   throw new Error(`Todos los motores gratuitos de revisión fallaron; no se aprobará el PR. ${failures.slice(-6).join(" | ")}`.slice(0, 1600));
 }
-const TRUSTED_WORKFLOW_BLOB_SHA = "877f3a81cc20239a5863439dd88ef2027aac5b3f";
+const TRUSTED_WORKFLOW_BLOB_SHA = "bff8d4a8bc300fde90a75c9e3c1c366c41c3a412";
 async function verifyTrustedControlFiles(headSha, githubToken) {
   const { data } = await github(`/contents/${EXPECTED_WORKFLOW}?ref=${headSha}`, githubToken);
   if (data.sha !== TRUSTED_WORKFLOW_BLOB_SHA) {
