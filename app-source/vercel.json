@@ -1,11 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':!beta-ai/**' ':!change-review/**' ':!migrations/**' ':!task-hunter/**' ':!.github/**' ':!vercel.json'",
-  "redirects": [
-    {
-      "source": "/:path*",
-      "destination": "https://mediachafa-transfer.pages.dev/:path*",
-      "permanent": true
-    }
-  ]
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':!beta-ai/**' ':!change-review/**' ':!migrations/**' ':!task-hunter/**' ':!.github/**' ':!vercel.json'"
 }
