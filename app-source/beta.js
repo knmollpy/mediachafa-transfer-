@@ -2464,22 +2464,14 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   $('#beta-memory-enabled')?.addEventListener('change', event => { try { localStorage.setItem('mediachafa-beta-memory-enabled', event.target.checked ? '1' : '0'); } catch {} });
 
   async function loadBlenderStatus() {
-    const status = $('#beta-blender-status'), endpoint = $('#beta-blender-endpoint');
-    if (!status || !endpoint) return;
+    const status = $('#beta-blender-status');
+    if (!status) return;
     try {
       const data = await api('/blender/config');
-      endpoint.value = data.endpoint || '';
-      status.textContent = data.connected ? 'URL guardada · motor pendiente de prueba' : 'Sin conectar';
-      status.dataset.state = data.connected ? 'connected' : 'idle';
+      status.textContent = data.githubConnected ? 'GitHub conectado · render gratuito disponible' : 'Conectá GitHub en Integraciones para habilitar Blender';
+      status.dataset.state = data.githubConnected ? 'connected' : 'idle';
     } catch (error) { status.textContent = error.message; status.dataset.state = 'error'; }
   }
-  $('#beta-blender-save')?.addEventListener('click', async () => {
-    const endpoint = $('#beta-blender-endpoint').value.trim(), status = $('#beta-blender-status'), button = $('#beta-blender-save');
-    button.disabled = true; status.textContent = 'Validando y guardando URL…';
-    try { const data = await api('/blender/config', { method: 'POST', body: JSON.stringify({ endpoint, token: $('#beta-blender-token').value.trim() }) }); status.textContent = data.connected ? 'URL y credenciales guardadas de forma cifrada' : 'Desconectado'; $('#beta-blender-token').value = ''; status.dataset.state = data.connected ? 'connected' : 'idle'; }
-    catch (error) { status.textContent = error.message; status.dataset.state = 'error'; }
-    finally { button.disabled = false; }
-  });
   $('#beta-blender-render')?.addEventListener('click', async () => {
     const prompt = $('#beta-blender-prompt').value.trim(), status = $('#beta-blender-status'), button = $('#beta-blender-render'), results = $('#beta-blender-results');
     if (!prompt) { status.textContent = 'Describí la escena 3D que querés crear.'; return; }
@@ -2506,11 +2498,19 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         const link = document.createElement('a'); link.href = src; link.download = image.name || 'beta-blender-render.png'; link.textContent = 'Guardar imagen'; link.className = 'beta-link'; results.append(link);
         if (chatMessage) chatMessage.append(link.cloneNode(true));
       }
-      if (job.downloadUrl && String(job.downloadUrl).startsWith('https://')) {
-        const projectLink = document.createElement('a'); projectLink.href = job.downloadUrl; projectLink.target = '_blank'; projectLink.rel = 'noopener noreferrer'; projectLink.textContent = 'Descargar proyecto Blender (.blend)'; projectLink.className = 'beta-link'; results.append(projectLink);
-        if (chatMessage) chatMessage.append(projectLink.cloneNode(true));
+      if (job.animationData) {
+        const video = document.createElement('video'); video.controls = true; video.playsInline = true; video.src = `data:video/mp4;base64,${job.animationData}`; video.style.cssText = 'display:block;width:100%;max-height:480px;border-radius:10px;margin:14px 0'; results.append(video);
+        const videoLink = document.createElement('a'); videoLink.href = video.src; videoLink.download = 'beta-blender-animation.mp4'; videoLink.textContent = 'Guardar animación MP4'; videoLink.className = 'beta-link'; results.append(videoLink);
+        if (chatMessage) { const copy = video.cloneNode(); chatMessage.append(copy); const dl = videoLink.cloneNode(true); chatMessage.append(dl); }
       }
-      status.textContent = images.length ? 'Render terminado · imágenes enviadas al chat' : 'Trabajo terminado; el motor no devolvió imágenes. Revisá el contrato de respuesta.';
+      if (job.blendData) {
+        const blendLink = document.createElement('a'); blendLink.href = `data:application/octet-stream;base64,${job.blendData}`; blendLink.download = 'beta-blender-scene.blend'; blendLink.textContent = 'Descargar proyecto editable (.blend)'; blendLink.className = 'beta-link'; results.append(blendLink);
+        if (chatMessage) chatMessage.append(blendLink.cloneNode(true));
+      }
+      if (job.runUrl && String(job.runUrl).startsWith('https://')) {
+        const runLink = document.createElement('a'); runLink.href = job.runUrl; runLink.target = '_blank'; runLink.rel = 'noopener noreferrer'; runLink.textContent = 'Ver ejecución y registros de GitHub'; runLink.className = 'beta-link'; results.append(runLink);
+      }
+      status.textContent = images.length ? 'Render y animación terminados · resultados enviados al chat' : 'Trabajo terminado; no se recibieron imágenes.';
       status.dataset.state = images.length ? 'connected' : 'error';
     } catch (error) { status.textContent = error.message; status.dataset.state = 'error'; }
     finally { button.disabled = false; }
