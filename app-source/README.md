@@ -68,6 +68,9 @@ Para correr localmente las pruebas nuevas: `cd app-source && npm run test:beta-a
 
 ## Compilación autónoma de APK y PKG
 
-Beta dispone de herramientas de compilación reales en GitHub Actions. Puede compilar una APK Android desde la rama aislada de la ejecución y devolver el artefacto descargable, sin modificar `main` ni publicar en producción. Para PS4, puede crear un proyecto homebrew en `app-source/ps4/<nombre>/`, ejecutar su `build.sh` con OpenOrbis PS4 Toolchain v0.5.4 y devolver el PKG generado en `dist/`. Los artefactos se conservan durante 30 días en GitHub Actions. Ambos flujos usan permisos de solo lectura del repositorio, no reciben secretos de firma y no publican binarios automáticamente en el sitio.
+Beta dispone de herramientas de compilación reales en GitHub Actions. Puede crear proyectos Android independientes en `app-source/apk/<nombre>/` y compilarlos a APK debug con Gradle, además de compilar proyectos PS4 homebrew a PKG. Devuelve los artefactos descargables sin modificar `main` ni publicar en producción. Para PS4, puede crear un proyecto homebrew en `app-source/ps4/<nombre>/`, ejecutar su `build.sh` con OpenOrbis PS4 Toolchain v0.5.4 y devolver el PKG generado en `dist/`. Los artefactos se conservan durante 30 días en GitHub Actions. Ambos flujos usan permisos de solo lectura del repositorio, no reciben secretos de firma y no publican binarios automáticamente en el sitio.
 
 La compilación PKG es para homebrew original y consolas con entorno jailbreak compatible; no genera firmas retail ni permite instalar juegos comerciales protegidos. Ver `app-source/ps4/README.md` para el formato del proyecto.
+
+
+Los proyectos Android independientes deben seguir `app-source/apk/README.md`; los APK resultantes son builds debug de prueba y no se firman como versiones retail.
