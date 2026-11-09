@@ -136,7 +136,7 @@ test("six free models draft independently, cross-review, then synthesize", async
   await connectFreeOpenRouter(env);
   const res = await chat(env, "mediachafa::pro");
   const data = await res.json();
-  assert.equal(res.status, 200, await res.clone().text());
+  assert.equal(res.status, 200, JSON.stringify(data));
   assert.equal(data.answer, "respuesta consensuada");
   assert.equal(data.collaboration.enabled, true);
   assert.equal(data.collaboration.participantCount, 6);
@@ -158,7 +158,8 @@ test("only vision-capable free models receive image requests", async () => {
   const env = makeEnv();
   await connectFreeOpenRouter(env);
   const res = await chat(env, "mediachafa::pro", { image: { data: "data:image/png;base64,iVBORw0KGgo=" } });
-  assert.equal(res.status, 200, await res.clone().text());
+  const data = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(data));
   assert.ok(requests.length >= 5);
   assert.ok(requests.every((request) => request.model.endsWith(":free")));
   assert.ok(requests.every((request) => {
@@ -176,7 +177,7 @@ test("replaces a failed free model with another verified free model", async () =
   await connectFreeOpenRouter(env);
   const res = await chat(env, "mediachafa::codigo");
   const data = await res.json();
-  assert.equal(res.status, 200, await res.clone().text());
+  assert.equal(res.status, 200, JSON.stringify(data));
   assert.equal(data.collaboration.enabled, true);
   assert.equal(data.collaboration.participantCount, 6);
   assert.ok(requests.some((request) => request.model === "meta-llama/llama-4-scout:free"));
@@ -190,7 +191,7 @@ test("uses one free model when fewer than five daily requests remain", async () 
   await connectFreeOpenRouter(env);
   const res = await chat(env, "mediachafa::rapida");
   const data = await res.json();
-  assert.equal(res.status, 200, await res.clone().text());
+  assert.equal(res.status, 200, JSON.stringify(data));
   assert.equal(data.answer, "respuesta consensuada");
   assert.equal(data.collaboration, undefined);
   assert.equal(requests.length, 1);
@@ -213,7 +214,7 @@ test("publishes authenticated live progress for the six-agent collaboration", as
   const progressId = "progress-test-id-1234";
   const res = await chat(env, "mediachafa::pro", { progressId });
   const data = await res.json();
-  assert.equal(res.status, 200, await res.clone().text());
+  assert.equal(res.status, 200, JSON.stringify(data));
   assert.equal(data.collaboration.enabled, true);
   const raw = await env.BETA_LIMITS.get("beta-chat-progress:owner:" + progressId);
   assert.ok(raw, "progress snapshot is saved in KV");
