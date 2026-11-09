@@ -1564,6 +1564,51 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   // (borrados, SQL o cambios en la web en vivo de MediaChafa) o si tocás "Detener".
   const agent = window.MediaChafaBetaAgent;
   const modeSelect = $('#beta-mode');
+  const settingsToggle = $('#beta-settings-toggle');
+  const settingsPanel = $('#beta-settings');
+  const teamEnabledInput = $('#beta-team-enabled');
+  const teamSettingKey = () => `mediachafa-beta-team:${ownerId || 'owner'}`;
+  try { teamEnabledInput.checked = localStorage.getItem(teamSettingKey()) === 'true'; } catch {}
+  settingsToggle?.addEventListener('click', () => {
+    const opening = settingsPanel.classList.contains('hidden');
+    settingsPanel.classList.toggle('hidden', !opening);
+    settingsToggle.setAttribute('aria-expanded', String(opening));
+  });
+  teamEnabledInput?.addEventListener('change', () => {
+    try { localStorage.setItem(teamSettingKey(), String(teamEnabledInput.checked)); } catch {}
+    setStatus(teamEnabledInput.checked
+      ? 'Equipo de 6 IAs activado. Elegí una IA MediaChafa para usarlo.'
+      : 'Equipo colaborativo desactivado. Beta responderá con una sola IA.');
+  });
+  settingsPanel?.addEventListener('click', event => event.stopPropagation());
+  document.addEventListener('click', event => {
+    if (!settingsPanel?.classList.contains('hidden') && !settingsPanel.contains(event.target) && !settingsToggle?.contains(event.target)) {
+      settingsPanel.classList.add('hidden');
+      settingsToggle?.setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && settingsPanel && !settingsPanel.classList.contains('hidden')) {
+      settingsPanel.classList.add('hidden');
+      settingsToggle?.setAttribute('aria-expanded', 'false');
+    }
+  });
+  const settingsStyle = document.createElement('style');
+  settingsStyle.textContent = `
+    #beta-panel .beta-settings-toggle{font-size:20px;min-width:42px;padding:7px 11px}
+    #beta-panel .beta-settings{position:absolute;z-index:80;right:12px;top:58px;width:min(340px,calc(100vw - 44px));padding:16px;border:1px solid rgba(255,255,255,.16);border-radius:15px;background:#15171d;box-shadow:0 18px 55px #000b;display:grid;gap:10px}
+    #beta-panel .beta-settings.hidden{display:none}
+    #beta-panel .beta-settings h3{margin:0 0 3px;font-size:15px;color:#fff}
+    #beta-panel .beta-settings>label:not(.beta-team-setting){font-size:12px;color:#d4d4d8}
+    #beta-panel .beta-settings select{width:100%;padding:10px;border:1px solid #484854;border-radius:9px;background:#20212a;color:#fff}
+    #beta-panel .beta-team-setting{display:flex;align-items:flex-start;gap:10px;padding:11px;border:1px solid #45404a;border-radius:11px;background:#21191d;color:#fff}
+    #beta-panel .beta-team-setting input{width:18px;height:18px;margin:2px 0 0;accent-color:#ef4444}
+    #beta-panel .beta-team-setting span{display:grid;gap:4px}
+    #beta-panel .beta-team-setting small,#beta-panel .beta-settings-note{font-size:11px;line-height:1.45;color:#b8b8c2;margin:0}
+    #beta-panel .beta-header{position:relative}
+    @media(max-width:600px){#beta-panel .beta-settings{right:4px;top:54px}}
+  `;
+  document.head.append(settingsStyle);
   const pendingAgentRuns = {};
   let autonomousRun = null;
   function setComposerMode(mode) {
@@ -2027,7 +2072,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const liveList = document.createElement('ul');
     liveList.className = 'beta-live-steps';
     progressMessage.insertBefore(liveList, progressBody);
-    const usesMediaChafaTeam = String(selectedModel.id || '').startsWith('mediachafa::');
+    const usesMediaChafaTeam = teamEnabledInput.checked && String(selectedModel.id || '').startsWith('mediachafa::');
     let collaborationPanel = null;
     if (usesMediaChafaTeam) {
       collaborationPanel = document.createElement('section');
@@ -2164,7 +2209,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const response = await fetch(`${API}/chat`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value, progressId }),
+        body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value, progressId, collaborationEnabled: teamEnabledInput.checked }),
       });
       updateProgress('Consulta recibida; esperando la respuesta del equipo…');
       const data = await response.json().catch(() => ({}));
