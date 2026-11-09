@@ -134,7 +134,7 @@ test("six free models draft independently, cross-review, then synthesize", async
   installFetch();
   const env = makeEnv();
   await connectFreeOpenRouter(env);
-  const res = await chat(env, "mediachafa::pro");
+  const res = await chat(env, "mediachafa::pro", { collaborationEnabled: true });
   const data = await res.json();
   assert.equal(res.status, 200, JSON.stringify(data));
   assert.equal(data.answer, "respuesta consensuada");
@@ -157,7 +157,7 @@ test("only vision-capable free models receive image requests", async () => {
   installFetch();
   const env = makeEnv();
   await connectFreeOpenRouter(env);
-  const res = await chat(env, "mediachafa::pro", { image: { data: "data:image/png;base64,iVBORw0KGgo=" } });
+  const res = await chat(env, "mediachafa::pro", { collaborationEnabled: true, image: { data: "data:image/png;base64,iVBORw0KGgo=" } });
   const data = await res.json();
   assert.equal(res.status, 200, JSON.stringify(data));
   assert.ok(requests.length >= 5);
@@ -175,7 +175,7 @@ test("replaces a failed free model with another verified free model", async () =
   failModelOnce = "qwen/qwen3-coder:free";
   const env = makeEnv();
   await connectFreeOpenRouter(env);
-  const res = await chat(env, "mediachafa::codigo");
+  const res = await chat(env, "mediachafa::codigo", { collaborationEnabled: true });
   const data = await res.json();
   assert.equal(res.status, 200, JSON.stringify(data));
   assert.equal(data.collaboration.enabled, true);
@@ -212,7 +212,7 @@ test("publishes authenticated live progress for the six-agent collaboration", as
   const env = makeEnv();
   await connectFreeOpenRouter(env);
   const progressId = "progress-test-id-1234";
-  const res = await chat(env, "mediachafa::pro", { progressId });
+  const res = await chat(env, "mediachafa::pro", { progressId, collaborationEnabled: true });
   const data = await res.json();
   assert.equal(res.status, 200, JSON.stringify(data));
   assert.equal(data.collaboration.enabled, true);
