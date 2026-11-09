@@ -58,40 +58,53 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  vercel-preview:
+  cloudflare-pages-preview:
     if: startsWith(github.head_ref, 'beta-agent/')
     needs: [tests]
     runs-on: ubuntu-latest
     timeout-minutes: 12
     permissions:
       contents: read
-      statuses: read
+      issues: read
     steps:
-      - name: Wait for Vercel Preview to report success
+      - name: Wait for Cloudflare Pages Preview for the exact commit
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: |
           set -euo pipefail
+          SHORT_SHA="${HEAD_SHA:0:7}"
           for attempt in $(seq 1 60); do
-            STATE="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}/statuses" --jq '[.[] | select(.context == "Vercel")][0].state // ""')"
-            if [ "$STATE" = "success" ]; then
-              echo "Vercel Preview informó success para el commit revisado."
-              exit 0
-            fi
-            if [ "$STATE" = "failure" ] || [ "$STATE" = "error" ]; then
-              echo "Vercel Preview falló; publicación bloqueada."
-              exit 1
+            COMMENTS="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100")"
+            COMMENT="$(printf '%s' "$COMMENTS" | jq -r --arg sha "$SHORT_SHA" '[.[] | select(.user.login == "cloudflare-workers-and-pages[bot]") | select((.body | contains($sha)) and (.body | contains("Preview URL:")))] | last | .body // ""')"
+            if [ -n "$COMMENT" ]; then
+              if printf '%s' "$COMMENT" | grep -q "Deploy failed"; then
+                echo "Cloudflare Pages Preview falló para $SHORT_SHA."
+                printf '%s\n' "$COMMENT"
+                exit 1
+              fi
+              if printf '%s' "$COMMENT" | grep -q "Deploy successful"; then
+                PREVIEW_URL="$(printf '%s' "$COMMENT" | grep -oE 'https://[a-z0-9-]+\\.mediachafa-transfer\\.pages\\.dev' | head -n 1 || true)"
+                if [ -n "$PREVIEW_URL" ]; then
+                  HTTP_STATUS="$(curl --silent --show-error --output /tmp/mediachafa-pages-preview.html --write-out '%{http_code}' --max-time 30 -A 'Mozilla/5.0 MediaChafa-CI' "$PREVIEW_URL/")"
+                  if [[ "$HTTP_STATUS" =~ ^2[0-9][0-9]$ ]] && grep -q '/app-source/beta.js' /tmp/mediachafa-pages-preview.html; then
+                    echo "Cloudflare Pages Preview confirmó HTTP $HTTP_STATUS para $HEAD_SHA: $PREVIEW_URL"
+                    exit 0
+                  fi
+                  echo "Preview todavía no respondió con la página esperada (HTTP $HTTP_STATUS): $PREVIEW_URL"
+                fi
+              fi
             fi
             sleep 10
           done
-          echo "Vercel no confirmó Preview dentro del límite; publicación bloqueada."
+          echo "Cloudflare Pages no confirmó un Preview accesible para el commit revisado; publicación bloqueada."
           exit 1
 
   independent-review:
     if: startsWith(github.head_ref, 'beta-agent/')
-    needs: [tests, vercel-preview]
+    needs: [tests, cloudflare-pages-preview]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -159,7 +172,7 @@ jobs:
 
   auto-publish:
     if: startsWith(github.head_ref, 'beta-agent/')
-    needs: [tests, vercel-preview, independent-review]
+    needs: [tests, cloudflare-pages-preview, independent-review]
     runs-on: ubuntu-latest
     permissions:
       contents: write
