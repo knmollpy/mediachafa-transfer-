@@ -1594,7 +1594,6 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (!betaSidebarForSettings.contains(settingsPanel)) betaSidebarForSettings.insertBefore(settingsPanel, betaSidebarSection);
     settingsToggle.hidden = false;
   }
-  try { if (teamEnabledInput) teamEnabledInput.checked = localStorage.getItem(teamSettingKey()) === 'true'; } catch {}
   settingsToggle?.addEventListener('click', () => {
     const opening = settingsPanel.classList.contains('hidden');
     settingsPanel.classList.toggle('hidden', !opening);
