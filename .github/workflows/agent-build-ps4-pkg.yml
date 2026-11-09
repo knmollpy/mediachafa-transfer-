@@ -74,6 +74,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$PROJECT_PATH/dist" "$PROJECT_PATH/sce_sys/about" "$PROJECT_PATH/sce_module"
           SAMPLE="$OO_PS4_TOOLCHAIN/samples/hello_world"
+          if [ ! -f "$PROJECT_PATH/Makefile" ]; then cp "$SAMPLE/Makefile" "$PROJECT_PATH/Makefile"; fi
           if [ ! -f "$PROJECT_PATH/sce_sys/icon0.png" ] && [ -f "$SAMPLE/sce_sys/icon0.png" ]; then cp "$SAMPLE/sce_sys/icon0.png" "$PROJECT_PATH/sce_sys/icon0.png"; fi
           if [ ! -f "$PROJECT_PATH/sce_sys/about/right.sprx" ] && [ -f "$SAMPLE/sce_sys/about/right.sprx" ]; then cp "$SAMPLE/sce_sys/about/right.sprx" "$PROJECT_PATH/sce_sys/about/right.sprx"; fi
           for module in libc.prx libSceFios2.prx; do
