@@ -233,9 +233,18 @@
     const authStorage = {
       getItem(key) {
         try {
-          if (rememberSessionChoice()) return Promise.resolve(localStorage.getItem(key));
-          localStorage.removeItem(key);
-          return Promise.resolve(sessionStorage.getItem(key));
+          const remember = rememberSessionChoice();
+          const preferred = remember ? localStorage : sessionStorage;
+          const fallback = remember ? sessionStorage : localStorage;
+          const value = preferred.getItem(key);
+          if (value !== null) return Promise.resolve(value);
+          const previous = fallback.getItem(key);
+          if (previous !== null) {
+            preferred.setItem(key, previous);
+            fallback.removeItem(key);
+            return Promise.resolve(previous);
+          }
+          return Promise.resolve(null);
         } catch { return Promise.resolve(null); }
       },
       setItem(key, value) {
@@ -559,8 +568,19 @@ async function loadGoogleDriveStatus() {
     const rememberedUsername = localStorage.getItem(REMEMBERED_USERNAME_KEY);
     if (rememberedUsername) $('#username').value = rememberedUsername;
     $('#remember-session').addEventListener('change', () => {
-      localStorage.setItem(REMEMBER_SESSION_KEY, String($('#remember-session').checked));
-      if (!$('#remember-session').checked) localStorage.removeItem(REMEMBERED_USERNAME_KEY);
+      const remember = $('#remember-session').checked;
+      localStorage.setItem(REMEMBER_SESSION_KEY, String(remember));
+      try {
+        const authKey = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token`;
+        const source = remember ? sessionStorage : localStorage;
+        const target = remember ? localStorage : sessionStorage;
+        const currentSession = source.getItem(authKey);
+        if (currentSession !== null) {
+          target.setItem(authKey, currentSession);
+          source.removeItem(authKey);
+        }
+      } catch {}
+      if (!remember) localStorage.removeItem(REMEMBERED_USERNAME_KEY);
     });
     async function enterGuestAfterVerification() {
       const errorBox = $('#login-error');
@@ -1381,7 +1401,7 @@ async function loadGoogleDriveStatus() {
   <script src="/app-source/sentry-config.js?v=20261108-observability"></script>
   <script type="module" src="/app-source/sentry-init.js?v=20261108-observability"></script>
 <script src="/app-source/beta-visual-check.js?v=20261108-quality-gate" defer></script>
-  <script src="/app-source/beta.js?v=20261109-pages-static-v1" defer></script>
+  <script src="/app-source/beta.js?v=20261109-pages-static-v2" defer></script>
 </body>
 </html>
 

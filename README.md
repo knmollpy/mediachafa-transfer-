@@ -1,13 +1,14 @@
 # MediaChafa PS4
 
-**Sitio oficial:** https://mediachafa-transfer.vercel.app/
+**Sitio oficial (Cloudflare Pages):** https://mediachafa-transfer.pages.dev/  
+**Dominio anterior de Vercel (compatibilidad temporal):** https://mediachafa-transfer.vercel.app/
 
 MediaChafa es una biblioteca web y Android para organizar archivos, enlaces y un catálogo de juegos de PS4. La app móvil usa una interfaz galáctica adaptada a teléfonos.
 
 ## Descargar la aplicación
 
-- **Android 2.5.4 (APK actualizado):** [Descargar APK directamente](https://mediachafa-transfer.vercel.app/downloads/MediaChafa.apk?v=2.5.4-20261026) · [Descargar ZIP](https://mediachafa-transfer.vercel.app/downloads/MediaChafa.zip)
-- **Versión web:** https://mediachafa-transfer.vercel.app/
+- **Android 2.5.4 (APK actualizado):** [Descargar APK directamente](https://mediachafa-transfer.pages.dev/downloads/MediaChafa.apk?v=2.5.4-20261026) · [Descargar ZIP](https://mediachafa-transfer.pages.dev/downloads/MediaChafa.zip)
+- **Versión web:** https://mediachafa-transfer.pages.dev/
 
 Descargá el APK y abrilo en Android para instalarlo. La app permite mantener la sesión iniciada en el dispositivo y cerrar sesión cuando quieras.
 
@@ -24,7 +25,7 @@ Descargá el APK y abrilo en Android para instalarlo. La app permite mantener la
 
 ## Servicio de almacenamiento
 
-El dueño ofrece **20 GB de almacenamiento por US$ 5 con acceso permanente**, sujeto a disponibilidad y a las condiciones acordadas al contratarlo. Para consultar, usá el [sitio oficial](https://mediachafa-transfer.vercel.app/).
+El dueño ofrece **20 GB de almacenamiento por US$ 5 con acceso permanente**, sujeto a disponibilidad y a las condiciones acordadas al contratarlo. Para consultar, usá el [sitio oficial](https://mediachafa-transfer.pages.dev/).
 
 ## Tecnología
 
