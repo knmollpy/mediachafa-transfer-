@@ -108,7 +108,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
       issues: write
       id-token: write
     steps:
