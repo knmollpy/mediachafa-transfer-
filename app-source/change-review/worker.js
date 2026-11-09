@@ -49,9 +49,9 @@ async function verifyGitHubOidc(token, pullNumber) {
   if (!valid) throw new Error("Firma OIDC no válida.");
   return claims;
 }
-async function github(path) {
+async function github(path, token) {
   const response = await fetch("https://api.github.com/repos/" + REPOSITORY + path, {
-    headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "MediaChafa-Independent-Reviewer" },
+    headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "MediaChafa-Independent-Reviewer", Authorization: `Bearer ${token}` },
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`GitHub respondió HTTP ${response.status}: ${data.message || "No se pudo leer el Pull Request."}`);
@@ -133,7 +133,7 @@ async function reviewWithModels(env, messages) {
   }
   throw new Error(`Todos los motores gratuitos de revisión fallaron; no se aprobará el PR. ${failures.slice(-6).join(" | ")}`.slice(0, 1600));
 }
-async function verifyTrustedControlFiles(env, headSha) {
+async function verifyTrustedControlFiles(env, headSha, githubToken) {
   const expected = {
     ".github/workflows/change-review-gate.yml": String(env.TRUSTED_WORKFLOW_BLOB_SHA || ""),
     "app-source/change-review/worker.js": String(env.TRUSTED_REVIEWER_BLOB_SHA || ""),
@@ -141,17 +141,17 @@ async function verifyTrustedControlFiles(env, headSha) {
   };
   for (const [path, sha] of Object.entries(expected)) {
     if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error("Falta el anclaje externo de integridad del control; revisión bloqueada.");
-    const { data } = await github(`/contents/${path}?ref=${headSha}`);
+    const { data } = await github(`/contents/${path}?ref=${headSha}`, githubToken);
     if (data.sha !== sha) throw new Error(`El archivo de control protegido fue alterado: ${path}`);
   }
 }
-async function collectReviewInput(pullNumber, expectedHeadSha, env) {
-  const { data: pr } = await github(`/pulls/${pullNumber}`);
+async function collectReviewInput(pullNumber, expectedHeadSha, env, githubToken) {
+  const { data: pr } = await github(`/pulls/${pullNumber}`, githubToken);
   if (pr.state !== "open" || pr.base?.ref !== "main" || !String(pr.head?.ref || "").startsWith("beta-agent/")) throw new Error("El Pull Request no cumple las condiciones de publicación de Beta.");
   if (pr.head?.sha !== expectedHeadSha) throw new Error("El commit cambió durante la revisión; se requiere una nueva ejecución.");
-  await verifyTrustedControlFiles(env, expectedHeadSha);
+  await verifyTrustedControlFiles(env, expectedHeadSha, githubToken);
   const manifest = readManifest(pr.body);
-  const { data: files, headers } = await github(`/pulls/${pullNumber}/files?per_page=100`);
+  const { data: files, headers } = await github(`/pulls/${pullNumber}/files?per_page=100`, githubToken);
   if (!Array.isArray(files) || !files.length || files.length > 40 || headers.get("Link")?.includes('rel="next"')) throw new Error("La lista de archivos está vacía, excede 40 elementos o fue truncada.");
   const allowed = new Set(manifest.allowed_paths);
   const findings = [];
@@ -183,10 +183,10 @@ async function persist(env, id, state) {
 }
 export class ChangeReviewWorkflow extends WorkflowEntrypoint {
   async run(event, step) {
-    const { reviewId, pullNumber, headSha, pollToken } = event.payload || {};
+    const { reviewId, pullNumber, headSha, pollToken, input } = event.payload || {};
     await persist(this.env, reviewId, { status: "running", pull_number: pullNumber, head_sha: headSha, poll_token: pollToken });
     try {
-      const input = await step.do("load-and-validate-pull-request", { retries: { limit: 2, delay: "5 seconds", backoff: "exponential" } }, async () => collectReviewInput(pullNumber, headSha, this.env));
+      if (!input || input.pullNumber !== pullNumber || input.headSha !== headSha) throw new Error("La entrada autenticada de revisión no coincide con el PR/commit.");
       const review = await step.do("independent-ai-regression-review", { retries: { limit: 2, delay: "10 seconds", backoff: "exponential" }, timeout: "5 minutes" }, async () => {
         const prompt = [
           "Sos el revisor independiente de MediaChafa. No sos el agente que programó este cambio. Tu tarea es bloquear regresiones y cambios fuera del pedido.",
@@ -241,16 +241,21 @@ export default {
       try { body = await request.json(); } catch { return json({ error: "JSON inválido." }, 400); }
       const pullNumber = Number(body.pull_number);
       const headSha = String(body.head_sha || "");
+      const githubToken = String(body.github_token || "");
       if (!Number.isInteger(pullNumber) || pullNumber < 1 || !/^[a-f0-9]{40}$/i.test(headSha)) return json({ error: "Pull Request o commit inválido." }, 400);
+      if (githubToken.length < 20 || githubToken.length > 1000) return json({ error: "Falta el token temporal de GitHub para leer el PR de forma autenticada." }, 400);
       const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
       try { await verifyGitHubOidc(token, pullNumber); }
       catch (error) { return json({ error: String(error?.message || "OIDC rechazado.") }, 403); }
       if (!env.CHANGE_REVIEW_WORKFLOW || !env.REVIEW_STATE || (!env.AI && !env.CHANGE_REVIEW_SERVICE_TOKEN)) return json({ error: "El revisor no tiene motores configurados; no se puede publicar." }, 503);
+      let reviewInput;
+      try { reviewInput = await collectReviewInput(pullNumber, headSha, env, githubToken); }
+      catch (error) { return json({ error: String(error?.message || "No se pudo preparar la revisión autenticada.") }, 409); }
       const reviewId = crypto.randomUUID();
       const pollToken = crypto.randomUUID() + crypto.randomUUID();
       await persist(env, reviewId, { status: "queued", pull_number: pullNumber, head_sha: headSha, poll_token: pollToken });
       try {
-        await env.CHANGE_REVIEW_WORKFLOW.create({ id: reviewId, params: { reviewId, pullNumber, headSha, pollToken } });
+        await env.CHANGE_REVIEW_WORKFLOW.create({ id: reviewId, params: { reviewId, pullNumber, headSha, pollToken, input: reviewInput } });
         return json({ review_id: reviewId, poll_token: pollToken, status: "queued" }, 202);
       } catch (error) {
         await persist(env, reviewId, { status: "blocked", decision: "block", summary: String(error?.message || "No se pudo iniciar el Workflow.").slice(0, 1000), pull_number: pullNumber, head_sha: headSha });
