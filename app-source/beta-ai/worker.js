@@ -1838,10 +1838,18 @@ export default {
       payload = JSON.parse(rawBody);
     }
     catch { return json({ error: "El mensaje no tiene un formato válido." }, 400, origin); }
-    const prompt = String(payload.message || "").trim().slice(0, 6000);
+    let prompt = String(payload.message || "").trim().slice(0, 6000);
     if (!prompt && !payload.image && !payload.audio) return json({ error: "Escribí un mensaje o adjuntá una imagen." }, 400, origin);
     if (payload.mode !== undefined && !["normal", "autonomous"].includes(payload.mode)) return json({ error: "El modo solicitado no es válido." }, 400, origin);
     const autonomous = payload.mode === "autonomous";
+    if (payload.memoryEnabled !== false) {
+      let savedMemory = [];
+      try { savedMemory = JSON.parse(await env.BETA_LIMITS.get(`beta-memory:${user.id}`) || "[]"); } catch {}
+      if (Array.isArray(savedMemory) && savedMemory.length) {
+        const memoryText = savedMemory.slice(-30).map(item => String(item.text || "").trim()).filter(Boolean).map(item => `- ${item.slice(0, 900)}`).join("\n").slice(0, 12000);
+        if (memoryText) prompt = `${prompt}\n\nMEMORIA PERMANENTE GUARDADA POR EL USUARIO (usala solo cuando sea pertinente):\n${memoryText}`;
+      }
+    }
 
     let image;
     if (payload.image) {
