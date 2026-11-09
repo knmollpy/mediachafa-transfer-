@@ -48,6 +48,20 @@ test("Beta coloca el modo y el equipo dentro de Ajustes, fuera del compositor", 
   });
   await page.locator("#beta-tab").click();
   await page.waitForSelector("#beta-panel .beta-sidebar", { state: "attached" });
+  const debug = await page.evaluate(() => {
+    const gear = document.querySelector("#beta-settings-toggle");
+    const panel = document.querySelector("#beta-settings");
+    const sidebar = document.querySelector("#beta-panel .beta-sidebar");
+    return {
+      gearExists: Boolean(gear),
+      gearParent: gear?.parentElement?.className || null,
+      settingsExists: Boolean(panel),
+      settingsParent: panel?.parentElement?.className || null,
+      sidebarExists: Boolean(sidebar),
+      betaScript: [...document.scripts].find(script => script.src.includes("/beta.js"))?.src || null
+    };
+  });
+  console.log("BETA_SETTINGS_DEBUG", JSON.stringify(debug));
 
   const gear = page.locator("#beta-panel .beta-sidebar #beta-settings-toggle");
   const settings = page.locator("#beta-panel #beta-settings");
