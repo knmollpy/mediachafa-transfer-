@@ -70,7 +70,6 @@ jobs:
       - name: Build PS4 homebrew package
         env:
           PROJECT_PATH: ${{ steps.project.outputs.path }}
-          OO_PS4_TOOLCHAIN: ${{ env.OO_PS4_TOOLCHAIN }}
         run: |
           set -euo pipefail
           mkdir -p "$PROJECT_PATH/dist"
