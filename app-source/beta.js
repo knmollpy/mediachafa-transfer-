@@ -2494,15 +2494,23 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         job = await api('/blender/jobs/' + encodeURIComponent(jobId));
       }
       if (['failed','error'].includes(String(job.status).toLowerCase())) throw new Error(job.error || 'Blender no pudo completar el render.');
+      if (!['completed','complete','succeeded'].includes(String(job.status).toLowerCase())) throw new Error('El render sigue en curso. Podés volver a consultar el trabajo desde el motor Blender.');
       const images = Array.isArray(job.images) ? job.images : [];
+      const chatMessage = images.length ? addMessage('assistant', '¡Terminé tu creación 3D! Te dejo los renders de Blender para que puedas abrirlos o guardarlos.') : null;
       for (const image of images.slice(0, 8)) {
         const src = image.data ? `data:${image.mimeType || 'image/png'};base64,${image.data}` : image.url;
         if (!src || (!src.startsWith('https://') && !src.startsWith('data:image/'))) continue;
         const img = document.createElement('img'); img.src = src; img.alt = image.name || 'Render de Blender'; img.loading = 'lazy'; img.style.cssText = 'display:block;max-width:100%;max-height:560px;object-fit:contain;border-radius:10px;margin:12px 0';
         results.append(img);
+        if (chatMessage) chatMessage.append(img.cloneNode());
         const link = document.createElement('a'); link.href = src; link.download = image.name || 'beta-blender-render.png'; link.textContent = 'Guardar imagen'; link.className = 'beta-link'; results.append(link);
+        if (chatMessage) chatMessage.append(link.cloneNode(true));
       }
-      status.textContent = images.length ? 'Render terminado · imágenes recibidas' : 'Trabajo terminado; el motor no devolvió imágenes. Revisá el contrato de respuesta.';
+      if (job.downloadUrl && String(job.downloadUrl).startsWith('https://')) {
+        const projectLink = document.createElement('a'); projectLink.href = job.downloadUrl; projectLink.target = '_blank'; projectLink.rel = 'noopener noreferrer'; projectLink.textContent = 'Descargar proyecto Blender (.blend)'; projectLink.className = 'beta-link'; results.append(projectLink);
+        if (chatMessage) chatMessage.append(projectLink.cloneNode(true));
+      }
+      status.textContent = images.length ? 'Render terminado · imágenes enviadas al chat' : 'Trabajo terminado; el motor no devolvió imágenes. Revisá el contrato de respuesta.';
       status.dataset.state = images.length ? 'connected' : 'error';
     } catch (error) { status.textContent = error.message; status.dataset.state = 'error'; }
     finally { button.disabled = false; }
