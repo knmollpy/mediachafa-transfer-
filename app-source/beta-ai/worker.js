@@ -29,7 +29,7 @@ const MAX_BODY_BYTES = 14 * 1024 * 1024;
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
 const PROVIDERS = ["github", "supabase", "cloudflare", "vercel", "openrouter", "groq", "gemini", "cohere", "huggingface"];
 // Solo se habilita inferencia con precio cero verificable; otros proveedores quedan fuera del chat hasta poder certificar que su cuenta no factura.
-const MODEL_PROVIDERS = ["openrouter"];
+const MODEL_PROVIDERS = ["openrouter", "groq", "gemini"];
 // IAs propias de MediaChafa: usan primero Workers AI (binding env.AI, cuenta Workers Free:
 // al agotar la cuota gratis Cloudflare devuelve error, no cobra) y después rotan solas a los
 // modelos gratuitos conectados. Nunca se usan modelos pagos.
@@ -1468,8 +1468,16 @@ export default {
           quotas[provider] = { connected: true, used, limit: effectiveLimit, remaining: Math.max(0, effectiveLimit - used), period: "day" };
         } catch (error) { catalogErrors[provider] = error.message; }
       }
-      const freeQuota = quotas.openrouter || { connected: false, used: 0, limit: 0, remaining: 0 };
-      const own = MEDIACHAFA_ORDER.map((variant) => ({ id: `mediachafa::${variant}`, nativeId: variant, apiProvider: "mediachafa", name: MEDIACHAFA_MODELS[variant].name, provider: "OpenRouter Free", own: true, unlimited: false, vision: models.some((model) => model.vision), audio: false, thinkingLevel: MEDIACHAFA_MODELS[variant].thinkingLevel, usedToday: freeQuota.used, dailyLimit: freeQuota.limit, remaining: freeQuota.remaining || 0, quotaPeriod: "day" }));
+      const openRouterQuotaSummary = quotas.openrouter || { used: 0, limit: 0, remaining: 0 };
+      const groqModels = models.filter((model) => model.apiProvider === "groq");
+      const groqUsed = groqModels.reduce((sum, model) => sum + Number(model.usedToday || 0), 0);
+      const groqLimit = groqModels.reduce((sum, model) => sum + Number(model.dailyLimit || 0), 0);
+      const groqRemaining = groqModels.reduce((sum, model) => sum + Number(model.remaining || 0), 0);
+      const geminiQuota = quotas.gemini || { used: 0, limit: 0, remaining: 0 };
+      const ownUsed = Number(openRouterQuotaSummary.used || 0) + groqUsed + Number(geminiQuota.used || 0);
+      const ownLimit = Number(openRouterQuotaSummary.limit || 0) + groqLimit + Number(geminiQuota.limit || 0);
+      const ownRemaining = Number(openRouterQuotaSummary.remaining || 0) + groqRemaining + Number(geminiQuota.remaining || 0);
+      const own = MEDIACHAFA_ORDER.map((variant) => ({ id: `mediachafa::${variant}`, nativeId: variant, apiProvider: "mediachafa", name: MEDIACHAFA_MODELS[variant].name, provider: "Modelos gratuitos conectados", own: true, unlimited: false, vision: models.some((model) => model.vision), audio: false, thinkingLevel: MEDIACHAFA_MODELS[variant].thinkingLevel, usedToday: ownUsed, dailyLimit: ownLimit, remaining: ownRemaining, quotaPeriod: "day" }));
       models.unshift(...own);
       return json({ ok: true, models, quotas, catalogErrors, dailyLimit: DAILY_REQUEST_LIMIT, connectedProviders: Object.keys(quotas) }, 200, origin);
     }
@@ -1942,40 +1950,59 @@ async function callModel(env, candidate, messages, history, promptText, image, m
 // SAFETY INVARIANT: do not add inference providers here unless the request path can prove
 // zero-cost eligibility and fail closed before any billable fallback is possible.
 async function mediachafaCandidates(env, userId, variant, needsVision) {
-  // Única inferencia permitida en modo de coste cero: modelos OpenRouter :free.
-  const token = await storedToken(env, userId, "openrouter");
-  if (!token) return [];
-  try {
-    const [catalog, quota] = await Promise.all([
-      providerModelCatalog("openrouter", token),
-      openRouterQuota(token),
-    ]);
-    if (quota.providerRemaining <= 0) return [];
-    const eligible = catalog
-      .filter((model) => !needsVision || model.vision)
-      .map((model) => ({
-        provider: "openrouter",
-        nativeId: model.nativeId || model.id.split("::")[1] || model.id,
-        modelId: model.id,
-        name: model.name,
-        vision: Boolean(model.vision),
-        token,
-        thinkingLevel: model.thinkingLevel || "medio",
-      }));
-    if (!eligible.length) return [];
-    const remaining = [...eligible];
-    const primaries = [];
-    for (const role of MEDIACHAFA_ORDER) {
-      const preference = MEDIACHAFA_MODELS[role].prefer;
-      let index = remaining.findIndex((item) => preference.test(item.nativeId));
-      if (index < 0) index = 0;
-      const selected = remaining.splice(index, 1)[0] || eligible[0];
-      primaries.push({ ...selected, mediachafaRole: role, primary: true });
+  // Catálogos cerrados de modelos gratuitos: OpenRouter :free, allowlist Groq Free
+  // y allowlist Gemini Free Tier (la conexión exige confirmación explícita del dueño).
+  const eligible = [];
+  for (const provider of ["openrouter", "groq", "gemini"]) {
+    const token = await storedToken(env, userId, provider);
+    if (!token) continue;
+    try {
+      const date = new Date().toISOString().slice(0, 10);
+      let providerRemaining = Infinity;
+      if (provider === "openrouter") {
+        const quota = await openRouterQuota(token);
+        providerRemaining = quota.providerRemaining;
+        if (providerRemaining <= 0) continue;
+      }
+      const catalog = await providerModelCatalog(provider, token);
+      for (const model of catalog) {
+        if (needsVision && !model.vision) continue;
+        if (provider === "openrouter" && (!String(model.nativeId || "").endsWith(":free") || providerRemaining <= 0)) continue;
+        if (provider === "groq") {
+          const used = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${userId}:groq:${model.nativeId}:${date}`) || 0);
+          if (used >= Number(model.dailyLimit || 0)) continue;
+        }
+        if (provider === "gemini") {
+          const used = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${userId}:gemini:day:${date}`) || 0);
+          if (used >= Number(PROVIDER_DAILY_LIMITS.gemini || 0)) continue;
+        }
+        eligible.push({
+          provider,
+          nativeId: model.nativeId || model.id.split("::")[1] || model.id,
+          modelId: model.id,
+          name: model.name,
+          vision: Boolean(model.vision),
+          token,
+          thinkingLevel: model.thinkingLevel || "medio",
+        });
+        if (provider === "openrouter") providerRemaining -= 1;
+      }
+    } catch {
+      // Un proveedor sin catálogo/cuota verificable se omite; nunca se usa un modelo pago.
     }
-    return [...primaries, ...remaining];
-  } catch {
-    return [];
   }
+  if (!eligible.length) return [];
+  const remaining = [...eligible];
+  const primaries = [];
+  for (const role of MEDIACHAFA_ORDER) {
+    if (!remaining.length) break;
+    const preference = MEDIACHAFA_MODELS[role].prefer;
+    let index = remaining.findIndex((item) => preference.test(item.nativeId));
+    if (index < 0) index = 0;
+    const selected = remaining.splice(index, 1)[0];
+    primaries.push({ ...selected, mediachafaRole: role, primary: true });
+  }
+  return [...primaries, ...remaining];
 }
 
 
@@ -2002,13 +2029,10 @@ async function runMediaChafaConsensus(args) {
     ...roleCandidates.map((candidate) => ({ candidate, role: candidate.mediachafaRole, label: MEDIACHAFA_MODELS[candidate.mediachafaRole].name, kind: "MediaChafa" })),
     ...peerCandidates.map((candidate) => ({ candidate, role: "peer", label: "Revisor externo · " + candidate.name, kind: "Externo" })),
   ];
-  let freeQuota;
-  try { freeQuota = await openRouterQuota(allParticipants[0]?.candidate.token); }
-  catch { return null; }
-  const maxByRemaining = Math.min(6, Math.floor((freeQuota.providerRemaining - 1) / 2));
-  const team = allParticipants.slice(0, Math.max(0, maxByRemaining));
+  const maxParticipants = Math.min(6, allParticipants.length);
+  const team = allParticipants.slice(0, maxParticipants);
   if (team.length < 2) {
-    await publishProgress({ status: "unavailable", phase: "quota", phaseLabel: "No hay cuota gratuita suficiente para activar el equipo", participants: [], steps: [...progressState.steps, { label: "No se pudo iniciar la colaboración; se intentará el modo individual", state: "error" }] });
+    await publishProgress({ status: "unavailable", phase: "quota", phaseLabel: "No hay suficientes modelos gratuitos disponibles entre los proveedores conectados. Se necesitan al menos 2 modelos distintos. No se usará ningún modelo pago.", participants: [], steps: [...progressState.steps, { label: "Se continúa con una sola IA gratuita; conectá otro proveedor gratuito o reintentá cuando se renueven las cuotas.", state: "error" }] });
     return null;
   }
   progressState.participants = team.map((participant, index) => ({
@@ -2028,23 +2052,29 @@ async function runMediaChafaConsensus(args) {
   async function invoke(participant, phase, extraPrompt, baseMessages, baseHistory, baseImage) {
     const candidate = participant.candidate;
     if (request.signal.aborted) return { ok: false, detail: "Solicitud cancelada." };
-    if (candidate.provider !== "openrouter" || !String(candidate.nativeId).endsWith(":free")) {
-      attempts.push(candidate.name + ": bloqueado porque no es un modelo gratuito verificado");
-      return { ok: false, status: 403, detail: "Solo se permiten modelos OpenRouter :free con precio cero." };
+    if (candidate.provider === "openrouter" && !String(candidate.nativeId).endsWith(":free")) {
+      attempts.push(candidate.name + ": bloqueado porque no es un modelo OpenRouter gratuito verificado");
+      return { ok: false, status: 403, detail: "Solo se permiten modelos OpenRouter :free." };
     }
-    try {
-      const quota = await openRouterQuota(candidate.token);
-      if (quota.used >= Math.min(DAILY_REQUEST_LIMIT, quota.providerLimit)) {
-        attempts.push("OpenRouter: cuota gratuita compartida agotada");
-        return { ok: false, status: 429, detail: "Cuota gratuita de OpenRouter agotada." };
+    if (!["openrouter", "groq", "gemini"].includes(candidate.provider)) {
+      attempts.push(candidate.name + ": proveedor no autorizado para inferencia gratuita");
+      return { ok: false, status: 403, detail: "Proveedor sin gratuidad verificada." };
+    }
+    if (candidate.provider === "openrouter") {
+      try {
+        const quota = await openRouterQuota(candidate.token);
+        if (quota.providerRemaining <= 0) {
+          attempts.push("OpenRouter: cuota gratuita compartida agotada");
+          return { ok: false, status: 429, detail: "Cuota gratuita de OpenRouter agotada." };
+        }
+      } catch (error) {
+        attempts.push("OpenRouter: " + (error?.message || "no se pudo verificar la cuota"));
+        return { ok: false, status: 503, detail: "No se pudo verificar la cuota gratuita." };
       }
-    } catch (error) {
-      attempts.push("OpenRouter: " + (error?.message || "no se pudo verificar la cuota"));
-      return { ok: false, status: 503, detail: "No se pudo verificar la cuota gratuita." };
     }
     const quota = await reserveRequest(env, user.id, candidate.modelId);
     if (!quota.allowed) {
-      attempts.push("OpenRouter: cuota gratuita agotada");
+      attempts.push(candidate.provider + ": cuota gratuita agotada");
       return { ok: false, status: 429, detail: "Cuota gratuita agotada." };
     }
     let roleText;
@@ -2211,7 +2241,9 @@ async function mediachafaChat({ request, env, user, origin, payload, prompt, ima
   };
   const maxTokens = autonomous ? 6000 : 2400;
   const candidates = await mediachafaCandidates(env, user.id, variant, Boolean(image));
-  const collaboration = await runMediaChafaConsensus({ request, env, user, config, variant, modelId, transcript, promptText, messages, history, image, autonomous, fetchImpl, maxTokens, candidates, integrations, progressId: String(payload.progressId || "") });
+  const collaboration = payload.collaborationEnabled === true
+    ? await runMediaChafaConsensus({ request, env, user, config, variant, modelId, transcript, promptText, messages, history, image, autonomous, fetchImpl, maxTokens, candidates, integrations, progressId: String(payload.progressId || "") })
+    : null;
   if (collaboration) return json({
     answer: collaboration.answer,
     plan: collaboration.plan,

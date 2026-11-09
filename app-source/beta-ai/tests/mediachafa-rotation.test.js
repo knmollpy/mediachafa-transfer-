@@ -52,6 +52,20 @@ function installFetch() {
         architecture: { input_modalities: ["text"] },
       }] });
     }
+    if (url.hostname === "api.groq.com" && url.pathname === "/openai/v1/models") {
+      return Response.json({ data: ["allam-2-7b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"].map((id) => ({ id })) });
+    }
+    if (url.hostname === "api.groq.com" && url.pathname === "/openai/v1/chat/completions") {
+      const body = JSON.parse(init.body || "{}");
+      requests.push(body);
+      return Response.json({ choices: [{ message: { content: '{"answer":"respuesta Groq","plan":[],"actions":[]}' } }] });
+    }
+    if (url.hostname === "generativelanguage.googleapis.com" && url.pathname === "/v1beta/models") {
+      return Response.json({ models: ["gemini-3.1-flash-lite", "gemini-3-flash-preview"].map((name) => ({ name: "models/" + name, displayName: name, supportedGenerationMethods: ["generateContent"] })) });
+    }
+    if (url.hostname === "generativelanguage.googleapis.com" && url.pathname.includes(":generateContent")) {
+      return Response.json({ candidates: [{ content: { parts: [{ text: '{"answer":"respuesta Gemini","plan":[],"actions":[]}' }] } }] });
+    }
     if (url.hostname === "openrouter.ai" && url.pathname === "/api/v1/chat/completions") {
       const body = JSON.parse(init.body || "{}");
       requests.push(body);
@@ -88,6 +102,18 @@ async function connectFreeOpenRouter(env) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(token));
   env.__kv.set("integration:owner:openrouter", JSON.stringify({
+    iv: Buffer.from(iv).toString("base64"),
+    ciphertext: Buffer.from(new Uint8Array(encrypted)).toString("base64"),
+    version: 1,
+  }));
+}
+
+async function connectFreeProvider(env, provider, value) {
+  const raw = Buffer.from(env.TOKEN_ENCRYPTION_KEY, "base64");
+  const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(value));
+  env.__kv.set(`integration:owner:${provider}`, JSON.stringify({
     iv: Buffer.from(iv).toString("base64"),
     ciphertext: Buffer.from(new Uint8Array(encrypted)).toString("base64"),
     version: 1,
@@ -134,7 +160,7 @@ test("six free models draft independently, cross-review, then synthesize", async
   installFetch();
   const env = makeEnv();
   await connectFreeOpenRouter(env);
-  const res = await chat(env, "mediachafa::pro");
+  const res = await chat(env, "mediachafa::pro", { collaborationEnabled: true });
   const data = await res.json();
   assert.equal(res.status, 200, JSON.stringify(data));
   assert.equal(data.answer, "respuesta consensuada");
@@ -157,7 +183,7 @@ test("only vision-capable free models receive image requests", async () => {
   installFetch();
   const env = makeEnv();
   await connectFreeOpenRouter(env);
-  const res = await chat(env, "mediachafa::pro", { image: { data: "data:image/png;base64,iVBORw0KGgo=" } });
+  const res = await chat(env, "mediachafa::pro", { collaborationEnabled: true, image: { data: "data:image/png;base64,iVBORw0KGgo=" } });
   const data = await res.json();
   assert.equal(res.status, 200, JSON.stringify(data));
   assert.ok(requests.length >= 5);
@@ -175,7 +201,7 @@ test("replaces a failed free model with another verified free model", async () =
   failModelOnce = "qwen/qwen3-coder:free";
   const env = makeEnv();
   await connectFreeOpenRouter(env);
-  const res = await chat(env, "mediachafa::codigo");
+  const res = await chat(env, "mediachafa::codigo", { collaborationEnabled: true });
   const data = await res.json();
   assert.equal(res.status, 200, JSON.stringify(data));
   assert.equal(data.collaboration.enabled, true);
@@ -212,7 +238,7 @@ test("publishes authenticated live progress for the six-agent collaboration", as
   const env = makeEnv();
   await connectFreeOpenRouter(env);
   const progressId = "progress-test-id-1234";
-  const res = await chat(env, "mediachafa::pro", { progressId });
+  const res = await chat(env, "mediachafa::pro", { progressId, collaborationEnabled: true });
   const data = await res.json();
   assert.equal(res.status, 200, JSON.stringify(data));
   assert.equal(data.collaboration.enabled, true);
@@ -235,4 +261,22 @@ test("publishes authenticated live progress for the six-agent collaboration", as
     headers: { Origin: origin, Authorization: "Bearer t" },
   }), env);
   assert.equal(invalid.status, 400);
+});
+
+
+test("six-agent collaboration rotates to connected Groq and Gemini free models when OpenRouter is exhausted", async () => {
+  installFetch();
+  openRouterUsed = 50;
+  const env = makeEnv();
+  await connectFreeOpenRouter(env);
+  await connectFreeProvider(env, "groq", "groq-free-test-token-123456");
+  await connectFreeProvider(env, "gemini", "gemini-free-test-token-123456");
+  const res = await chat(env, "mediachafa::pro", { collaborationEnabled: true });
+  const data = await res.json();
+  assert.equal(res.status, 200, JSON.stringify(data));
+  assert.equal(data.collaboration.enabled, true);
+  assert.equal(data.collaboration.participantCount, 6);
+  assert.equal(new Set(data.collaboration.participants.map((item) => item.provider)).size, 2);
+  assert.ok(data.collaboration.participants.every((item) => ["groq", "gemini"].includes(item.provider)));
+  assert.equal(aiCalls, 0);
 });
