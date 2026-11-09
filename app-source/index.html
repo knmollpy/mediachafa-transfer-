@@ -217,11 +217,8 @@
           </article>
           <article class="beta-connector beta-blender-card" aria-labelledby="beta-blender-title">
             <h3 id="beta-blender-title">Blender 3D · modelado y animación</h3>
-            <p>Conectá un motor Blender externo para que Beta genere escenas, anime objetos y personajes, renderice imágenes y te entregue los resultados en el chat. Cloudflare no ejecuta Blender directamente: necesitás un renderizador HTTPS compatible.</p>
-            <label for="beta-blender-endpoint">URL del motor Blender</label>
-            <input id="beta-blender-endpoint" type="url" autocomplete="url" placeholder="https://tu-renderizador.example"><label for="beta-blender-token">Token de acceso del motor (opcional)</label><input id="beta-blender-token" type="password" autocomplete="off" placeholder="Token privado del renderizador">
-            <div class="beta-actions"><button class="add-btn" id="beta-blender-save" type="button">Guardar conexión</button><span class="beta-connection-status" id="beta-blender-status" role="status">Sin conectar</span></div>
-            <p class="beta-policy">El motor debe implementar <code>POST /jobs</code> para crear un render y <code>GET /jobs/{id}</code> para consultar su progreso. Debe devolver imágenes PNG/JPEG/WebP o enlaces HTTPS a los renders. La conexión no activa servicios pagos por sí sola.</p>
+            <p>Beta usa Blender en GitHub Actions, sin servidor externo ni suscripción. Necesitás tener GitHub conectado en Integraciones y disponer de minutos gratuitos de Actions. Cada trabajo genera una imagen, una animación MP4 y el archivo editable .blend.</p>
+            <div class="beta-actions"><span class="beta-connection-status" id="beta-blender-status" role="status">Comprobando GitHub…</span></div>
             <label for="beta-blender-prompt">Descripción de la escena o animación</label>
             <textarea id="beta-blender-prompt" maxlength="4000" rows="3" placeholder="Ej. Un dragón azul volando sobre una ciudad futurista al atardecer, cámara cinematográfica…"></textarea>
             <div class="beta-actions"><button class="secondary" id="beta-blender-render" type="button">Crear escena 3D</button></div>
