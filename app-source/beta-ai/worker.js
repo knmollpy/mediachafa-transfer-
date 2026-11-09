@@ -2054,7 +2054,7 @@ async function runMediaChafaConsensus(args) {
   const attempts = [];
   async function invoke(participant, phase, extraPrompt, baseMessages, baseHistory, baseImage) {
     const candidate = participant.candidate;
-    const userId = userId;
+    const userId = user.id;
     if (request.signal.aborted) return { ok: false, detail: "Solicitud cancelada." };
     if (candidate.provider === "openrouter" && !String(candidate.nativeId).endsWith(":free")) {
       attempts.push(candidate.name + ": bloqueado porque no es un modelo OpenRouter gratuito verificado");
