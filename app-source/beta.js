@@ -632,7 +632,8 @@ Para una página web pública: create_repository con visibility "public", despu�
   workspaceStyle.textContent = `
     #beta-panel .beta-model-control{display:flex;flex-direction:column;gap:4px;min-width:220px;max-width:310px;color:#e9dddd;font-size:11px;font-weight:700}
     #beta-panel #beta-model-select{width:100%;min-width:0;padding:8px 10px;border:1px solid #6c2929;border-radius:9px;background:#161010;color:#fff;font-size:12px}
-    #beta-panel .beta-team-toggle{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:600;color:#d4d4d8;cursor:pointer}#beta-panel .beta-team-toggle input{accent-color:#ef4444;width:15px;height:15px;margin:0}\n    #beta-panel .beta-model-count{color:#ffadad;font-size:10px;font-weight:500}\n    #beta-panel .beta-model-health{display:block;font-size:10px;line-height:1.4;font-weight:600;color:#b9b9b9}
+    #beta-panel .beta-team-toggle{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:600;color:#d4d4d8;cursor:pointer}#beta-panel .beta-team-toggle input{accent-color:#ef4444;width:15px;height:15px;margin:0}
+    #beta-panel .beta-model-count{color:#ffadad;font-size:10px;font-weight:500}\n    #beta-panel .beta-model-health{display:block;font-size:10px;line-height:1.4;font-weight:600;color:#b9b9b9}
     #beta-panel .beta-model-health[data-state="ok"]{color:#71e09a}
     #beta-panel .beta-model-health[data-state="error"]{color:#ff7777}
     #beta-panel .beta-model-probe{align-self:flex-start;padding:5px 9px;border:1px solid #563030;border-radius:8px;background:#201414;color:#f3dede;font-size:10px;cursor:pointer}
