@@ -1520,55 +1520,96 @@ export default {
       if (request.method === "GET") {
         const saved = await env.BETA_LIMITS.get(key);
         let config = {}; try { config = saved ? JSON.parse(saved) : {}; } catch {}
-        return json({ connected: Boolean(config.endpoint), endpoint: config.endpoint || "" }, 200, origin);
+        const githubConnected = Boolean(await storedToken(env, user.id, "github"));
+        return json({ connected: githubConnected, endpoint: "", mode: "github-actions", githubConnected, note: "Renderizador Blender gratuito mediante GitHub Actions." }, 200, origin);
       }
-      let payload; try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
-      const endpoint = String(payload.endpoint || "").trim().replace(/\/+$/, "");
-      if (!endpoint) { await env.BETA_LIMITS.delete(key); return json({ connected: false, endpoint: "" }, 200, origin); }
-      let parsed;
-      try { parsed = new URL(endpoint); } catch { return json({ error: "Ingresá una URL válida." }, 400, origin); }
-      if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash || /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|\[::1\])/i.test(parsed.hostname) || parsed.hostname.endsWith(".local")) return json({ error: "Usá una URL HTTPS pública, sin credenciales, parámetros ni direcciones locales." }, 400, origin);
-      const previousRaw = await env.BETA_LIMITS.get(key);
-      let previous = {}; try { previous = previousRaw ? JSON.parse(previousRaw) : {}; } catch {}
-      const token = String(payload.token || "").trim();
-      if (token.length > 4096) return json({ error: "El token del motor supera el límite permitido." }, 400, origin);
-      const tokenEncrypted = token ? await encryptToken(env, token) : (previous.tokenEncrypted || null);
-      await env.BETA_LIMITS.put(key, JSON.stringify({ endpoint, tokenEncrypted, updatedAt: new Date().toISOString() }));
-      return json({ connected: true, endpoint, authenticated: Boolean(tokenEncrypted) }, 200, origin);
+      return json({ error: "El renderizador gratuito usa la conexión GitHub de Beta; no necesita URL ni token externo." }, 400, origin);
     }
     if (url.pathname === "/blender/render" && request.method === "POST") {
       const user = await requireOwner(request);
       if (!user) return json({ error: "Solo la cuenta dueña puede iniciar renders." }, 403, origin);
-      const saved = await env.BETA_LIMITS.get(`beta-blender:${user.id}`);
-      let config = {}; try { config = saved ? JSON.parse(saved) : {}; } catch {}
-      if (!config.endpoint) return json({ error: "Conectá primero un motor Blender HTTPS en Integraciones." }, 409, origin);
+      const github = await storedToken(env, user.id, "github");
+      if (!github) return json({ error: "Conectá GitHub en Integraciones para usar el renderizador Blender gratuito." }, 409, origin);
       let payload; try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
       const prompt = String(payload.prompt || "").trim().slice(0, 4000);
       if (!prompt) return json({ error: "Describí la escena que querés crear." }, 400, origin);
+      const jobId = crypto.randomUUID().replace(/-/g, "");
       try {
-        const runnerHeaders = { "Content-Type": "application/json" }; if (config.tokenEncrypted) runnerHeaders.Authorization = `Bearer ${await decryptToken(env, config.tokenEncrypted)}`;
-        const response = await fetch(`${config.endpoint}/jobs`, { method: "POST", headers: runnerHeaders, body: JSON.stringify({ prompt, format: "png", animation: true }), signal: AbortSignal.timeout(30_000) });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) return json({ error: String(result.error || `El motor Blender respondió HTTP ${response.status}.`).slice(0, 500) }, 502, origin);
-        const jobId = String(result.jobId || result.id || "").slice(0, 160);
-        if (!jobId) return json({ error: "El motor no devolvió jobId o id." }, 502, origin);
-        return json({ ...result, jobId }, 202, origin);
-      } catch (error) { return json({ error: String(error?.message || "No se pudo contactar al motor Blender.").slice(0, 500) }, 502, origin); }
+        const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/beta-blender-render.yml/dispatches`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${github}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "MediaChafa-Beta", "Content-Type": "application/json" },
+          body: JSON.stringify({ ref: "main", inputs: { job_id: jobId, prompt } }),
+          signal: AbortSignal.timeout(20_000)
+        });
+        if (!response.ok) {
+          const detail = await response.text().catch(() => "");
+          if (response.status === 403 || response.status === 404) return json({ error: "GitHub rechazó el inicio del render. La conexión necesita permiso Actions: Read and write para este repositorio. Revisá o reconectá GitHub en Integraciones." }, 403, origin);
+          return json({ error: `GitHub Actions respondió HTTP ${response.status}: ${detail.slice(0,240)}` }, 502, origin);
+        }
+        await env.BETA_LIMITS.put(`beta-blender-job:${user.id}:${jobId}`, JSON.stringify({ prompt, createdAt: Date.now() }), { expirationTtl: 86400 });
+        return json({ jobId, status: "queued", message: "GitHub está preparando Blender gratis…" }, 202, origin);
+      } catch (error) { return json({ error: String(error?.message || "No se pudo iniciar Blender en GitHub Actions.").slice(0,500) }, 502, origin); }
     }
     const blenderJob = url.pathname.match(/^\/blender\/jobs\/([A-Za-z0-9_-]{1,160})$/);
     if (blenderJob && request.method === "GET") {
       const user = await requireOwner(request);
       if (!user) return json({ error: "Solo la cuenta dueña puede consultar renders." }, 403, origin);
-      const saved = await env.BETA_LIMITS.get(`beta-blender:${user.id}`);
-      let config = {}; try { config = saved ? JSON.parse(saved) : {}; } catch {}
-      if (!config.endpoint) return json({ error: "Blender no está conectado." }, 409, origin);
+      const jobId = blenderJob[1];
+      const storedJob = await env.BETA_LIMITS.get(`beta-blender-job:${user.id}:${jobId}`);
+      if (!storedJob) return json({ error: "No existe ese trabajo o ya venció." }, 404, origin);
+      const github = await storedToken(env, user.id, "github");
+      if (!github) return json({ error: "La conexión GitHub ya no está disponible." }, 409, origin);
+      const headers = { Authorization: `Bearer ${github}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "MediaChafa-Beta" };
       try {
-        const runnerHeaders = { Accept: "application/json" }; if (config.tokenEncrypted) runnerHeaders.Authorization = `Bearer ${await decryptToken(env, config.tokenEncrypted)}`;
-        const response = await fetch(`${config.endpoint}/jobs/${encodeURIComponent(blenderJob[1])}`, { headers: runnerHeaders, signal: AbortSignal.timeout(20_000) });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) return json({ error: String(result.error || `El motor Blender respondió HTTP ${response.status}.`).slice(0, 500) }, 502, origin);
+        const runsResponse = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/beta-blender-render.yml/runs?branch=main&event=workflow_dispatch&per_page=20`, { headers, signal: AbortSignal.timeout(15_000) });
+        const runsData = await runsResponse.json().catch(() => ({}));
+        if (!runsResponse.ok) return json({ error: runsResponse.status === 403 ? "GitHub no permite consultar Actions. La conexión necesita permiso Actions: Read and write." : `No se pudo consultar GitHub Actions (HTTP ${runsResponse.status}).` }, 502, origin);
+        const run = (runsData.workflow_runs || []).find(item => String(item.display_title || item.name || "").includes(jobId));
+        if (!run) return json({ jobId, status: "queued", message: "Esperando que GitHub inicie Blender…" }, 200, origin);
+        if (run.status !== "completed") return json({ jobId, status: "running", message: run.status === "queued" ? "En cola gratuita de GitHub…" : "Blender está creando y renderizando la escena…" }, 200, origin);
+        if (run.conclusion !== "success") return json({ jobId, status: "failed", error: `El render de Blender terminó con estado ${run.conclusion || "desconocido"}. Abrí el registro de GitHub Actions para ver el detalle.`, runUrl: run.html_url }, 200, origin);
+        const artifactsResponse = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${run.id}/artifacts`, { headers, signal: AbortSignal.timeout(15_000) });
+        const artifactsData = await artifactsResponse.json().catch(() => ({}));
+        const artifact = (artifactsData.artifacts || []).find(item => item.name === `beta-blender-${jobId}`);
+        if (!artifact) return json({ jobId, status: "running", message: "El render terminó; GitHub está publicando los archivos…" }, 200, origin);
+        const zipResponse = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/artifacts/${artifact.id}/zip`, { headers: { ...headers, Accept: "application/vnd.github+json" }, redirect: "follow", signal: AbortSignal.timeout(25_000) });
+        if (!zipResponse.ok) return json({ error: `No se pudieron descargar los resultados (HTTP ${zipResponse.status}).` }, 502, origin);
+        const zip = new Uint8Array(await zipResponse.arrayBuffer());
+        const files = {};
+        const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+        let central = -1;
+        for (let i = zip.length - 22; i >= Math.max(0, zip.length - 65_557); i--) {
+          if (view.getUint32(i, true) === 0x06054b50) { central = view.getUint32(i + 16, true); break; }
+        }
+        if (central < 0) throw new Error("El ZIP de GitHub no contiene un directorio central válido.");
+        while (central + 46 <= zip.length && view.getUint32(central, true) === 0x02014b50) {
+          const method = view.getUint16(central + 10, true), compressedSize = view.getUint32(central + 20, true);
+          const nameLength = view.getUint16(central + 28, true), extraLength = view.getUint16(central + 30, true), commentLength = view.getUint16(central + 32, true);
+          const localOffset = view.getUint32(central + 42, true);
+          const name = new TextDecoder().decode(zip.subarray(central + 46, central + 46 + nameLength));
+          const ext = name.toLowerCase();
+          if (ext.endsWith(".png") || ext.endsWith(".blend") || ext.endsWith(".mp4")) {
+            if (view.getUint32(localOffset, true) !== 0x04034b50) throw new Error("El ZIP contiene un archivo local inválido.");
+            const localNameLength = view.getUint16(localOffset + 26, true), localExtraLength = view.getUint16(localOffset + 28, true);
+            const dataStart = localOffset + 30 + localNameLength + localExtraLength, dataEnd = dataStart + compressedSize;
+            if (dataEnd > zip.length) throw new Error("El archivo del render está incompleto.");
+            let bytes = zip.slice(dataStart, dataEnd);
+            if (method === 8) {
+              const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+              bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+            } else if (method !== 0) throw new Error("El ZIP usa un método de compresión no compatible.");
+            files[ext.endsWith(".png") ? "png" : ext.endsWith(".blend") ? "blend" : "mp4"] = bytes;
+          }
+          central += 46 + nameLength + extraLength + commentLength;
+        }
+        if (!files.png) return json({ error: "GitHub terminó el trabajo, pero no se encontró el render PNG." }, 502, origin);
+        const images = [{ name: "beta-blender-render.png", mimeType: "image/png", data: base64(files.png) }];
+        const result = { jobId, status: "completed", images, runUrl: run.html_url };
+        if (files.mp4 && files.mp4.length <= 5_000_000) result.animationData = base64(files.mp4);
+        if (files.blend && files.blend.length <= 5_000_000) result.blendData = base64(files.blend);
+        await env.BETA_LIMITS.put(`beta-blender-result:${user.id}:${jobId}`, JSON.stringify(result), { expirationTtl: 3600 });
         return json(result, 200, origin);
-      } catch (error) { return json({ error: String(error?.message || "No se pudo consultar el render.").slice(0, 500) }, 502, origin); }
+      } catch (error) { return json({ error: String(error?.message || "No se pudo recuperar el render.").slice(0,500) }, 502, origin); }
     }
     if (url.pathname.startsWith("/integrations/") && request.method !== "GET" && request.method !== "POST") return json({ error: "Método no permitido." }, 405, origin);
     if (url.pathname.startsWith("/integrations/")) {
