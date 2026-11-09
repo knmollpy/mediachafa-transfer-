@@ -2109,7 +2109,8 @@ async function runMediaChafaConsensus(args) {
       { role: "user", content: finalContent },
     ];
     const phasePrompt = boundedExtra || promptText;
-    const phaseImage = phase === "draft" ? baseImage : null;
+    // Mantener el adjunto en todas las fases: los candidatos ya fueron filtrados por visión.
+    const phaseImage = baseImage;
     const phaseLimit = phase === "review" ? 1400 : phase === "synthesis" ? 1800 : Math.min(maxTokens, 2400);
     try {
       const result = await callModel(env, candidate, phaseMessages, [], phasePrompt, phaseImage, phaseLimit, fetchImpl);
