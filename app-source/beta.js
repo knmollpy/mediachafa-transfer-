@@ -2442,7 +2442,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'secondary'; remove.textContent = 'Borrar';
         remove.addEventListener('click', async () => {
           remove.disabled = true;
-          try { await api('/memory?id=' + encodeURIComponent(item.id), { method: 'DELETE' }); await loadBetaMemory(); }
+          try { await api('/memory', { method: 'POST', body: JSON.stringify({ deleteId: item.id }) }); await loadBetaMemory(); }
           catch (error) { status.textContent = error.message; remove.disabled = false; }
         });
         row.append(content, remove); list.append(row);
