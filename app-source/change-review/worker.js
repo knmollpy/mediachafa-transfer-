@@ -240,7 +240,8 @@ export default {
       try { body = await request.json(); } catch { return json({ error: "JSON inválido." }, 400); }
       const pullNumber = Number(body.pull_number);
       const headSha = String(body.head_sha || "");
-      const githubToken = String(body.github_token || "");
+      // Consume the short-lived read token from the HTTP header only; never copy it into workflow input or durable state.
+      const githubToken = String(request.headers.get("X-GitHub-Read-Token") || "");
       if (!Number.isInteger(pullNumber) || pullNumber < 1 || !/^[a-f0-9]{40}$/i.test(headSha)) return json({ error: "Pull Request o commit inválido." }, 400);
       if (githubToken.length < 20 || githubToken.length > 1000) return json({ error: "Falta el token temporal de GitHub para leer el PR de forma autenticada." }, 400);
       const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
