@@ -67,7 +67,7 @@ Los estados terminales son `completed`, `complete`, `succeeded`, `failed` o `err
 
 ## Requisitos recomendados
 
-- HTTPS público con autenticación propia entre Beta y el renderizador.
+- HTTPS público; si configurás un token en Beta, el Worker lo envía como `Authorization: Bearer <token>` y lo guarda cifrado.
 - Ejecutar Blender en modo headless/background, sin exponer una consola interactiva.
 - Aislar cada trabajo en un directorio temporal y limitar CPU, memoria, duración y tamaño de archivos.
 - No ejecutar scripts de usuario fuera del sandbox del renderizador.
