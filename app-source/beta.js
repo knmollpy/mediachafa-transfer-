@@ -2534,3 +2534,73 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 `;
   document.head.append(style);
 })();
+
+// Modo de pantalla amplia exclusivo del chat de Beta en teléfonos.
+(() => {
+  if (window.MEDIA_NATIVE_APP === true || window.Capacitor?.isNativePlatform?.()) return;
+  const app = document.querySelector('#app');
+  const chatView = document.querySelector('#beta-chat-view');
+  if (!app || !chatView || chatView.querySelector('#beta-mobile-focus-toggle')) return;
+  const mobile = window.matchMedia('(max-width: 760px), (pointer: coarse) and (max-width: 900px)');
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.id = 'beta-mobile-focus-toggle';
+  toggle.className = 'beta-mobile-focus-toggle';
+  toggle.setAttribute('aria-pressed', 'false');
+  const paint = () => {
+    const active = app.classList.contains('beta-mobile-focus');
+    toggle.textContent = active ? '⤢' : '⛶';
+    toggle.setAttribute('aria-label', active ? 'Salir de pantalla amplia' : 'Ampliar chat');
+    toggle.title = active ? 'Salir de pantalla amplia' : 'Ampliar chat';
+    toggle.setAttribute('aria-pressed', String(active));
+  };
+  toggle.addEventListener('click', () => {
+    if (!mobile.matches) return;
+    app.classList.toggle('beta-mobile-focus');
+    paint();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && app.classList.contains('beta-mobile-focus')) {
+      app.classList.remove('beta-mobile-focus');
+      paint();
+    }
+  });
+  const updateAvailability = () => {
+    toggle.hidden = !mobile.matches;
+    if (!mobile.matches) app.classList.remove('beta-mobile-focus');
+    paint();
+  };
+  chatView.prepend(toggle);
+  const style = document.createElement('style');
+  style.textContent = `
+    #beta-mobile-focus-toggle{display:none}
+    @media (max-width:760px), (pointer:coarse) and (max-width:900px){
+      #beta-chat-view{position:relative}
+      #beta-mobile-focus-toggle{display:grid;place-items:center;position:absolute;z-index:30;top:7px;right:7px;width:34px;height:34px;padding:0;border:1px solid rgba(255,255,255,.16);border-radius:10px;background:#292929;color:#fff;font-size:19px;line-height:1;box-shadow:0 3px 12px #0004}
+      #beta-mobile-focus-toggle[hidden]{display:none!important}
+      #app.beta-mobile-focus{position:fixed;inset:0;z-index:9999;width:100%;height:100dvh;min-height:0;overflow:hidden;background:#111}
+      #app.beta-mobile-focus .topbar,
+      #app.beta-mobile-focus .welcome,
+      #app.beta-mobile-focus .storage,
+      #app.beta-mobile-focus .layout>.sidebar{display:none!important}
+      #app.beta-mobile-focus .wrap{width:100%;height:100dvh;max-width:none;margin:0;padding:0!important;overflow:hidden}
+      #app.beta-mobile-focus .layout{display:block;width:100%;height:100%;margin:0}
+      #app.beta-mobile-focus #beta-panel{display:flex!important;width:100%;height:100dvh;min-height:0!important;margin:0;padding:0!important;border:0;border-radius:0;overflow:hidden}
+      #app.beta-mobile-focus #beta-panel .beta-workspace{display:flex;width:100%;height:100%;min-height:0;max-height:100dvh}
+      #app.beta-mobile-focus #beta-panel .beta-header,
+      #app.beta-mobile-focus #beta-panel .beta-sidebar,
+      #app.beta-mobile-focus #beta-panel .beta-nav,
+      #app.beta-mobile-focus #beta-panel .beta-workspace>.beta-view:not(#beta-chat-view){display:none!important}
+      #app.beta-mobile-focus #beta-panel #beta-chat-view{display:flex!important;flex:1;min-height:0;height:100%;overflow:hidden}
+      #app.beta-mobile-focus #beta-panel #beta-chat-stage{display:flex;width:100%;height:100%;min-height:0;max-height:100%;margin:0;padding:48px 10px max(10px,env(safe-area-inset-bottom))!important;justify-content:flex-end;overflow:hidden}
+      #app.beta-mobile-focus #beta-panel #beta-messages{flex:1;min-height:0;max-height:none;width:100%;overflow-y:auto;overscroll-behavior:contain}
+      #app.beta-mobile-focus #beta-panel #beta-form{flex:0 0 auto;width:100%}
+      #app.beta-mobile-focus #beta-panel .beta-composer{margin:0 2px 6px}
+      #app.beta-mobile-focus #beta-panel .beta-status-row{flex:0 0 auto}
+      #app.beta-mobile-focus #beta-mobile-focus-toggle{position:fixed;top:max(7px,env(safe-area-inset-top));right:10px}
+    }
+  `;
+  document.head.append(style);
+  updateAvailability();
+  mobile.addEventListener?.('change', updateAvailability);
+})();
