@@ -134,6 +134,7 @@ jobs:
           START="$(curl --silent --show-error -X POST "$REVIEW_URL/review" \
             -H "Authorization: Bearer $OIDC_TOKEN" \
             -H "Content-Type: application/json" \
+            -H "X-GitHub-Read-Token: $GH_TOKEN" \
             --data "$(jq -n --argjson number "$PR_NUMBER" --arg sha "$HEAD_SHA" '{pull_number:$number,head_sha:$sha}')" || printf '{"error":"No se pudo conectar con el revisor Cloudflare."}')"
           REVIEW_ID="$(echo "$START" | jq -r '.review_id // empty')"
           POLL_TOKEN="$(echo "$START" | jq -r '.poll_token // empty')"

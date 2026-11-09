@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mediachafa-root-beta-v5';
+const CACHE_NAME = 'mediachafa-root-beta-v6';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/app.svg'];
 
 self.addEventListener('install', event => {

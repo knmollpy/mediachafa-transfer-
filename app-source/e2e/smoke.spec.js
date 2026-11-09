@@ -31,3 +31,49 @@ test("el acceso sigue siendo usable en una pantalla móvil", async ({ page }) =>
   expect(layout.card).toBeGreaterThan(0);
   expect(layout.content).toBeLessThanOrEqual(layout.viewport + 2);
 });
+
+
+test("Beta coloca el modo y el equipo dentro de Ajustes, fuera del compositor", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", error => pageErrors.push(error.message));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+
+  // Simulate an authenticated owner opening Beta without depending on Supabase credentials.
+  await page.evaluate(() => {
+    document.querySelector("#login")?.classList.add("hidden");
+    document.querySelector("#app")?.classList.remove("hidden");
+    document.querySelector("#app")?.classList.add("beta-mode");
+    document.querySelector("#beta-tab")?.classList.remove("hidden");
+    // The app's owner-only navigation handler is bypassed in this isolated UI test.
+    document.querySelector("#beta-panel")?.classList.remove("hidden");
+  });
+  await page.waitForSelector("#beta-panel .beta-sidebar", { state: "attached" });
+  const debug = await page.evaluate(() => {
+    const gear = document.querySelector("#beta-settings-toggle");
+    const panel = document.querySelector("#beta-settings");
+    const sidebar = document.querySelector("#beta-panel .beta-sidebar");
+    return {
+      gearExists: Boolean(gear),
+      gearParent: gear?.parentElement?.className || null,
+      settingsExists: Boolean(panel),
+      settingsParent: panel?.parentElement?.className || null,
+      sidebarExists: Boolean(sidebar),
+      betaScript: [...document.scripts].find(script => script.src.includes("/beta.js"))?.src || null
+    };
+  });
+  console.log("BETA_SETTINGS_DEBUG", JSON.stringify(debug));
+
+  const gear = page.locator("#beta-panel .beta-sidebar #beta-settings-toggle");
+  const settings = page.locator("#beta-panel #beta-settings");
+  await expect(gear).toBeAttached();
+  await expect(gear).toBeVisible();
+  await expect(page.locator("#beta-form .beta-mode-select")).toHaveCount(0);
+  await expect(settings.locator("#beta-mode")).toBeAttached();
+  await expect(settings.locator("#beta-team-enabled")).toBeAttached();
+
+  await gear.click();
+  await expect(settings).toBeVisible();
+  await expect(gear).toBeVisible();
+  expect(pageErrors, "Beta no debe lanzar errores JavaScript al abrirse").toEqual([]);
+});
