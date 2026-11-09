@@ -66,7 +66,7 @@ function readManifest(body) {
   if (!Array.isArray(manifest.requirements) || !manifest.requirements.length || manifest.requirements.length > 30) throw new Error("El manifiesto no contiene requisitos comprobables.");
   if (typeof manifest.allow_deletions !== "boolean") throw new Error("El manifiesto debe declarar si autoriza eliminaciones.");
   const allowed = new Set(manifest.allowed_paths.map(path => String(path)));
-  if (allowed.size !== manifest.allowed_paths.length || [...allowed].some(path => !path || path.startsWith("/") || path.includes("..") || path.includes("\\") || !(path.startsWith("app-source/") || path === EXPECTED_WORKFLOW))) throw new Error("El manifiesto contiene rutas duplicadas, no válidas o fuera de los directorios autorizados.");
+  if (allowed.size !== manifest.allowed_paths.length || [...allowed].some(path => !path || path.startsWith("/") || path.includes("..") || path.includes("\\") || !(path.startsWith("app-source/") || path === EXPECTED_WORKFLOW || path === "index.html" || path === "sw.js"))) throw new Error("El manifiesto contiene rutas duplicadas, no válidas o fuera de los directorios autorizados.");
   return { ...manifest, allowed_paths: [...allowed] };
 }
 function extractModelText(result) {
