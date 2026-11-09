@@ -2262,11 +2262,17 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           status: 'completed',
           phase: 'completed',
           phaseLabel: data.collaboration.status === 'consensus' ? 'Consenso revisado · respuesta lista' : 'Equipo terminó con disponibilidad parcial',
-          participants: (data.collaboration.participants || []).map((item) => ({ ...item, status: 'done', phase: 'Trabajo terminado' })),
-          steps: data.collaboration.steps || [
-            { label: 'Propuestas independientes recibidas', state: 'done' },
-            { label: `Revisiones cruzadas: ${data.collaboration.reviewCount || 0}`, state: 'done' },
-            { label: 'Síntesis final lista', state: 'done' }
+          // El servidor informa el estado real de cada participante. No convertir fallos
+          // ni revisiones incompletas en estados "terminados" solo porque llegó una síntesis.
+          participants: (data.collaboration.participants || []).map((item) => ({
+            ...item,
+            status: item.status || (/no preparó|no disponible|error/i.test(String(item.phase || '')) ? 'error' : 'done'),
+            phase: item.phase || 'Trabajo terminado'
+          })),
+          steps: Array.isArray(data.collaboration.steps) ? data.collaboration.steps : [
+            { label: `Propuestas independientes recibidas: ${data.collaboration.participantCount || 0}`, state: 'done' },
+            { label: `Revisiones cruzadas: ${data.collaboration.reviewCount || 0}`, state: data.collaboration.reviewCount >= 2 ? 'done' : 'error' },
+            { label: data.collaboration.status === 'consensus' ? 'Síntesis final revisada' : 'Síntesis parcial: faltaron respuestas o revisiones', state: data.collaboration.status === 'consensus' ? 'done' : 'error' }
           ]
         });
       }
