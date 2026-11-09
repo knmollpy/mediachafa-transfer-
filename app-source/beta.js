@@ -1432,12 +1432,18 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
 
   async function currentSession() {
-    if (typeof window.mediaChafaBetaAuth !== 'function') throw new Error('No se pudo validar la sesión. Recargá la página.');
-    const auth = await window.mediaChafaBetaAuth();
-    if (!auth?.owner || !auth?.token || auth?.anonymous) throw new Error('Iniciá sesión con nxmollpy para usar Beta.');
-    ownerId = auth.userId || 'owner';
-    try { teamEnabledInput.checked = localStorage.getItem(teamSettingKey()) === 'true'; } catch {}
-    return auth;
+    if (typeof window.mediaChafaBetaAuth !== 'function') throw new Error('La autenticación de Beta todavía no está lista. Recargá la página.');
+    let timer;
+    try {
+      const auth = await Promise.race([
+        window.mediaChafaBetaAuth(),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('La validación de sesión tardó demasiado. Recargá Beta e intentá otra vez.')), 12000); })
+      ]);
+      if (!auth?.owner || !auth?.token || auth?.anonymous) throw new Error('Iniciá sesión con nxmollpy para usar Beta.');
+      ownerId = auth.userId || 'owner';
+      try { if (teamEnabledInput) teamEnabledInput.checked = localStorage.getItem(teamSettingKey()) === 'true'; } catch {}
+      return auth;
+    } finally { clearTimeout(timer); }
   }
 
   async function api(path, options = {}) {
@@ -1569,7 +1575,15 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   const settingsPanel = $('#beta-settings');
   const teamEnabledInput = $('#beta-team-enabled');
   const teamSettingKey = () => `mediachafa-beta-team:${ownerId || 'owner'}`;
-  try { teamEnabledInput.checked = localStorage.getItem(teamSettingKey()) === 'true'; } catch {}
+  // The compact Beta layout hides .beta-header; put its settings controls in the
+  // persistent sidebar so the gear is visible on desktop and mobile.
+  const betaSidebarForSettings = $('#beta-panel .beta-sidebar');
+  if (betaSidebarForSettings && settingsToggle && settingsPanel) {
+    betaSidebarForSettings.append(settingsToggle, settingsPanel);
+    settingsToggle.hidden = false;
+    settingsPanel.hidden = true;
+  }
+  try { if (teamEnabledInput) teamEnabledInput.checked = localStorage.getItem(teamSettingKey()) === 'true'; } catch {}
   settingsToggle?.addEventListener('click', () => {
     const opening = settingsPanel.classList.contains('hidden');
     settingsPanel.classList.toggle('hidden', !opening);
@@ -1596,9 +1610,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   });
   const settingsStyle = document.createElement('style');
   settingsStyle.textContent = `
-    #beta-panel .beta-settings-toggle{font-size:20px;min-width:42px;padding:7px 11px}
-    #beta-panel .beta-settings{position:absolute;z-index:80;right:12px;top:58px;width:min(340px,calc(100vw - 44px));padding:16px;border:1px solid rgba(255,255,255,.16);border-radius:15px;background:#15171d;box-shadow:0 18px 55px #000b;display:grid;gap:10px}
-    #beta-panel .beta-settings.hidden{display:none}
+    #beta-panel .beta-settings-toggle{display:inline-flex;align-items:center;justify-content:center;font-size:20px;min-width:42px;min-height:40px;padding:7px 11px;order:20}
+    #beta-panel .beta-settings{position:relative;z-index:80;inset:auto;width:100%;max-width:100%;padding:12px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:#15171d;box-shadow:0 12px 35px #0008;display:grid;gap:10px;order:21}
+    #beta-panel .beta-settings[hidden],#beta-panel .beta-settings.hidden{display:none!important}
+    #beta-panel .beta-settings-toggle[hidden]{display:none!important}
     #beta-panel .beta-settings h3{margin:0 0 3px;font-size:15px;color:#fff}
     #beta-panel .beta-settings>label:not(.beta-team-setting){font-size:12px;color:#d4d4d8}
     #beta-panel .beta-settings select{width:100%;padding:10px;border:1px solid #484854;border-radius:9px;background:#20212a;color:#fff}
@@ -1607,7 +1622,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     #beta-panel .beta-team-setting span{display:grid;gap:4px}
     #beta-panel .beta-team-setting small,#beta-panel .beta-settings-note{font-size:11px;line-height:1.45;color:#b8b8c2;margin:0}
     #beta-panel .beta-header{position:relative}
-    @media(max-width:600px){#beta-panel .beta-settings{right:4px;top:54px}}
+    @media(max-width:900px){#beta-panel .beta-settings{min-width:250px}#beta-panel .beta-settings-toggle{flex:none}}
   `;
   document.head.append(settingsStyle);
   const pendingAgentRuns = {};
@@ -2207,11 +2222,20 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         void pollCollaboration();
         progressPoll = setInterval(() => { void pollCollaboration(); }, 900);
       }
-      const response = await fetch(`${API}/chat`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value, progressId, collaborationEnabled: teamEnabledInput.checked }),
-      });
+      const chatController = new AbortController();
+      const chatTimeout = setTimeout(() => chatController.abort(new Error('Beta tardó más de 90 segundos en responder. Probá otra vez o elegí otro modelo gratuito.')), 90000);
+      let response;
+      try {
+        response = await fetch(`${API}/chat`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value, progressId, collaborationEnabled: Boolean(teamEnabledInput?.checked) }),
+          signal: chatController.signal,
+        });
+      } catch (error) {
+        if (error?.name === 'AbortError') throw new Error('Beta tardó más de 90 segundos en responder. Probá otra vez o elegí otro modelo gratuito.');
+        throw error;
+      } finally { clearTimeout(chatTimeout); }
       updateProgress('Consulta recibida; esperando la respuesta del equipo…');
       const data = await response.json().catch(() => ({}));
       if (data.collaboration?.enabled && collaborationPanel) {
