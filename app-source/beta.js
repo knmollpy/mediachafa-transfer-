@@ -594,7 +594,20 @@ Para una página web pública: create_repository con visibility "public", despu�
   const betaSidebarRecent = document.createElement('div');
   betaSidebarRecent.className = 'beta-sidebar-recent';
   betaSidebarRecent.textContent = 'Conversación actual';
-  betaSidebar.append(betaHeader.querySelector('.beta-brand'), $('#beta-clear'), betaHeader.querySelector('.beta-nav'), betaSidebarSection, betaSidebarRecent);
+  const betaSettingsToggleNode = $('#beta-settings-toggle');
+  const betaSettingsPanelNode = $('#beta-settings');
+  // Mount settings in the always-visible compact navigation row, not in the
+  // header (which is hidden by the mobile layout).
+  betaSidebar.append(
+    betaHeader.querySelector('.beta-brand'),
+    $('#beta-clear'),
+    betaHeader.querySelector('.beta-nav'),
+    betaSettingsToggleNode,
+    betaSettingsPanelNode,
+    betaSidebarSection,
+    betaSidebarRecent
+  );
+  if (betaSettingsToggleNode) betaSettingsToggleNode.hidden = false;
   betaWorkspace.insertBefore(betaSidebar, betaHeader);
 
   // Keep the conversation and the live work view together on desktop, like an
@@ -1577,17 +1590,13 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   const teamSettingKey = () => `mediachafa-beta-team:${ownerId || 'owner'}`;
   // The compact Beta layout hides .beta-header; put its settings controls in the
   // persistent sidebar so the gear is visible on desktop and mobile.
+  // The controls are mounted into the sidebar at construction time above;
+  // retain a defensive relocation for any legacy DOM arrangement.
   const betaSidebarForSettings = $('#beta-panel .beta-sidebar');
   if (betaSidebarForSettings && settingsToggle && settingsPanel) {
-    const settingsAnchor = betaSidebarForSettings.querySelector('.beta-sidebar-section');
-    // Keep the mode selector inside the settings panel, never in the chat composer.
     if (modeSelect && !settingsPanel.contains(modeSelect)) settingsPanel.append(modeSelect);
-    if (settingsAnchor) {
-      betaSidebarForSettings.insertBefore(settingsToggle, settingsAnchor);
-      betaSidebarForSettings.insertBefore(settingsPanel, settingsAnchor);
-    } else {
-      betaSidebarForSettings.append(settingsToggle, settingsPanel);
-    }
+    if (!betaSidebarForSettings.contains(settingsToggle)) betaSidebarForSettings.insertBefore(settingsToggle, betaSidebarSection);
+    if (!betaSidebarForSettings.contains(settingsPanel)) betaSidebarForSettings.insertBefore(settingsPanel, betaSidebarSection);
     settingsToggle.hidden = false;
   }
   try { if (teamEnabledInput) teamEnabledInput.checked = localStorage.getItem(teamSettingKey()) === 'true'; } catch {}
@@ -1618,7 +1627,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   const settingsStyle = document.createElement('style');
   settingsStyle.textContent = `
     #beta-panel .beta-sidebar{position:relative}
-    #beta-panel .beta-settings-toggle{display:inline-flex;align-items:center;justify-content:center;font-size:20px;min-width:42px;min-height:40px;padding:7px 11px;order:20}
+    #beta-panel .beta-settings-toggle{display:inline-flex!important;align-items:center;justify-content:center;font-size:20px;min-width:42px;min-height:40px;padding:7px 11px;order:20;flex:none}
+    #beta-panel .beta-sidebar #beta-settings-toggle[hidden]{display:none!important}
+    @media(max-width:900px){#app.beta-mode #beta-panel .beta-sidebar #beta-settings-toggle{display:inline-flex!important;min-width:40px;min-height:36px;margin-left:auto}}
     #beta-panel .beta-settings{position:relative;z-index:80;inset:auto;width:100%;max-width:100%;padding:12px;border:1px solid rgba(255,255,255,.16);border-radius:12px;background:#15171d;box-shadow:0 12px 35px #0008;display:grid;gap:10px;order:21}
     #beta-panel .beta-settings[hidden],#beta-panel .beta-settings.hidden{display:none!important}
     #beta-panel .beta-settings-toggle[hidden]{display:none!important}
