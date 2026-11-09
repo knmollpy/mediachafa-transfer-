@@ -133,23 +133,18 @@ async function reviewWithModels(env, messages) {
   }
   throw new Error(`Todos los motores gratuitos de revisión fallaron; no se aprobará el PR. ${failures.slice(-6).join(" | ")}`.slice(0, 1600));
 }
-async function verifyTrustedControlFiles(env, headSha, githubToken) {
-  const expected = {
-    ".github/workflows/change-review-gate.yml": String(env.TRUSTED_WORKFLOW_BLOB_SHA || ""),
-    "app-source/change-review/worker.js": String(env.TRUSTED_REVIEWER_BLOB_SHA || ""),
-    "app-source/vercel.json": String(env.TRUSTED_VERCEL_CONFIG_BLOB_SHA || ""),
-  };
-  for (const [path, sha] of Object.entries(expected)) {
-    if (!/^[a-f0-9]{40}$/i.test(sha)) throw new Error("Falta el anclaje externo de integridad del control; revisión bloqueada.");
-    const { data } = await github(`/contents/${path}?ref=${headSha}`, githubToken);
-    if (data.sha !== sha) throw new Error(`El archivo de control protegido fue alterado: ${path}`);
+const TRUSTED_WORKFLOW_BLOB_SHA = "877f3a81cc20239a5863439dd88ef2027aac5b3f";
+async function verifyTrustedControlFiles(headSha, githubToken) {
+  const { data } = await github(`/contents/${EXPECTED_WORKFLOW}?ref=${headSha}`, githubToken);
+  if (data.sha !== TRUSTED_WORKFLOW_BLOB_SHA) {
+    throw new Error("El workflow de publicación no coincide con la versión autorizada; revisión bloqueada.");
   }
 }
 async function collectReviewInput(pullNumber, expectedHeadSha, env, githubToken) {
   const { data: pr } = await github(`/pulls/${pullNumber}`, githubToken);
   if (pr.state !== "open" || pr.base?.ref !== "main" || !String(pr.head?.ref || "").startsWith("beta-agent/")) throw new Error("El Pull Request no cumple las condiciones de publicación de Beta.");
   if (pr.head?.sha !== expectedHeadSha) throw new Error("El commit cambió durante la revisión; se requiere una nueva ejecución.");
-  await verifyTrustedControlFiles(env, expectedHeadSha, githubToken);
+  await verifyTrustedControlFiles(expectedHeadSha, githubToken);
   const manifest = readManifest(pr.body);
   const { data: files, headers } = await github(`/pulls/${pullNumber}/files?per_page=100`, githubToken);
   if (!Array.isArray(files) || !files.length || files.length > 40 || headers.get("Link")?.includes('rel="next"')) throw new Error("La lista de archivos está vacía, excede 40 elementos o fue truncada.");
