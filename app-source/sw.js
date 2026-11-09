@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mediachafa-shell-beta-v5-private-map';
+const CACHE_NAME = 'mediachafa-shell-beta-v6-cloudflare-migration';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/app.svg'];
 
 self.addEventListener('install', event => {
