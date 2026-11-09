@@ -1735,7 +1735,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message, history: state.loopHistory.slice(-8), model: state.modelId, mode: 'autonomous',
-          collaborationEnabled: collaborative, ...(progressId ? { progressId } : {}), ...attachments,
+          collaborationEnabled: collaborative, memoryEnabled: document.querySelector('#beta-memory-enabled')?.checked !== false, ...(progressId ? { progressId } : {}), ...attachments,
         }),
       });
       const data = await response.json().catch(() => ({}));
