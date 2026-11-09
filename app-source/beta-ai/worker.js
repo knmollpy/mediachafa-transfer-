@@ -1577,22 +1577,30 @@ export default {
         const zip = new Uint8Array(await zipResponse.arrayBuffer());
         const files = {};
         const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
-        let offset = 0;
-        while (offset + 30 < zip.length && view.getUint32(offset, true) === 0x04034b50) {
-          const method = view.getUint16(offset + 8, true), compressedSize = view.getUint32(offset + 18, true), nameLength = view.getUint16(offset + 26, true), extraLength = view.getUint16(offset + 28, true);
-          const name = new TextDecoder().decode(zip.subarray(offset + 30, offset + 30 + nameLength));
-          const dataStart = offset + 30 + nameLength + extraLength, dataEnd = dataStart + compressedSize;
-          if (dataEnd > zip.length) break;
+        let central = -1;
+        for (let i = zip.length - 22; i >= Math.max(0, zip.length - 65_557); i--) {
+          if (view.getUint32(i, true) === 0x06054b50) { central = view.getUint32(i + 16, true); break; }
+        }
+        if (central < 0) throw new Error("El ZIP de GitHub no contiene un directorio central válido.");
+        while (central + 46 <= zip.length && view.getUint32(central, true) === 0x02014b50) {
+          const method = view.getUint16(central + 10, true), compressedSize = view.getUint32(central + 20, true);
+          const nameLength = view.getUint16(central + 28, true), extraLength = view.getUint16(central + 30, true), commentLength = view.getUint16(central + 32, true);
+          const localOffset = view.getUint32(central + 42, true);
+          const name = new TextDecoder().decode(zip.subarray(central + 46, central + 46 + nameLength));
           const ext = name.toLowerCase();
           if (ext.endsWith(".png") || ext.endsWith(".blend") || ext.endsWith(".mp4")) {
+            if (view.getUint32(localOffset, true) !== 0x04034b50) throw new Error("El ZIP contiene un archivo local inválido.");
+            const localNameLength = view.getUint16(localOffset + 26, true), localExtraLength = view.getUint16(localOffset + 28, true);
+            const dataStart = localOffset + 30 + localNameLength + localExtraLength, dataEnd = dataStart + compressedSize;
+            if (dataEnd > zip.length) throw new Error("El archivo del render está incompleto.");
             let bytes = zip.slice(dataStart, dataEnd);
             if (method === 8) {
               const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
               bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-            }
+            } else if (method !== 0) throw new Error("El ZIP usa un método de compresión no compatible.");
             files[ext.endsWith(".png") ? "png" : ext.endsWith(".blend") ? "blend" : "mp4"] = bytes;
           }
-          offset = dataEnd;
+          central += 46 + nameLength + extraLength + commentLength;
         }
         if (!files.png) return json({ error: "GitHub terminó el trabajo, pero no se encontró el render PNG." }, 502, origin);
         const images = [{ name: "beta-blender-render.png", mimeType: "image/png", data: base64(files.png) }];
