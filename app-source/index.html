@@ -575,8 +575,10 @@ async function loadGoogleDriveStatus() {
         const source = remember ? sessionStorage : localStorage;
         const target = remember ? localStorage : sessionStorage;
         const currentSession = source.getItem(authKey);
-        if (currentSession !== null) target.setItem(authKey, currentSession);
-        source.removeItem(authKey);
+        if (currentSession !== null) {
+          target.setItem(authKey, currentSession);
+          source.removeItem(authKey);
+        }
       } catch {}
       if (!remember) localStorage.removeItem(REMEMBERED_USERNAME_KEY);
     });
