@@ -64,3 +64,13 @@ La pausa actúa entre operaciones; no revierte una petición externa que ya empe
 El agente no ejecuta shell en el Worker. Las pruebas remotas requieren que el workflow esté instalado y permitido por GitHub Actions. Un deployment de Preview requiere que el proyecto Vercel esté vinculado a `knmollpy/mediachafa-transfer-` y que el token tenga acceso a ese proyecto. El agente no ejecuta SQL, cambios de Supabase, operaciones de Cloudflare, borrados, merges ni operaciones de producción. Los commits permanecen en la rama `beta-agent/*`; revisalos y hacé el merge manualmente.
 
 Para correr localmente las pruebas nuevas: `cd app-source && npm run test:beta-agent`. El cambio del Worker necesita desplegarse manualmente en el servicio Cloudflare Beta y sus integraciones GitHub/Vercel deben configurarse en **Integraciones** antes de usarlo. Esta implementación no despliega producción.
+
+
+## Compilación autónoma de APK y PKG
+
+Beta dispone de herramientas de compilación reales en GitHub Actions. Puede crear proyectos Android independientes en `app-source/apk/<nombre>/` y compilarlos a APK debug con Gradle, además de compilar proyectos PS4 homebrew a PKG. Devuelve los artefactos descargables sin modificar `main` ni publicar en producción. Para PS4, puede crear un proyecto homebrew en `app-source/ps4/<nombre>/`, ejecutar su `build.sh` con OpenOrbis PS4 Toolchain v0.5.4 y devolver el PKG generado en `dist/`. Los artefactos se conservan durante 30 días en GitHub Actions. Ambos flujos usan permisos de solo lectura del repositorio, no reciben secretos de firma y no publican binarios automáticamente en el sitio.
+
+La compilación PKG es para homebrew original y consolas con entorno jailbreak compatible; no genera firmas retail ni permite instalar juegos comerciales protegidos. Ver `app-source/ps4/README.md` para el formato del proyecto.
+
+
+Los proyectos Android independientes deben seguir `app-source/apk/README.md`; los APK resultantes son builds debug de prueba y no se firman como versiones retail.
