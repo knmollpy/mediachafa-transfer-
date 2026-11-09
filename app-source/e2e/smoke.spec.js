@@ -36,7 +36,7 @@ test("el acceso sigue siendo usable en una pantalla móvil", async ({ page }) =>
 test("Beta coloca el modo y el equipo dentro de Ajustes, fuera del compositor", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.waitForSelector("#beta-panel .beta-sidebar");
+  await page.waitForSelector("#beta-panel .beta-sidebar", { state: "attached" });
 
   await page.evaluate(() => {
     document.querySelector("#app")?.classList.add("beta-mode");
