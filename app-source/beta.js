@@ -2451,9 +2451,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   void refreshQuota();
 })();
 
-// Pantalla completa de Beta + arreglo del panel "Actividad".
+// Pantalla completa móvil de Beta + arreglo del panel "Actividad".
 (() => {
   if (window.MEDIA_NATIVE_APP === true || window.Capacitor?.isNativePlatform?.()) return;
+  const isMobileBrowser = navigator.userAgentData?.mobile === true ||
+    /Android.*Mobile|iPhone|iPod|Windows Phone|Mobile/i.test(navigator.userAgent);
+  if (!isMobileBrowser) return;
   const app = document.querySelector('#app');
   const brand = document.querySelector('#beta-panel .beta-brand');
   if (!app || !brand) return;
