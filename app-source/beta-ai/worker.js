@@ -920,6 +920,9 @@ async function agentStart(env, user, payload) {
   if (quota.used >= Math.min(DAILY_REQUEST_LIMIT, quota.providerLimit)) throw new Error("Se agotó la cuota gratuita de OpenRouter.");
   const integrations = await integrationStatus(env, user.id);
   if (!integrations.github?.connected) throw new Error("Conectá GitHub para iniciar una ejecución autónoma.");
+  let savedMemory = []; try { savedMemory = JSON.parse(await env.BETA_LIMITS.get(`beta-memory:${user.id}`) || "[]"); } catch {}
+  const memoryContext = Array.isArray(savedMemory) && savedMemory.length ? `\\n\\nMEMORIA PERMANENTE DEL USUARIO (datos guardados por él; usalos solo si son pertinentes):\\n${savedMemory.slice(-30).map(item => `- ${String(item.text || "").slice(0, 900)}`).join("\\n").slice(0, 12000)}` : "";
+  const taskMessage = `${message}${memoryContext}`;
   const id = crypto.randomUUID();
   const state = {
     id,
@@ -936,8 +939,8 @@ async function agentStart(env, user, payload) {
     baseBranch: null,
     baseSha: null,
     branchHeadSha: null,
-    initialMessage: message,
-    messages: [{ role: "user", content: message }],
+    initialMessage: taskMessage,
+    messages: [{ role: "user", content: taskMessage }],
     rounds: 0,
     toolCalls: 0,
     modelRequests: 0,
@@ -1486,6 +1489,80 @@ export default {
       const user = await requireOwner(request);
       if (!user) return json({ error: "El mapa privado del proyecto está disponible solo para la cuenta dueña." }, 403, origin);
       return json({ projectMap: await privateProjectMap(env, user.id, url.searchParams.get("refresh") === "1") }, 200, origin);
+    }
+    if (url.pathname === "/memory" && ["GET", "POST", "DELETE"].includes(request.method)) {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "La memoria permanente está disponible solo para la cuenta dueña." }, 403, origin);
+      const key = `beta-memory:${user.id}`;
+      let items = [];
+      try { items = JSON.parse(await env.BETA_LIMITS.get(key) || "[]"); } catch {}
+      if (!Array.isArray(items)) items = [];
+      if (request.method === "GET") return json({ items: items.slice(-60) }, 200, origin);
+      if (request.method === "DELETE") {
+        const id = url.searchParams.get("id");
+        if (id) items = items.filter(item => item.id !== id); else items = [];
+        await env.BETA_LIMITS.put(key, JSON.stringify(items));
+        return json({ ok: true, items: items.length }, 200, origin);
+      }
+      let payload;
+      try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+      const value = String(payload.text || "").trim().slice(0, 1200);
+      if (!value) return json({ error: "El recuerdo no puede estar vacío." }, 400, origin);
+      if (items.some(item => item.text.toLowerCase() === value.toLowerCase())) return json({ ok: true, duplicate: true, items: items.length }, 200, origin);
+      items.push({ id: crypto.randomUUID(), text: value, createdAt: new Date().toISOString() });
+      items = items.slice(-60);
+      await env.BETA_LIMITS.put(key, JSON.stringify(items));
+      return json({ ok: true, items: items.length }, 201, origin);
+    }
+    if (url.pathname === "/blender/config" && ["GET", "POST"].includes(request.method)) {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "La conexión de Blender está disponible solo para la cuenta dueña." }, 403, origin);
+      const key = `beta-blender:${user.id}`;
+      if (request.method === "GET") {
+        const saved = await env.BETA_LIMITS.get(key);
+        let config = {}; try { config = saved ? JSON.parse(saved) : {}; } catch {}
+        return json({ connected: Boolean(config.endpoint), endpoint: config.endpoint || "" }, 200, origin);
+      }
+      let payload; try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+      const endpoint = String(payload.endpoint || "").trim().replace(/\/+$/, "");
+      if (!endpoint) { await env.BETA_LIMITS.delete(key); return json({ connected: false, endpoint: "" }, 200, origin); }
+      let parsed;
+      try { parsed = new URL(endpoint); } catch { return json({ error: "Ingresá una URL válida." }, 400, origin); }
+      if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash || /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|\[::1\])/i.test(parsed.hostname) || parsed.hostname.endsWith(".local")) return json({ error: "Usá una URL HTTPS pública, sin credenciales, parámetros ni direcciones locales." }, 400, origin);
+      await env.BETA_LIMITS.put(key, JSON.stringify({ endpoint, updatedAt: new Date().toISOString() }));
+      return json({ connected: true, endpoint }, 200, origin);
+    }
+    if (url.pathname === "/blender/render" && request.method === "POST") {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "Solo la cuenta dueña puede iniciar renders." }, 403, origin);
+      const saved = await env.BETA_LIMITS.get(`beta-blender:${user.id}`);
+      let config = {}; try { config = saved ? JSON.parse(saved) : {}; } catch {}
+      if (!config.endpoint) return json({ error: "Conectá primero un motor Blender HTTPS en Integraciones." }, 409, origin);
+      let payload; try { payload = await request.json(); } catch { return json({ error: "Solicitud inválida." }, 400, origin); }
+      const prompt = String(payload.prompt || "").trim().slice(0, 4000);
+      if (!prompt) return json({ error: "Describí la escena que querés crear." }, 400, origin);
+      try {
+        const response = await fetch(`${config.endpoint}/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, format: "png", animation: true }), signal: AbortSignal.timeout(30_000) });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) return json({ error: String(result.error || `El motor Blender respondió HTTP ${response.status}.`).slice(0, 500) }, 502, origin);
+        const jobId = String(result.jobId || result.id || "").slice(0, 160);
+        if (!jobId) return json({ error: "El motor no devolvió jobId o id." }, 502, origin);
+        return json({ ...result, jobId }, 202, origin);
+      } catch (error) { return json({ error: String(error?.message || "No se pudo contactar al motor Blender.").slice(0, 500) }, 502, origin); }
+    }
+    const blenderJob = url.pathname.match(/^\/blender\/jobs\/([A-Za-z0-9_-]{1,160})$/);
+    if (blenderJob && request.method === "GET") {
+      const user = await requireOwner(request);
+      if (!user) return json({ error: "Solo la cuenta dueña puede consultar renders." }, 403, origin);
+      const saved = await env.BETA_LIMITS.get(`beta-blender:${user.id}`);
+      let config = {}; try { config = saved ? JSON.parse(saved) : {}; } catch {}
+      if (!config.endpoint) return json({ error: "Blender no está conectado." }, 409, origin);
+      try {
+        const response = await fetch(`${config.endpoint}/jobs/${encodeURIComponent(blenderJob[1])}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) return json({ error: String(result.error || `El motor Blender respondió HTTP ${response.status}.`).slice(0, 500) }, 502, origin);
+        return json(result, 200, origin);
+      } catch (error) { return json({ error: String(error?.message || "No se pudo consultar el render.").slice(0, 500) }, 502, origin); }
     }
     if (url.pathname.startsWith("/integrations/") && request.method !== "GET" && request.method !== "POST") return json({ error: "Método no permitido." }, 405, origin);
     if (url.pathname.startsWith("/integrations/")) {
