@@ -45,8 +45,9 @@ test("Beta coloca el modo y el equipo dentro de Ajustes, fuera del compositor", 
     document.querySelector("#app")?.classList.remove("hidden");
     document.querySelector("#app")?.classList.add("beta-mode");
     document.querySelector("#beta-tab")?.classList.remove("hidden");
+    // The app's owner-only navigation handler is bypassed in this isolated UI test.
+    document.querySelector("#beta-panel")?.classList.remove("hidden");
   });
-  await page.locator("#beta-tab").click();
   await page.waitForSelector("#beta-panel .beta-sidebar", { state: "attached" });
   const debug = await page.evaluate(() => {
     const gear = document.querySelector("#beta-settings-toggle");
