@@ -3,14 +3,14 @@
   const LIVE_REPO = 'knmollpy/mediachafa-transfer-';
   const AUTO_TYPES = new Set(['create_repository', 'write_file', 'write_files', 'enable_pages', 'pages_build', 'create_worker']);
   const TAGS = { SIGO: 'continue', PREGUNTA: 'question', LISTO: 'done' };
-  const OWN_MODEL_TURNS = 12;
-  const OTHER_MODEL_TURNS = 12;
+  const OWN_MODEL_TURNS = 30;
+  const OTHER_MODEL_TURNS = 30;
 
   // Las IAs MediaChafa usan la misma cuota diaria gratuita verificada de OpenRouter.
   function turnLimit(model) {
     if (model?.unlimited) return OWN_MODEL_TURNS;
     const remaining = Number(model?.remaining);
-    return Math.max(1, Math.min(OTHER_MODEL_TURNS, Number.isFinite(remaining) ? remaining : 6));
+    return Math.max(1, Math.min(OTHER_MODEL_TURNS, Number.isFinite(remaining) ? remaining : 30));
   }
 
   function requestedRepositoryName(goal) {
@@ -1454,8 +1454,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       ]);
       if (!auth?.owner || !auth?.token || auth?.anonymous) throw new Error('Iniciá sesión con nxmollpy para usar Beta.');
       ownerId = auth.userId || 'owner';
-      try { if (teamEnabledInput) teamEnabledInput.checked = localStorage.getItem(teamSettingKey()) === 'true'; } catch {}
-      return auth;
+          return auth;
     } finally { clearTimeout(timer); }
   }
 
@@ -1583,18 +1582,14 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   // para hacerte una pregunta necesaria, para pedirte aprobación de algo delicado
   // (borrados, SQL o cambios en la web en vivo de MediaChafa) o si tocás "Detener".
   const agent = window.MediaChafaBetaAgent;
-  const modeSelect = $('#beta-mode');
   const settingsToggle = $('#beta-settings-toggle');
   const settingsPanel = $('#beta-settings');
-  const teamEnabledInput = $('#beta-team-enabled');
-  const teamSettingKey = () => `mediachafa-beta-team:${ownerId || 'owner'}`;
   // The compact Beta layout hides .beta-header; put its settings controls in the
   // persistent sidebar so the gear is visible on desktop and mobile.
   // The controls are mounted into the sidebar at construction time above;
   // retain a defensive relocation for any legacy DOM arrangement.
   const betaSidebarForSettings = $('#beta-panel .beta-sidebar');
   if (betaSidebarForSettings && settingsToggle && settingsPanel) {
-    if (modeSelect && !settingsPanel.contains(modeSelect)) settingsPanel.append(modeSelect);
     if (!betaSidebarForSettings.contains(settingsToggle)) betaSidebarForSettings.insertBefore(settingsToggle, betaSidebarSection);
     if (!betaSidebarForSettings.contains(settingsPanel)) betaSidebarForSettings.insertBefore(settingsPanel, betaSidebarSection);
     settingsToggle.hidden = false;
@@ -1604,12 +1599,6 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const opening = settingsPanel.classList.contains('hidden');
     settingsPanel.classList.toggle('hidden', !opening);
     settingsToggle.setAttribute('aria-expanded', String(opening));
-  });
-  teamEnabledInput?.addEventListener('change', () => {
-    try { localStorage.setItem(teamSettingKey(), String(teamEnabledInput.checked)); } catch {}
-    setStatus(teamEnabledInput.checked
-      ? 'Equipo de 6 IAs activado. Elegí una IA MediaChafa para usarlo.'
-      : 'Equipo colaborativo desactivado. Beta responderá con una sola IA.');
   });
   settingsPanel?.addEventListener('click', event => event.stopPropagation());
   document.addEventListener('click', event => {
@@ -1689,28 +1678,52 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
 
   // El botón de envío cambia a pausa mientras Beta trabaja; no hace falta un control aparte.
-  try {
-    const savedMode = localStorage.getItem('mediachafa-beta-mode');
-    if (modeSelect && savedMode && [...modeSelect.options].some(option => option.value === savedMode)) modeSelect.value = savedMode;
-  } catch {}
-  modeSelect?.addEventListener('change', () => { try { localStorage.setItem('mediachafa-beta-mode', modeSelect.value); } catch {} });
+  // La ejecución completa y el equipo colaborativo son el comportamiento predeterminado.
 
-  async function agentChat(state, run, message, attachments = {}) {
+  async function agentChat(state, run, message, attachments = {}, onProgress = () => {}) {
     const auth = await currentSession();
-    const response = await fetch(`${API}/chat`, {
-      method: 'POST',
-      signal: run.controller.signal,
-      headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history: state.loopHistory.slice(-8), model: state.modelId, mode: 'autonomous', ...attachments }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (data.modelId) updateModelUsage(data.modelId, data);
-    if (!response.ok) {
-      const error = new Error(data.error || `Beta respondió ${response.status}.`);
-      error.status = response.status;
-      throw error;
+    const collaborative = String(state.modelId || '').startsWith('mediachafa::');
+    const progressId = collaborative
+      ? (globalThis.crypto?.randomUUID?.() || ('mc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12)))
+      : '';
+    let progressPoll = null;
+    let progressPollBusy = false;
+    if (collaborative) {
+      const poll = async () => {
+        if (progressPollBusy || run.controller.signal.aborted) return;
+        progressPollBusy = true;
+        try {
+          const response = await fetch(`${API}/chat/progress?id=${encodeURIComponent(progressId)}`, {
+            signal: run.controller.signal,
+            headers: { Authorization: `Bearer ${auth.token}` },
+          });
+          if (response.ok) onProgress(await response.json());
+        } catch {} finally { progressPollBusy = false; }
+      };
+      void poll();
+      progressPoll = setInterval(() => { void poll(); }, 900);
     }
-    return data;
+    try {
+      const response = await fetch(`${API}/chat`, {
+        method: 'POST',
+        signal: run.controller.signal,
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message, history: state.loopHistory.slice(-8), model: state.modelId, mode: 'autonomous',
+          collaborationEnabled: collaborative, ...(progressId ? { progressId } : {}), ...attachments,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (data.modelId) updateModelUsage(data.modelId, data);
+      if (!response.ok) {
+        const error = new Error(data.error || `Beta respondió ${response.status}.`);
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    } finally {
+      if (progressPoll) clearInterval(progressPoll);
+    }
   }
 
   function waitMs(ms, run) {
@@ -1861,7 +1874,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const run = { stopped: false, inFlight: false, controller: new AbortController(), waiting: null, waitingKind: null, state, queuedInstructions: [] };
     autonomousRun = run;
     setComposerMode('working');
-    const progress = addMessage('assistant', 'Trabajando en modo autónomo…');
+    const progress = addMessage('assistant', 'Entendiendo el pedido y preparando el trabajo…');
     progress.classList.add('beta-working');
     progress.querySelector('.beta-copy-btn')?.remove();
     const progressBody = progress.querySelector('p');
@@ -1872,7 +1885,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const step = (text, kind = 'active') => {
       steps.push(text);
       liveList.replaceChildren(...steps.slice(-14).map((item, i, list) => { const li = document.createElement('li'); li.dataset.state = i === list.length - 1 && kind === 'active' ? 'active' : 'done'; li.textContent = item; return li; }));
-      progressBody.textContent = `Modo autónomo · turno ${state.turn} de ${state.maxTurns}`;
+      progressBody.textContent = `Trabajando · etapa ${state.turn} de ${state.maxTurns}`;
       setStatus(text);
       activity(text, kind === 'error' ? 'error' : 'active');
       messagesNode.scrollTop = messagesNode.scrollHeight;
@@ -1891,7 +1904,17 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         for (let attempt = 0; ; attempt++) {
           try {
             run.inFlight = true;
-            data = await agentChat(state, run, agent.buildTurnMessage(state, message), state.turn === 1 && attempt === 0 ? attachments : {});
+            data = await agentChat(
+              state, run, agent.buildTurnMessage(state, message),
+              state.turn === 1 && attempt === 0 ? attachments : {},
+              (snapshot) => {
+                const label = String(snapshot?.phaseLabel || '').trim();
+                if (label && label !== run.lastCollaborationPhase && snapshot.status !== 'completed') {
+                  run.lastCollaborationPhase = label;
+                  step(`Equipo de IA: ${label.toLowerCase()}…`);
+                }
+              },
+            );
             run.inFlight = false;
             break;
           } catch (error) {
@@ -1910,6 +1933,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           message = `INSTRUCCIONES NUEVAS DEL DUEÑO:\n${arrivedDuringThinking}\nDescartá el plan que acabás de generar porque se redactó antes de recibir estas instrucciones. Volvé a analizar el pedido y el estado actual; no ejecutes ninguna acción de ese plan anterior.`;
           step('Instrucción incorporada. Recalculando el próximo paso antes de ejecutar acciones…');
           continue;
+        }
+        if (data.collaboration?.enabled) {
+          const participants = Array.isArray(data.collaboration.participants) ? data.collaboration.participants : [];
+          const completed = participants.filter(item => ['done', 'reviewed', 'synthesizing'].includes(item.status)).length;
+          step(`Equipo de IA: ${completed}/${participants.length || 6} participantes completaron su trabajo.`, 'done');
+          step(`Revisiones cruzadas: ${Number(data.collaboration.reviewCount || 0)}. Síntesis del equipo recibida.`, 'done');
         }
         if (data.modelName) lastModelName = data.modelName;
         const classified = agent.classifyAnswer(data.answer);
@@ -2083,7 +2112,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (!selectedModel.unlimited && Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
     if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
     if (pendingAudio && !selectedModel?.audio) { setStatus('Este modelo no admite audio. Elegí uno que indique audio.', 'error'); return; }
-    if (modeSelect?.value === 'autonomous' && agent) {
+    if (agent) {
       input.value = '';
       const goalText = prompt || (pendingImage ? 'Analizá la imagen adjunta.' : 'Transcribí y analizá el audio adjunto.');
       const goalDisplay = `${goalText}${pendingImage ? `\n[Imagen: ${pendingImage.name}]` : ''}${pendingAudio ? `\n[Audio: ${pendingAudio.name}]` : ''}`;
@@ -2107,7 +2136,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const liveList = document.createElement('ul');
     liveList.className = 'beta-live-steps';
     progressMessage.insertBefore(liveList, progressBody);
-    const usesMediaChafaTeam = teamEnabledInput.checked && String(selectedModel.id || '').startsWith('mediachafa::');
+    const usesMediaChafaTeam = String(selectedModel.id || '').startsWith('mediachafa::');
     let collaborationPanel = null;
     if (usesMediaChafaTeam) {
       collaborationPanel = document.createElement('section');
@@ -2248,7 +2277,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         response = await fetch(`${API}/chat`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value, progressId, collaborationEnabled: Boolean(teamEnabledInput?.checked) }),
+          body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value, progressId, collaborationEnabled: String(modelSelect.value || '').startsWith('mediachafa::') }),
           signal: chatController.signal,
         });
       } catch (error) {
