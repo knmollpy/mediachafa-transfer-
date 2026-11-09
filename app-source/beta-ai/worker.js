@@ -29,7 +29,7 @@ const MAX_BODY_BYTES = 14 * 1024 * 1024;
 const MAX_MEDIA_BYTES = 5 * 1024 * 1024;
 const PROVIDERS = ["github", "supabase", "cloudflare", "vercel", "openrouter", "groq", "gemini", "cohere", "huggingface"];
 // Solo se habilita inferencia con precio cero verificable; otros proveedores quedan fuera del chat hasta poder certificar que su cuenta no factura.
-const MODEL_PROVIDERS = ["openrouter"];
+const MODEL_PROVIDERS = ["openrouter", "groq", "gemini"];
 // IAs propias de MediaChafa: usan primero Workers AI (binding env.AI, cuenta Workers Free:
 // al agotar la cuota gratis Cloudflare devuelve error, no cobra) y después rotan solas a los
 // modelos gratuitos conectados. Nunca se usan modelos pagos.
