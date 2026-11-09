@@ -159,7 +159,7 @@ Para una página web pública: create_repository con visibility "public", despu�
   modelProbe.className = 'beta-model-probe';
   modelProbe.textContent = 'Probar modelo · usa 1 consulta';
   const teamToggleLabel = document.createElement('label');
-  teamToggleLabel.className = 'beta-team-toggle';
+  teamToggleLabel.className = 'beta-team-setting';
   const teamToggle = document.createElement('input');
   teamToggle.type = 'checkbox';
   teamToggle.checked = false;
@@ -172,7 +172,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     try { if (ownerId) localStorage.setItem(`mediachafa-beta-team6:${ownerId}`, useSixAgentTeam ? '1' : '0'); } catch {}
     setStatus(useSixAgentTeam ? 'Equipo de 6 IA activado para tus próximas consultas.' : 'Equipo de 6 IA desactivado: responderá solo la IA seleccionada.');
   });
-  modelControl.append(modelLabel, modelSelect, teamToggleLabel, modelHealthNote, modelCount, modelProbe);
+  modelControl.append(modelLabel, modelSelect, modelHealthNote, modelCount, modelProbe);
   const betaHeader = $('#beta-panel .beta-header');
   betaHeader.insertBefore(modelControl, betaHeader.querySelector('.beta-nav'));
   // Zona de trabajo: cola persistente en Supabase, independiente del historial del chat.
@@ -632,7 +632,6 @@ Para una página web pública: create_repository con visibility "public", despu�
   workspaceStyle.textContent = `
     #beta-panel .beta-model-control{display:flex;flex-direction:column;gap:4px;min-width:220px;max-width:310px;color:#e9dddd;font-size:11px;font-weight:700}
     #beta-panel #beta-model-select{width:100%;min-width:0;padding:8px 10px;border:1px solid #6c2929;border-radius:9px;background:#161010;color:#fff;font-size:12px}
-    #beta-panel .beta-team-toggle{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:600;color:#d4d4d8;cursor:pointer}#beta-panel .beta-team-toggle input{accent-color:#ef4444;width:15px;height:15px;margin:0}
     #beta-panel .beta-model-count{color:#ffadad;font-size:10px;font-weight:500}\n    #beta-panel .beta-model-health{display:block;font-size:10px;line-height:1.4;font-weight:600;color:#b9b9b9}
     #beta-panel .beta-model-health[data-state="ok"]{color:#71e09a}
     #beta-panel .beta-model-health[data-state="error"]{color:#ff7777}
@@ -1603,6 +1602,15 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   const agent = window.MediaChafaBetaAgent;
   const settingsToggle = $('#beta-settings-toggle');
   const settingsPanel = $('#beta-settings');
+  if (settingsPanel && !settingsPanel.contains(teamToggleLabel)) {
+    const teamToggleDescription = document.createElement('small');
+    teamToggleDescription.textContent = 'Al activarlo, Beta coordina seis IA para proponer, revisar y sintetizar. Consume más consultas gratuitas. Desactivado, responde solo el modelo elegido.';
+    const teamToggleCopy = document.createElement('span');
+    teamToggleCopy.append(teamToggleText, teamToggleDescription);
+    teamToggleLabel.replaceChildren(teamToggle, teamToggleCopy);
+    const settingsHeading = settingsPanel.querySelector('h3');
+    settingsHeading ? settingsHeading.after(teamToggleLabel) : settingsPanel.prepend(teamToggleLabel);
+  }
   // The compact Beta layout hides .beta-header; put its settings controls in the
   // persistent sidebar so the gear is visible on desktop and mobile.
   // The controls are mounted into the sidebar at construction time above;
