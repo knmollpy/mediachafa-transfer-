@@ -1,0 +1,94 @@
+name: Build PS4 homebrew PKG for Beta agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      execution_id:
+        description: Beta autonomous execution ID
+        required: false
+        type: string
+      project_path:
+        description: Project directory inside app-source/ps4/
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-agent-ps4-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate project path
+        id: project
+        env:
+          PROJECT_PATH: ${{ inputs.project_path }}
+        run: |
+          if [[ ! "$PROJECT_PATH" =~ ^app-source/ps4/[a-z0-9][a-z0-9._-]{0,63}$ ]]; then
+            echo "project_path must be app-source/ps4/<lowercase-project-name>" >&2
+            exit 1
+          fi
+          if [ ! -f "$PROJECT_PATH/build.sh" ]; then
+            echo "The project must contain build.sh" >&2
+            exit 1
+          fi
+          echo "path=$PROJECT_PATH" >> "$GITHUB_OUTPUT"
+      - name: Install OpenOrbis build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18 python3 python3-pip curl ca-certificates tar
+      - name: Install pinned OpenOrbis PS4 Toolchain
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/toolchain-llvm-18.tar.gz"
+          ROOT="$RUNNER_TEMP/openorbis"
+          mkdir -p "$ROOT"
+          curl --fail --location --retry 3 --output "$ARCHIVE" https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz
+          tar -xzf "$ARCHIVE" -C "$ROOT"
+          SDK_DIR="$(find "$ROOT" -type d -name include -print -quit | xargs -r dirname)"
+          if [ -z "$SDK_DIR" ] || [ ! -d "$SDK_DIR/bin" ]; then
+            echo "OpenOrbis SDK archive layout was not recognized." >&2
+            find "$ROOT" -maxdepth 3 -type d | head -80
+            exit 1
+          fi
+          echo "OO_PS4_TOOLCHAIN=$SDK_DIR" >> "$GITHUB_ENV"
+          echo "$SDK_DIR/bin" >> "$GITHUB_PATH"
+          if [ -d "$SDK_DIR/bin/linux" ]; then echo "$SDK_DIR/bin/linux" >> "$GITHUB_PATH"; fi
+          if [ -f "$SDK_DIR/extra/setup-toolchain.sh" ]; then
+            chmod +x "$SDK_DIR/extra/setup-toolchain.sh"
+            "$SDK_DIR/extra/setup-toolchain.sh"
+          fi
+          find "$SDK_DIR/bin" -type f -exec chmod u+x {} +
+      - name: Build PS4 homebrew package
+        env:
+          PROJECT_PATH: ${{ steps.project.outputs.path }}
+          OO_PS4_TOOLCHAIN: ${{ env.OO_PS4_TOOLCHAIN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROJECT_PATH/dist"
+          chmod +x "$PROJECT_PATH/build.sh"
+          cd "$PROJECT_PATH"
+          ./build.sh
+          cd "$GITHUB_WORKSPACE"
+          mapfile -t packages < <(find "$PROJECT_PATH/dist" -maxdepth 1 -type f -iname '*.pkg' -size +0c)
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "build.sh completed but no non-empty .pkg was found in $PROJECT_PATH/dist/" >&2
+            exit 1
+          fi
+          printf 'Generated package(s):\n'
+          printf '%s\n' "${packages[@]}"
+      - name: Upload PS4 PKG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediachafa-ps4-pkg-${{ github.run_number }}
+          path: ${{ steps.project.outputs.path }}/dist/*.pkg
+          if-no-files-found: error
+          retention-days: 30
