@@ -44,7 +44,7 @@ jobs:
       - name: Install OpenOrbis build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-18 lld-18 python3 python3-pip curl ca-certificates tar
+          sudo apt-get install -y build-essential clang-18 lld-18 python3 python3-pip curl ca-certificates tar
       - name: Install pinned OpenOrbis PS4 Toolchain
         run: |
           set -euo pipefail
@@ -72,7 +72,13 @@ jobs:
           PROJECT_PATH: ${{ steps.project.outputs.path }}
         run: |
           set -euo pipefail
-          mkdir -p "$PROJECT_PATH/dist"
+          mkdir -p "$PROJECT_PATH/dist" "$PROJECT_PATH/sce_sys/about" "$PROJECT_PATH/sce_module"
+          SAMPLE="$OO_PS4_TOOLCHAIN/samples/hello_world"
+          if [ ! -f "$PROJECT_PATH/sce_sys/icon0.png" ] && [ -f "$SAMPLE/sce_sys/icon0.png" ]; then cp "$SAMPLE/sce_sys/icon0.png" "$PROJECT_PATH/sce_sys/icon0.png"; fi
+          if [ ! -f "$PROJECT_PATH/sce_sys/about/right.sprx" ] && [ -f "$SAMPLE/sce_sys/about/right.sprx" ]; then cp "$SAMPLE/sce_sys/about/right.sprx" "$PROJECT_PATH/sce_sys/about/right.sprx"; fi
+          for module in libc.prx libSceFios2.prx; do
+            if [ ! -f "$PROJECT_PATH/sce_module/$module" ] && [ -f "$SAMPLE/sce_module/$module" ]; then cp "$SAMPLE/sce_module/$module" "$PROJECT_PATH/sce_module/$module"; fi
+          done
           chmod +x "$PROJECT_PATH/build.sh"
           cd "$PROJECT_PATH"
           ./build.sh
