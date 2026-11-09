@@ -32,6 +32,7 @@ on:
       - "app-source/beta-visual-check.js"
       - "app-source/index.html"
       - ".github/workflows/beta-agent-tests.yml"
+      - ".github/workflows/change-review-gate.yml"
       - "app-source/package.json"
       - "index.html"
       - "app-source/e2e/**"
