@@ -1581,7 +1581,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     label.innerHTML = '<strong>Modelo para editar o crear imágenes</strong>';
     imageEditorModelSelect = document.createElement('select');
     imageEditorModelSelect.id = 'beta-image-editor-model';
-    imageEditorModelSelect.innerHTML = '<option value="qwen21">Qwen Image 2.1 Uncensored · servidor principal</option><option value="qwen21alt">Qwen Image 2.1 Uncensored · servidor alternativo (misma base)</option><option value="aioQwen">Qwen Image 2.1 Uncensored AIO LoRA (misma base)</option><option value="mossImage">MOSS-Image Uncensored · generación (base distinto)</option>';
+    imageEditorModelSelect.innerHTML = '<option value="qwen21">Qwen Image 2.1 Uncensored · crear y editar</option><option value="mossImage">MOSS-Image Uncensored · solo crear (base distinto)</option>';
     imageEditorModelInfo = document.createElement('p');
     imageEditorModelInfo.id = 'beta-image-editor-model-info';
     imageEditorModelInfo.className = 'beta-settings-note';
@@ -1589,7 +1589,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
   if (imageEditorModelSelect) {
     const savedImageModel = localStorage.getItem('beta-image-editor-model') || 'qwen21';
-    imageEditorModelSelect.value = ['qwen21', 'qwen21alt', 'aioQwen', 'mossImage'].includes(savedImageModel) ? savedImageModel : 'qwen21';
+    imageEditorModelSelect.value = ['qwen21', 'mossImage'].includes(savedImageModel) ? savedImageModel : 'qwen21';
     const updateImageModelInfo = () => {
       const selected = imageEditorModelSelect.value;
       localStorage.setItem('beta-image-editor-model', selected);
@@ -1613,7 +1613,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   imageEditButton.insertAdjacentElement('afterend', imageCreateButton);
   const updateImageActionButtons = () => {
     const selected = imageEditorModelSelect?.value || localStorage.getItem('beta-image-editor-model') || 'qwen21';
-    const canGenerate = ['qwen21', 'qwen21alt', 'aioQwen', 'mossImage'].includes(selected);
+    const canGenerate = ['qwen21', 'mossImage'].includes(selected);
     imageCreateButton.classList.toggle('hidden', !canGenerate);
     imageCreateButton.title = canGenerate ? 'Crear una imagen desde texto con ' + (imageEditorModelNames[selected] || imageEditorModelNames.qwen21) : 'La creación desde texto está disponible con los modelos Qwen y MOSS.';
     imageEditButton.classList.toggle('hidden', !pendingImage || selected === 'mossImage');
