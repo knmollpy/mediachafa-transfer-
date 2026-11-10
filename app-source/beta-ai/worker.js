@@ -1796,7 +1796,7 @@ export default {
           if (action === "edit") {
             mime = `image/${match[1].toLowerCase()}`;
             const binary = atob(match[2]);
-            bytes = Uint8Array.from((character) => character.charCodeAt(0));
+            bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
             if (bytes.byteLength > MAX_MEDIA_BYTES) return json({ error: "La imagen supera el límite de 5 MB." }, 413, origin);
             extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
           }
