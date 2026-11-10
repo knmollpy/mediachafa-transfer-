@@ -1807,7 +1807,7 @@ export default {
           if (!resultResponse.ok) return json({ error: `${model.name} no pudo devolver el resultado (HTTP ${resultResponse.status}).` }, 502, origin);
           const eventStream = await resultResponse.text();
           let completedData = null, eventName = "";
-          for (const line of eventStream.split(/\\r?\\n/)) {
+          for (const line of eventStream.split(/\r?\n/)) {
             if (line.startsWith("event:")) eventName = line.slice(6).trim();
             if (!line.startsWith("data:")) continue;
             let parsed; try { parsed = JSON.parse(line.slice(5).trim()); } catch { continue; }
@@ -1817,7 +1817,7 @@ export default {
           const outputFile = Array.isArray(completedData) ? completedData.find((item) => item && (typeof item === "string" || item.path || item.url)) : null;
           const outputPath = typeof outputFile === "string" ? outputFile : outputFile?.path;
           if (!outputFile) return json({ error: `${model.name} terminó sin devolver una imagen. Puede que ZeroGPU esté ocupado; probá de nuevo más tarde.` }, 502, origin);
-          const outputUrl = typeof outputFile.url === "string" && /^https?:\\/\\//i.test(outputFile.url) ? outputFile.url : `${model.base}/gradio_api/file=${encodeURIComponent(outputPath)}`;
+          const outputUrl = typeof outputFile.url === "string" && /^https?:\/\//i.test(outputFile.url) ? outputFile.url : `${model.base}/gradio_api/file=${encodeURIComponent(outputPath)}`;
           const imageResponse = await fetch(outputUrl, { headers: authHeaders, signal: AbortSignal.timeout(45000) });
           if (!imageResponse.ok) return json({ error: `No se pudo descargar el resultado de ${model.name} (HTTP ${imageResponse.status}).` }, 502, origin);
           const outputBytes = new Uint8Array(await imageResponse.arrayBuffer());
