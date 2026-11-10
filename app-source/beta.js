@@ -1510,7 +1510,19 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
   window.addEventListener('mediachafa:session-ready', () => { void refreshQuota(); });
 
+  const fileDataCache = new WeakMap();
   async function fileToBase64(file) {
+    if (!file) throw new Error('Adjuntá un archivo antes de continuar.');
+    if (fileDataCache.has(file)) return fileDataCache.get(file);
+    const readPromise = readFileToBase64(file).catch((error) => {
+      fileDataCache.delete(file);
+      throw error;
+    });
+    fileDataCache.set(file, readPromise);
+    return readPromise;
+  }
+
+  async function readFileToBase64(file) {
     if (!file || typeof file.size !== 'number' || file.size <= 0) throw new Error('El archivo está vacío o ya no está disponible. Volvé a adjuntarlo.');
     if (file.size > 5 * 1024 * 1024) throw new Error('El archivo supera el límite de 5 MB.');
     try {
@@ -1713,6 +1725,16 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (pendingImage && pendingImage.size > 5 * 1024 * 1024) { pendingImage = undefined; imageInput.value = ''; setStatus('La imagen supera el límite de 5 MB.', 'error'); }
     attachmentLabel(pendingImage, '#beta-image-name');
     imageEditButton.classList.toggle('hidden', !pendingImage);
+    if (pendingImage) {
+      // Snapshot the selected file immediately. Android document providers can
+      // revoke the temporary File handle before the user presses Edit or Send.
+      setStatus('Leyendo imagen adjunta…');
+      void fileToBase64(pendingImage).then(() => {
+        if (pendingImage === imageInput.files?.[0]) setStatus('Imagen lista para editar o enviar.');
+      }).catch((error) => {
+        if (pendingImage === imageInput.files?.[0]) setStatus(error.message || 'No se pudo leer la imagen. Guardala en el dispositivo y volvé a adjuntarla.', 'error');
+      });
+    }
   });
   audioInput.addEventListener('change', () => {
     pendingAudio = audioInput.files?.[0];
