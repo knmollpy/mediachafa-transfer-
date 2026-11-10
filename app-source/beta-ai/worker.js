@@ -1775,6 +1775,60 @@ export default {
       const match = dataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/i);
       if (!prompt) return json({ error: "Explicá qué querés agregar, quitar o modificar en la imagen." }, 400, origin);
       if (!match || dataUrl.length > MAX_MEDIA_BYTES * 1.4) return json({ error: "Para editar, adjuntá una imagen PNG, JPEG o WebP de hasta 5 MB." }, 400, origin);
+      const selectedImageModel = String(payload.model || "qwen21");
+      const imageModelSpaces = {
+        qwen2511: { id: "techfreakworm/qwen-image-editor", base: "https://techfreakworm-qwen-image-editor.hf.space", endpoint: "on_edit_generate", name: "Qwen Image Edit 2511", steps: 4, quota: "ZeroGPU xlarge: 2× cuota (aprox. 2,5 min GPU/día)" },
+        fluxKontext: { id: "zerogpu-aoti/FLUX.1-Kontext-Dev", base: "https://zerogpu-aoti-flux-1-kontext-dev.hf.space", endpoint: "infer", name: "FLUX.1 Kontext Dev", steps: 28, quota: "ZeroGPU estándar: hasta 5 min GPU/día compartidos" },
+      };
+      if (selectedImageModel !== "qwen21" && !imageModelSpaces[selectedImageModel]) return json({ error: "Modelo de edición desconocido." }, 400, origin);
+      if (selectedImageModel !== "qwen21") {
+        const model = imageModelSpaces[selectedImageModel];
+        try {
+          const mime = `image/${match[1].toLowerCase()}`;
+          const binary = atob(match[2]);
+          const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+          if (bytes.byteLength > MAX_MEDIA_BYTES) return json({ error: "La imagen supera el límite de 5 MB." }, 413, origin);
+          const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
+          const uploadForm = new FormData();
+          uploadForm.append("files", new Blob([bytes], { type: mime }), `mediachafa-input.${extension}`);
+          const authHeaders = { Authorization: `Bearer ${token}` };
+          const uploadResponse = await fetch(`${model.base}/gradio_api/upload`, { method: "POST", headers: authHeaders, body: uploadForm, signal: AbortSignal.timeout(45000) });
+          const uploadResult = await uploadResponse.json().catch(() => null);
+          const uploadedPath = Array.isArray(uploadResult) ? uploadResult[0] : uploadResult?.files?.[0];
+          if (!uploadResponse.ok || typeof uploadedPath !== "string") return json({ error: `${model.name} no aceptó la imagen (HTTP ${uploadResponse.status}). El Space puede estar ocupado o fuera de línea.` }, 502, origin);
+          const imageFile = { path: uploadedPath, url: null, size: bytes.byteLength, orig_name: `mediachafa-input.${extension}`, mime_type: mime, meta: { _type: "gradio.FileData" } };
+          const data = selectedImageModel === "qwen2511"
+            ? [imageFile, prompt, "Fast", 4, 1.0, "", -1, "", "", 1.0]
+            : [imageFile, prompt, 42, true, 2.5, 28];
+          const submitResponse = await fetch(`${model.base}/gradio_api/call/${model.endpoint}`, { method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" }, body: JSON.stringify({ data }), signal: AbortSignal.timeout(45000) });
+          const submitted = await submitResponse.json().catch(() => ({}));
+          if (!submitResponse.ok || !submitted.event_id) return json({ error: `${model.name} no pudo iniciar la edición (HTTP ${submitResponse.status}).` }, 502, origin);
+          const resultResponse = await fetch(`${model.base}/gradio_api/call/${model.endpoint}/${encodeURIComponent(submitted.event_id)}`, { headers: authHeaders, signal: AbortSignal.timeout(180000) });
+          if (!resultResponse.ok) return json({ error: `${model.name} no pudo devolver el resultado (HTTP ${resultResponse.status}).` }, 502, origin);
+          const eventStream = await resultResponse.text();
+          let completedData = null, eventName = "";
+          for (const line of eventStream.split(/\\r?\\n/)) {
+            if (line.startsWith("event:")) eventName = line.slice(6).trim();
+            if (!line.startsWith("data:")) continue;
+            let parsed; try { parsed = JSON.parse(line.slice(5).trim()); } catch { continue; }
+            if (eventName === "error" || (parsed && !Array.isArray(parsed) && parsed.error)) return json({ error: `${model.name}: ${String(parsed?.error || parsed || "falló el Space").slice(0,300)}` }, 502, origin);
+            if (eventName === "complete") completedData = parsed;
+          }
+          const outputFile = Array.isArray(completedData) ? completedData.find((item) => item && (typeof item === "string" || item.path || item.url)) : null;
+          const outputPath = typeof outputFile === "string" ? outputFile : outputFile?.path;
+          if (!outputFile) return json({ error: `${model.name} terminó sin devolver una imagen. Puede que ZeroGPU esté ocupado; probá de nuevo más tarde.` }, 502, origin);
+          const outputUrl = typeof outputFile.url === "string" && /^https?:\\/\\//i.test(outputFile.url) ? outputFile.url : `${model.base}/gradio_api/file=${encodeURIComponent(outputPath)}`;
+          const imageResponse = await fetch(outputUrl, { headers: authHeaders, signal: AbortSignal.timeout(45000) });
+          if (!imageResponse.ok) return json({ error: `No se pudo descargar el resultado de ${model.name} (HTTP ${imageResponse.status}).` }, 502, origin);
+          const outputBytes = new Uint8Array(await imageResponse.arrayBuffer());
+          if (!outputBytes.byteLength || outputBytes.byteLength > 12 * 1024 * 1024) return json({ error: "La imagen final está vacía o supera el límite de respuesta." }, 502, origin);
+          let binaryOutput = "";
+          for (let offset = 0; offset < outputBytes.length; offset += 0x8000) binaryOutput += String.fromCharCode(...outputBytes.subarray(offset, offset + 0x8000));
+          return json({ ok: true, image: btoa(binaryOutput), mime: imageResponse.headers.get("content-type")?.startsWith("image/") ? imageResponse.headers.get("content-type").split(";")[0] : "image/png", model: model.name }, 200, origin);
+        } catch (error) {
+          return json({ error: `Falló la edición con ${model.name}: ${String(error?.message || "error de inferencia").slice(0,300)}` }, 502, origin);
+        }
+      }
       try {
         const mime = `image/${match[1].toLowerCase()}`;
         const binary = atob(match[2]);
