@@ -1776,10 +1776,10 @@ export default {
       const match = dataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/i);
       const selectedImageModel = String(payload.model || "qwen21");
       if (!prompt) return json({ error: "Escribí una descripción para crear o editar la imagen." }, 400, origin);
-      if (action === "generate" && !["qwen21", "qwen21alt", "noctqv4"].includes(selectedImageModel)) return json({ error: "Este modelo solo permite editar imágenes." }, 400, origin);
+      if (action === "generate" && !["qwen21", "qwen21alt", "aioQwen"].includes(selectedImageModel)) return json({ error: "Este modelo solo permite editar imágenes." }, 400, origin);
       if (action === "edit" && (!match || dataUrl.length > MAX_MEDIA_BYTES * 1.4)) return json({ error: "Para editar, adjuntá una imagen PNG, JPEG o WebP de hasta 5 MB." }, 400, origin);
       const imageModelSpaces = {
-        noctqv4: { id: "acloudguy/noct-q-studio", base: "https://acloudguy-noct-q-studio.hf.space", endpoint: "generate", name: "Noct Q V4 Uncensored", family: "noctq", quota: "ZeroGPU gratuito compartido" },
+        aioQwen: { id: "Daverrrr75/qwen-image-2.1-uncensored-aio-loras", base: "https://daverrrr75-qwen-image-2-1-uncensored-aio-loras.hf.space", endpoint: "generate", name: "Qwen 2.1 Uncensored AIO LoRA", family: "aioQwen", quota: "ZeroGPU gratuito compartido" },
         qwen2511: { id: "techfreakworm/qwen-image-editor", base: "https://techfreakworm-qwen-image-editor.hf.space", endpoint: "on_edit_generate", name: "Qwen Image Edit 2511", steps: 4, quota: "ZeroGPU xlarge: 2× cuota (aprox. 2,5 min GPU/día)", family: "qwen2511" },
         fluxKontext: { id: "zerogpu-aoti/FLUX.1-Kontext-Dev", base: "https://zerogpu-aoti-flux-1-kontext-dev.hf.space", endpoint: "infer", name: "FLUX.1 Kontext Dev", steps: 28, quota: "ZeroGPU estándar: hasta 5 min GPU/día compartidos", family: "flux" },
       };
@@ -1831,9 +1831,9 @@ export default {
           }
           const data = model.family === "qwen2511"
             ? [imageFile, prompt, "Fast", 4, 1.0, "", -1, "", "", 1.0]
-            : model.family === "noctq"
+            : model.family === "aioQwen"
               ? [prompt, "", "1024x1024", 25, 3, -1, true, imageFile]
-              : [imageFile, prompt, 42, true, 2.5, 28];
+              : model.family === "aioQwen" ? [prompt, "Edit Image (1 Ref)", imageFile, null, "None (Base Uncensored)", 1.0, "", "", "Square · 1:1 (1024x1024)", 30, 42, true] : [imageFile, prompt, 42, true, 2.5, 28];
           const submitResponse = await fetch(`${model.base}/gradio_api/call/${model.endpoint}`, { method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" }, body: JSON.stringify({ data }), signal: AbortSignal.timeout(45000) });
           const submitted = await submitResponse.json().catch(() => ({}));
           if (!submitResponse.ok || !submitted.event_id) return json({ error: `${model.name} no pudo iniciar la edición (HTTP ${submitResponse.status}).` }, 502, origin);
@@ -1849,7 +1849,7 @@ export default {
             if (eventName === "error" || (parsed && !Array.isArray(parsed) && parsed.error)) return json({ error: `${model.name}: ${String(parsed?.error || parsed || "falló el Space").slice(0,300)}` }, 502, origin);
             if (eventName === "complete") completedData = parsed;
           }
-          const outputFile = Array.isArray(completedData) ? completedData.find((item) => item && (typeof item === "string" || item.path || item.url)) : null;
+          const outputFile = Array.isArray(completedData) ? (model.family === "aioQwen" ? completedData[0] : completedData.find((item) => item && (typeof item === "string" || item.path || item.url))) : null;
           const outputPath = typeof outputFile === "string" ? outputFile : outputFile?.path;
           if (!outputFile) return json({ error: `${model.name} terminó sin devolver una imagen. Puede que ZeroGPU esté ocupado; probá de nuevo más tarde.` }, 502, origin);
           const outputUrl = typeof outputFile.url === "string" && /^https?:\/\//i.test(outputFile.url) ? outputFile.url : `${model.base}/gradio_api/file=${encodeURIComponent(outputPath)}`;
