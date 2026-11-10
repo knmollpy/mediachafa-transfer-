@@ -1779,12 +1779,12 @@ export default {
       if (action === "generate" && selectedImageModel !== "qwen21") return json({ error: "La creación desde texto está disponible por ahora con Qwen Image 2.1 Uncensored. Elegí ese modelo en Ajustes." }, 400, origin);
       if (action === "edit" && (!match || dataUrl.length > MAX_MEDIA_BYTES * 1.4)) return json({ error: "Para editar, adjuntá una imagen PNG, JPEG o WebP de hasta 5 MB." }, 400, origin);
       const imageModelSpaces = {
-        qwen2511: { id: "techfreakworm/qwen-image-editor", base: "https://techfreakworm-qwen-image-editor.hf.space", endpoint: "on_edit_generate", name: "Qwen Image Edit 2511", steps: 4, quota: "ZeroGPU xlarge: 2× cuota (aprox. 2,5 min GPU/día)" },
-        fluxKontext: { id: "zerogpu-aoti/FLUX.1-Kontext-Dev", base: "https://zerogpu-aoti-flux-1-kontext-dev.hf.space", endpoint: "infer", name: "FLUX.1 Kontext Dev", steps: 28, quota: "ZeroGPU estándar: hasta 5 min GPU/día compartidos" },
+        qwen2511: { id: "techfreakworm/qwen-image-editor", base: "https://techfreakworm-qwen-image-editor.hf.space", endpoint: "on_edit_generate", name: "Qwen Image Edit 2511", steps: 4, quota: "ZeroGPU xlarge: 2× cuota (aprox. 2,5 min GPU/día)", family: "qwen2511" },
+        fluxKontext: { id: "zerogpu-aoti/FLUX.1-Kontext-Dev", base: "https://zerogpu-aoti-flux-1-kontext-dev.hf.space", endpoint: "infer", name: "FLUX.1 Kontext Dev", steps: 28, quota: "ZeroGPU estándar: hasta 5 min GPU/día compartidos", family: "flux" },
       };
       if (selectedImageModel !== "qwen21" && !imageModelSpaces[selectedImageModel]) return json({ error: "Modelo de edición desconocido." }, 400, origin);
       if (selectedImageModel !== "qwen21") {
-        const model = imageModelSpaces[selectedImageModel];
+        let model = imageModelSpaces[selectedImageModel];
         const hfToken = await storedToken(env, user.id, "huggingface");
         if (!hfToken) return json({ error: "Conectá Hugging Face en Integraciones con un token gratuito de permiso Read." }, 409, origin);
         try {
@@ -1796,12 +1796,29 @@ export default {
           const uploadForm = new FormData();
           uploadForm.append("files", new Blob([bytes], { type: mime }), `mediachafa-input.${extension}`);
           const authHeaders = { Authorization: `Bearer ${hfToken}` };
-          const uploadResponse = await fetch(`${model.base}/gradio_api/upload`, { method: "POST", headers: authHeaders, body: uploadForm, signal: AbortSignal.timeout(45000) });
-          const uploadResult = await uploadResponse.json().catch(() => null);
-          const uploadedPath = Array.isArray(uploadResult) ? uploadResult[0] : uploadResult?.files?.[0];
-          if (!uploadResponse.ok || typeof uploadedPath !== "string") return json({ error: `${model.name} no aceptó la imagen (HTTP ${uploadResponse.status}). El Space puede estar ocupado o fuera de línea.` }, 502, origin);
+          const uploadToSpace = async (space) => {
+            let response;
+            for (let attempt = 0; attempt < 3; attempt++) {
+              response = await fetch(`${space.base}/gradio_api/upload`, { method: "POST", headers: authHeaders, body: uploadForm, signal: AbortSignal.timeout(60000) });
+              if (response.status !== 503 || attempt === 2) break;
+              await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+            }
+            const result = await response.json().catch(() => null);
+            const path = Array.isArray(result) ? result[0] : result?.files?.[0];
+            return { response, result, path };
+          };
+          let uploaded = await uploadToSpace(model);
+          if ((!uploaded.response.ok || typeof uploaded.path !== "string") && selectedImageModel === "fluxKontext" && uploaded.response.status === 503) {
+            model = imageModelSpaces.qwen2511;
+            uploaded = await uploadToSpace(model);
+          }
+          const { response: uploadResponse, result: uploadResult, path: uploadedPath } = uploaded;
+          if (!uploadResponse.ok || typeof uploadedPath !== "string") {
+            const detail = String(uploadResult?.error || `HTTP ${uploadResponse.status}`).slice(0, 220);
+            return json({ error: `${model.name} no aceptó la imagen (${detail}). Se reintentó el Space y el modelo alternativo gratuito cuando FLUX no estuvo disponible. Hugging Face puede seguir sin GPU; probá nuevamente en unos minutos.` }, 502, origin);
+          }
           const imageFile = { path: uploadedPath, url: null, size: bytes.byteLength, orig_name: `mediachafa-input.${extension}`, mime_type: mime, meta: { _type: "gradio.FileData" } };
-          const data = selectedImageModel === "qwen2511"
+          const data = model.family === "qwen2511"
             ? [imageFile, prompt, "Fast", 4, 1.0, "", -1, "", "", 1.0]
             : [imageFile, prompt, 42, true, 2.5, 28];
           const submitResponse = await fetch(`${model.base}/gradio_api/call/${model.endpoint}`, { method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" }, body: JSON.stringify({ data }), signal: AbortSignal.timeout(45000) });
