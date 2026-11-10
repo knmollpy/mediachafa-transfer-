@@ -1542,9 +1542,32 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 
   function attachmentLabel(file, selector) { $(selector).textContent = file ? `Adjunto: ${file.name}` : ''; }
 
-  const imageEditorModelSelect = $('#beta-image-editor-model');
-  const imageEditorModelInfo = $('#beta-image-editor-model-info');
-  const imageEditorModelDetails = {"qwen21":"Razonamiento: no aplica (modelo de difusión). Fidelidad alta. Límite: 5 min GPU/día de ZeroGPU compartidos entre Spaces; cola variable.","qwen2511":"Razonamiento: no aplica (modelo de difusión). Fidelidad muy alta; modo rápido de 4 pasos. Límite: ZeroGPU xlarge consume 2×; aprox. 2,5 min GPU/día equivalentes.","fluxKontext":"Razonamiento: no aplica (modelo de difusión). Fidelidad alta y buena edición contextual. Límite: hasta 5 min GPU/día de ZeroGPU compartidos entre Spaces."};
+  const imageEditorModelDetails = {
+    qwen21: "Editar y generar desde texto · Qwen Image 2.1 Uncensored. Sin filtro de seguridad añadido por esta integración. ZeroGPU gratis: hasta 5 min GPU/día compartidos; cola variable.",
+    qwen2511: "Editar imágenes · Qwen Image Edit 2511 Fast (4 pasos). No se anuncia como uncensored; el Space puede aplicar sus propias restricciones. ZeroGPU xlarge consume 2× cuota (aprox. 2,5 min/día equivalentes).",
+    fluxKontext: "Editar imágenes · FLUX.1 Kontext Dev. No se garantiza modo uncensored; depende del Space anfitrión. ZeroGPU estándar: hasta 5 min GPU/día compartidos."
+  };
+  let imageEditorModelSelect = $('#beta-image-editor-model');
+  let imageEditorModelInfo = $('#beta-image-editor-model-info');
+  let imageEditorSetting = $('.beta-image-editor-setting');
+  const imageSettingsPanel = $('#beta-settings');
+  if (imageSettingsPanel && !imageEditorSetting) {
+    imageEditorSetting = document.createElement('div');
+    imageEditorSetting.className = 'beta-image-editor-setting';
+    imageSettingsPanel.insertBefore(imageEditorSetting, imageSettingsPanel.children[1] || null);
+  }
+  if (imageEditorSetting && !imageEditorModelSelect) {
+    const label = document.createElement('label');
+    label.htmlFor = 'beta-image-editor-model';
+    label.innerHTML = '<strong>Modelo para editar o crear imágenes</strong>';
+    imageEditorModelSelect = document.createElement('select');
+    imageEditorModelSelect.id = 'beta-image-editor-model';
+    imageEditorModelSelect.innerHTML = '<option value="qwen21">Qwen Image 2.1 Uncensored · editar y crear</option><option value="qwen2511">Qwen Image Edit 2511 · edición rápida</option><option value="fluxKontext">FLUX.1 Kontext Dev · edición contextual</option>';
+    imageEditorModelInfo = document.createElement('p');
+    imageEditorModelInfo.id = 'beta-image-editor-model-info';
+    imageEditorModelInfo.className = 'beta-settings-note';
+    imageEditorSetting.replaceChildren(label, imageEditorModelSelect, imageEditorModelInfo);
+  }
   if (imageEditorModelSelect) {
     const savedImageModel = localStorage.getItem('beta-image-editor-model') || 'qwen21';
     imageEditorModelSelect.value = ['qwen21', 'qwen2511', 'fluxKontext'].includes(savedImageModel) ? savedImageModel : 'qwen21';
@@ -1556,6 +1579,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     imageEditorModelSelect.addEventListener('change', updateImageModelInfo);
     updateImageModelInfo();
   }
+  if (imageEditorSetting && imageSettingsPanel && imageEditorSetting.parentElement !== imageSettingsPanel) imageSettingsPanel.prepend(imageEditorSetting);
   const imageEditButton = document.createElement('button');
   imageEditButton.type = 'button';
   imageEditButton.className = 'secondary hidden';
@@ -1662,28 +1686,43 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
   settingsToggle?.addEventListener('click', () => {
     const opening = settingsPanel.classList.contains('hidden');
-    settingsPanel.classList.toggle('hidden', !opening);
-    settingsToggle.setAttribute('aria-expanded', String(opening));
-    if (opening && window.matchMedia('(max-width: 900px)').matches) {
-      // The mobile sidebar is a horizontally scrollable row; a normal-flow
-      // settings panel gets clipped off-screen. Anchor it as a viewport overlay.
+    if (opening) {
+      // Detach the panel from the horizontally scrolling mobile sidebar before
+      // showing it: some Android browsers clip even fixed descendants there.
+      document.body.append(settingsPanel);
+      settingsPanel.classList.remove('hidden');
+      settingsPanel.classList.add('beta-settings-floating');
       const rect = settingsToggle.getBoundingClientRect();
-      const top = Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 220));
-      settingsPanel.style.position = 'fixed';
-      settingsPanel.style.top = `${top}px`;
-      settingsPanel.style.left = 'auto';
-      settingsPanel.style.right = '12px';
-      settingsPanel.style.width = 'min(360px, calc(100vw - 24px))';
-      settingsPanel.style.maxHeight = `${Math.max(160, window.innerHeight - top - 16)}px`;
-      settingsPanel.style.overflowY = 'auto';
-    } else if (!opening) {
+      const width = Math.min(380, window.innerWidth - 24);
+      const left = Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12));
+      const top = Math.max(12, Math.min(rect.bottom + 8, window.innerHeight - 260));
+      Object.assign(settingsPanel.style, {
+        position: 'fixed', display: 'grid', zIndex: '100000',
+        top: `${top}px`, left: `${left}px`, right: 'auto',
+        width: `${width}px`, maxWidth: 'calc(100vw - 24px)',
+        maxHeight: `${Math.max(180, window.innerHeight - top - 16)}px`,
+        overflowY: 'auto', padding: '14px', gap: '12px',
+        background: '#15171d', color: '#fff',
+        border: '1px solid #704040', borderRadius: '14px',
+        boxShadow: '0 16px 48px #000c'
+      });
+      settingsToggle.setAttribute('aria-expanded', 'true');
+      imageEditorModelSelect?.focus({ preventScroll: true });
+    } else {
+      settingsPanel.classList.add('hidden');
+      settingsPanel.classList.remove('beta-settings-floating');
       settingsPanel.removeAttribute('style');
+      if (betaSidebarForSettings) betaSidebarForSettings.insertBefore(settingsPanel, betaSidebarSection);
+      settingsToggle.setAttribute('aria-expanded', 'false');
     }
   });
   settingsPanel?.addEventListener('click', event => event.stopPropagation());
   document.addEventListener('click', event => {
     if (!settingsPanel?.classList.contains('hidden') && !settingsPanel.contains(event.target) && !settingsToggle?.contains(event.target)) {
       settingsPanel.classList.add('hidden');
+      settingsPanel.classList.remove('beta-settings-floating');
+      settingsPanel.removeAttribute('style');
+      if (betaSidebarForSettings) betaSidebarForSettings.insertBefore(settingsPanel, betaSidebarSection);
       settingsToggle?.setAttribute('aria-expanded', 'false');
     }
   });
