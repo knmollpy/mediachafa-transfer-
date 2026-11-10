@@ -65,14 +65,23 @@ test("Beta coloca el interruptor del equipo dentro de Ajustes, fuera del composi
   console.log("BETA_SETTINGS_DEBUG", JSON.stringify(debug));
 
   const gear = page.locator("#beta-panel .beta-sidebar #beta-settings-toggle");
-  const settings = page.locator("#beta-panel #beta-settings");
+  // Settings float under document.body while open so mobile browsers do not
+  // clip the panel inside the horizontally scrolling sidebar.
+  const settings = page.locator("#beta-settings");
   await expect(gear).toBeAttached();
   await expect(gear).toBeVisible();
   await expect(page.locator("#beta-form .beta-mode-select")).toHaveCount(0);
   await expect(settings.locator("#beta-team-enabled")).toBeAttached();
+  const modelSelect = settings.locator("#beta-image-editor-model");
+  await expect(modelSelect.locator("option")).toHaveCount(2);
+  await expect(modelSelect.locator('option[value="mossImage"]')).toHaveCount(1);
+  await expect(modelSelect.locator('option[value="qwen21alt"], option[value="aioQwen"]')).toHaveCount(0);
 
   await gear.click();
   await expect(settings).toBeVisible();
+  await expect(settings).toHaveClass(/beta-settings-floating/);
   await expect(gear).toBeVisible();
+  await gear.click();
+  await expect(settings).toBeHidden();
   expect(pageErrors, "Beta no debe lanzar errores JavaScript al abrirse").toEqual([]);
 });
