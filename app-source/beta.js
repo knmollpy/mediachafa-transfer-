@@ -1521,6 +1521,20 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 
   function attachmentLabel(file, selector) { $(selector).textContent = file ? `Adjunto: ${file.name}` : ''; }
 
+  const imageEditorModelSelect = $('#beta-image-editor-model');
+  const imageEditorModelInfo = $('#beta-image-editor-model-info');
+  const imageEditorModelDetails = {"qwen21":"Razonamiento: no aplica (modelo de difusión). Fidelidad alta. Límite: 5 min GPU/día de ZeroGPU compartidos entre Spaces; cola variable.","qwen2511":"Razonamiento: no aplica (modelo de difusión). Fidelidad muy alta; modo rápido de 4 pasos. Límite: ZeroGPU xlarge consume 2×; aprox. 2,5 min GPU/día equivalentes.","fluxKontext":"Razonamiento: no aplica (modelo de difusión). Fidelidad alta y buena edición contextual. Límite: hasta 5 min GPU/día de ZeroGPU compartidos entre Spaces."};
+  if (imageEditorModelSelect) {
+    const savedImageModel = localStorage.getItem('beta-image-editor-model') || 'qwen21';
+    imageEditorModelSelect.value = ['qwen21', 'qwen2511', 'fluxKontext'].includes(savedImageModel) ? savedImageModel : 'qwen21';
+    const updateImageModelInfo = () => {
+      const selected = imageEditorModelSelect.value;
+      localStorage.setItem('beta-image-editor-model', selected);
+      if (imageEditorModelInfo) imageEditorModelInfo.textContent = imageEditorModelDetails[selected] || imageEditorModelDetails.qwen21;
+    };
+    imageEditorModelSelect.addEventListener('change', updateImageModelInfo);
+    updateImageModelInfo();
+  }
   const imageEditButton = document.createElement('button');
   imageEditButton.type = 'button';
   imageEditButton.className = 'secondary hidden';
@@ -1538,14 +1552,17 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     }
     imageEditButton.disabled = true;
     imageEditButton.textContent = 'Editando…';
-    setStatus('Editando la imagen con Qwen Image 2.1 Uncensored…');
-    activity('Procesando la edición con Qwen Image 2.1.', 'active');
+    const imageEditorModel = $('#beta-image-editor-model')?.value || localStorage.getItem('beta-image-editor-model') || 'qwen21';
+    const imageEditorNames = { qwen21: 'Qwen Image 2.1 Uncensored', qwen2511: 'Qwen Image Edit 2511', fluxKontext: 'FLUX.1 Kontext Dev' };
+    const imageEditorName = imageEditorNames[imageEditorModel] || imageEditorNames.qwen21;
+    setStatus(`Editando con ${imageEditorName}…`);
+    activity(`Procesando la edición con ${imageEditorName}.`, 'active');
     try {
       const auth = await currentSession();
       const response = await fetch(`${API}/image-edit`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, image: { data: await fileToBase64(pendingImage) } }),
+        body: JSON.stringify({ prompt, model: imageEditorModel, image: { data: await fileToBase64(pendingImage) } }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.image) throw new Error(data.error || 'No se pudo editar la imagen.');
@@ -1554,7 +1571,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const resultMessage = addMessage('assistant', 'Listo. Esta es la imagen editada. Podés abrirla o guardarla.');
       const preview = document.createElement('img');
       preview.src = imageUrl;
-      preview.alt = 'Imagen editada por Qwen en MediaChafa';
+      preview.alt = `Imagen editada por ${data.model || imageEditorName} en MediaChafa`;
       preview.loading = 'lazy';
       preview.style.cssText = 'display:block;max-width:100%;height:auto;max-height:720px;object-fit:contain;border-radius:12px;margin:10px 0;border:1px solid rgba(130,160,190,.25)';
       const download = document.createElement('a');
@@ -1573,7 +1590,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       imageInput.value = '';
       attachmentLabel(undefined, '#beta-image-name');
       imageEditButton.classList.add('hidden');
-      setStatus('Edición terminada. La imagen está lista para guardar.');
+      setStatus(`Edición terminada con ${data.model || imageEditorName}. La imagen está lista para guardar.`);
       activity('Imagen editada y entregada en el chat.', 'done');
     } catch (error) {
       setStatus(error.message || 'No se pudo editar la imagen.', 'error');
