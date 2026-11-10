@@ -1422,6 +1422,23 @@ async function openRouterQuota(token) {
   return { used: Number(freeUsage.used || 0), providerLimit: Number(freeUsage.limit || 50), providerRemaining: Number(freeUsage.remaining ?? Math.max(0, 50 - Number(freeUsage.used || 0))) };
 }
 
+export function buildAioQwenInputData(prompt, action, imageFile) {
+  return [
+    prompt,
+    action === "generate" ? "Text to Image" : "Edit Image (1 Ref)",
+    imageFile,
+    null,
+    "None (Base Uncensored)",
+    1.0,
+    "",
+    "",
+    "Square · 1:1 (1024x1024)",
+    30,
+    42,
+    true,
+  ];
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
@@ -1832,8 +1849,8 @@ export default {
           const data = model.family === "qwen2511"
             ? [imageFile, prompt, "Fast", 4, 1.0, "", -1, "", "", 1.0]
             : model.family === "aioQwen"
-              ? [prompt, "", "1024x1024", 25, 3, -1, true, imageFile]
-              : model.family === "aioQwen" ? [prompt, "Edit Image (1 Ref)", imageFile, null, "None (Base Uncensored)", 1.0, "", "", "Square · 1:1 (1024x1024)", 30, 42, true] : [imageFile, prompt, 42, true, 2.5, 28];
+              ? buildAioQwenInputData(prompt, action, imageFile)
+              : [imageFile, prompt, 42, true, 2.5, 28];
           const submitResponse = await fetch(`${model.base}/gradio_api/call/${model.endpoint}`, { method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" }, body: JSON.stringify({ data }), signal: AbortSignal.timeout(45000) });
           const submitted = await submitResponse.json().catch(() => ({}));
           if (!submitResponse.ok || !submitted.event_id) return json({ error: `${model.name} no pudo iniciar la edición (HTTP ${submitResponse.status}).` }, 502, origin);

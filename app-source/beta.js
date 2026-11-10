@@ -1554,10 +1554,15 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 
   function attachmentLabel(file, selector) { $(selector).textContent = file ? `Adjunto: ${file.name}` : ''; }
 
+  const imageEditorModelNames = {
+    qwen21: "Qwen Image 2.1 Uncensored · servidor principal",
+    qwen21alt: "Qwen Image 2.1 Uncensored · servidor alternativo",
+    aioQwen: "Qwen Image 2.1 Uncensored AIO LoRA"
+  };
   const imageEditorModelDetails = {
-    qwen21: "Crear y editar · Qwen Image 2.1 con LoRA uncensored. Sin safety checker declarado por el Space; ZeroGPU gratuito y cola compartida.",
-    qwen21alt: "Crear y editar · Qwen Image 2.1 Uncensored (Space alternativo). Mismo modelo base; host alternativo gratuito.",
-    aioQwen: "Crear y editar · implementación independiente Qwen 2.1 Uncensored AIO con base sin filtro de prompts ni safety checker añadido. ZeroGPU gratuito compartido; cola variable."
+    qwen21: "Crear y editar · Qwen Image 2.1 Uncensored. Servidor principal; el proyecto declara el modo Base Uncensored sin safety checker. ZeroGPU gratuito compartido.",
+    qwen21alt: "Crear y editar · la misma base Qwen Image 2.1 Uncensored en un Space independiente. Es una ruta alternativa, no un modelo distinto. ZeroGPU gratuito; cola variable.",
+    aioQwen: "Crear y editar · la misma base Qwen Image 2.1 Uncensored con una colección de LoRAs en otra implementación. No es un modelo base distinto. ZeroGPU gratuito compartido."
   };
   let imageEditorModelSelect = $('#beta-image-editor-model');
   let imageEditorModelInfo = $('#beta-image-editor-model-info');
@@ -1607,7 +1612,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   const updateImageActionButtons = () => {
     const selected = imageEditorModelSelect?.value || localStorage.getItem('beta-image-editor-model') || 'qwen21';
     imageCreateButton.classList.toggle('hidden', !['qwen21', 'qwen21alt', 'aioQwen'].includes(selected));
-    imageCreateButton.title = ['qwen21', 'qwen21alt', 'aioQwen'].includes(selected) ? 'Crear una imagen desde texto con Qwen Image 2.1 Uncensored' : 'La creación desde texto está disponible con Qwen Image 2.1 Uncensored';
+    imageCreateButton.title = ['qwen21', 'qwen21alt', 'aioQwen'].includes(selected) ? `Crear una imagen desde texto con ${imageEditorModelNames[selected] || imageEditorModelNames.qwen21}` : 'La creación desde texto está disponible con Qwen Image 2.1 Uncensored';
   };
   imageEditorModelSelect?.addEventListener('change', updateImageActionButtons);
   updateImageActionButtons();
@@ -1618,7 +1623,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (pendingImage) { setStatus('Para crear desde texto, quitá primero la imagen adjunta o usá Editar imagen.', 'error'); return; }
     imageCreateButton.disabled = true;
     imageCreateButton.textContent = 'Creando…';
-    const imageEditorName = 'Qwen Image 2.1 Uncensored';
+    const imageEditorName = imageEditorModelNames[imageEditorModelSelect?.value] || imageEditorModelNames.qwen21;
     setStatus('Creando imagen con Qwen Image 2.1 Uncensored…');
     activity('Generando una imagen desde texto con Qwen Image 2.1 Uncensored.', 'active');
     try {
@@ -1650,8 +1655,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       history = history.slice(-30);
       saveHistory();
       input.value = '';
-      setStatus('Imagen creada con Qwen Image 2.1 Uncensored. Ya podés guardarla.');
-      activity('Imagen creada y entregada en el chat.', 'done');
+      setStatus(`Imagen creada con ${data.model || imageEditorName}. Ya podés guardarla.`);
+      activity(`Imagen creada con ${data.model || imageEditorName} y entregada en el chat.`, 'done');
     } catch (error) {
       setStatus(error.message || 'No se pudo crear la imagen.', 'error');
       activity(error.message || 'No se pudo crear la imagen.', 'error');
@@ -1672,8 +1677,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     imageEditButton.disabled = true;
     imageEditButton.textContent = 'Editando…';
     const imageEditorModel = $('#beta-image-editor-model')?.value || localStorage.getItem('beta-image-editor-model') || 'qwen21';
-    const imageEditorNames = { qwen21: 'Qwen Image 2.1 Uncensored', qwen21alt: 'Qwen Image 2.1 Uncensored (Space alternativo)', aioQwen: 'Noct Q V4 Uncensored' };
-    const imageEditorName = imageEditorNames[imageEditorModel] || imageEditorNames.qwen21;
+    const imageEditorName = imageEditorModelNames[imageEditorModel] || imageEditorModelNames.qwen21;
     setStatus(`Editando con ${imageEditorName}…`);
     activity(`Procesando la edición con ${imageEditorName}.`, 'active');
     try {
