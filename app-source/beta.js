@@ -1581,7 +1581,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     label.innerHTML = '<strong>Modelo para editar o crear imágenes</strong>';
     imageEditorModelSelect = document.createElement('select');
     imageEditorModelSelect.id = 'beta-image-editor-model';
-    imageEditorModelSelect.innerHTML = '<option value="qwen21">Qwen Image 2.1 Uncensored · crear y editar</option><option value="qwen21alt">Qwen Image 2.1 Uncensored · crear y editar (Space alternativo)</option><option value="aioQwen">Qwen 2.1 Uncensored AIO LoRA · crear y editar</option>';
+    imageEditorModelSelect.innerHTML = '<option value="qwen21">Qwen Image 2.1 Uncensored · servidor principal</option><option value="qwen21alt">Qwen Image 2.1 Uncensored · servidor alternativo (misma base)</option><option value="aioQwen">Qwen Image 2.1 Uncensored AIO LoRA (misma base)</option><option value="mossImage">MOSS-Image Uncensored · generación (base distinto)</option>';
     imageEditorModelInfo = document.createElement('p');
     imageEditorModelInfo.id = 'beta-image-editor-model-info';
     imageEditorModelInfo.className = 'beta-settings-note';
@@ -1609,7 +1609,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   imageCreateButton.type = 'button';
   imageCreateButton.className = 'secondary';
   imageCreateButton.textContent = 'Crear imagen';
-  imageCreateButton.setAttribute('aria-label', 'Crear imagen desde texto con Qwen Image 2.1 Uncensored');
+  imageCreateButton.setAttribute('aria-label', 'Crear imagen desde texto con el modelo seleccionado');
   imageEditButton.insertAdjacentElement('afterend', imageCreateButton);
   const updateImageActionButtons = () => {
     const selected = imageEditorModelSelect?.value || localStorage.getItem('beta-image-editor-model') || 'qwen21';
@@ -1628,8 +1628,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     imageCreateButton.disabled = true;
     imageCreateButton.textContent = 'Creando…';
     const imageEditorName = imageEditorModelNames[imageEditorModelSelect?.value] || imageEditorModelNames.qwen21;
-    setStatus('Creando imagen con Qwen Image 2.1 Uncensored…');
-    activity('Generando una imagen desde texto con Qwen Image 2.1 Uncensored.', 'active');
+    setStatus('Creando imagen con ' + imageEditorName + '…');
+    activity('Generando una imagen desde texto con ' + imageEditorName + '.', 'active');
     try {
       const auth = await currentSession();
       const response = await fetch(`${API}/image-edit`, {
