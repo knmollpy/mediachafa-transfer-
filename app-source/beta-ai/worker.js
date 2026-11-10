@@ -1783,7 +1783,8 @@ export default {
       if (selectedImageModel !== "qwen21" && !imageModelSpaces[selectedImageModel]) return json({ error: "Modelo de edición desconocido." }, 400, origin);
       if (selectedImageModel !== "qwen21") {
         const model = imageModelSpaces[selectedImageModel];
-        const hfToken = token; // Token obtenido y validado en el ámbito de esta ruta autenticada.
+        const hfToken = await storedToken(env, user.id, "huggingface");
+        if (!hfToken) return json({ error: "Conectá Hugging Face en Integraciones con un token gratuito de permiso Read." }, 409, origin);
         try {
           const mime = `image/${match[1].toLowerCase()}`;
           const binary = atob(match[2]);
