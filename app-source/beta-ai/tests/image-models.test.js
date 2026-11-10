@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildAioQwenInputData } from "../worker.js";
+import { buildAioQwenInputData } from "../image-models.js";
 
 test("AIO Qwen generation sends the full 12-input Gradio signature", () => {
   const data = buildAioQwenInputData("a red bicycle", "generate", null);

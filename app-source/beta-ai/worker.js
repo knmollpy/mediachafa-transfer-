@@ -1,3 +1,4 @@
+import { buildAioQwenInputData } from "./image-models.js";
 const APP_ORIGIN = "https://mediachafa-transfer.pages.dev";
 const APP_ORIGINS = new Set([APP_ORIGIN, "https://mediachafa-transfer.vercel.app"]);
 
@@ -1420,23 +1421,6 @@ async function openRouterQuota(token) {
   if (data.data.is_free_tier !== true) throw new Error("La cuenta OpenRouter ya no figura en el nivel gratuito. Beta bloqueó la solicitud para evitar cargos.");
   const freeUsage = data.data.free_model_daily_requests || {};
   return { used: Number(freeUsage.used || 0), providerLimit: Number(freeUsage.limit || 50), providerRemaining: Number(freeUsage.remaining ?? Math.max(0, 50 - Number(freeUsage.used || 0))) };
-}
-
-export function buildAioQwenInputData(prompt, action, imageFile) {
-  return [
-    prompt,
-    action === "generate" ? "Text to Image" : "Edit Image (1 Ref)",
-    imageFile,
-    null,
-    "None (Base Uncensored)",
-    1.0,
-    "",
-    "",
-    "Square · 1:1 (1024x1024)",
-    30,
-    42,
-    true,
-  ];
 }
 
 export default {
