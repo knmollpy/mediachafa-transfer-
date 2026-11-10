@@ -1557,12 +1557,14 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   const imageEditorModelNames = {
     qwen21: "Qwen Image 2.1 Uncensored · servidor principal",
     qwen21alt: "Qwen Image 2.1 Uncensored · servidor alternativo",
-    aioQwen: "Qwen Image 2.1 Uncensored AIO LoRA"
+    aioQwen: "Qwen Image 2.1 Uncensored AIO LoRA",
+    mossImage: "MOSS-Image Uncensored · modelo base distinto"
   };
   const imageEditorModelDetails = {
     qwen21: "Crear y editar · Qwen Image 2.1 Uncensored. Servidor principal; el proyecto declara el modo Base Uncensored sin safety checker. ZeroGPU gratuito compartido.",
     qwen21alt: "Crear y editar · la misma base Qwen Image 2.1 Uncensored en un Space independiente. Es una ruta alternativa, no un modelo distinto. ZeroGPU gratuito; cola variable.",
-    aioQwen: "Crear y editar · la misma base Qwen Image 2.1 Uncensored con una colección de LoRAs en otra implementación. No es un modelo base distinto. ZeroGPU gratuito compartido."
+    aioQwen: "Crear y editar · la misma base Qwen Image 2.1 Uncensored con una colección de LoRAs en otra implementación. No es un modelo base distinto. ZeroGPU gratuito compartido.",
+    mossImage: "Solo crear · modelo base MOSS-Image-SFT con LoRA Uncensored y Realistic Snapshot. La implementación declara que desactiva por completo el filtrado de seguridad. No edita imágenes adjuntas. ZeroGPU gratuito compartido."
   };
   let imageEditorModelSelect = $('#beta-image-editor-model');
   let imageEditorModelInfo = $('#beta-image-editor-model-info');
@@ -1587,7 +1589,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
   if (imageEditorModelSelect) {
     const savedImageModel = localStorage.getItem('beta-image-editor-model') || 'qwen21';
-    imageEditorModelSelect.value = ['qwen21', 'qwen21alt', 'aioQwen'].includes(savedImageModel) ? savedImageModel : 'qwen21';
+    imageEditorModelSelect.value = ['qwen21', 'qwen21alt', 'aioQwen', 'mossImage'].includes(savedImageModel) ? savedImageModel : 'qwen21';
     const updateImageModelInfo = () => {
       const selected = imageEditorModelSelect.value;
       localStorage.setItem('beta-image-editor-model', selected);
@@ -1611,8 +1613,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   imageEditButton.insertAdjacentElement('afterend', imageCreateButton);
   const updateImageActionButtons = () => {
     const selected = imageEditorModelSelect?.value || localStorage.getItem('beta-image-editor-model') || 'qwen21';
-    imageCreateButton.classList.toggle('hidden', !['qwen21', 'qwen21alt', 'aioQwen'].includes(selected));
-    imageCreateButton.title = ['qwen21', 'qwen21alt', 'aioQwen'].includes(selected) ? `Crear una imagen desde texto con ${imageEditorModelNames[selected] || imageEditorModelNames.qwen21}` : 'La creación desde texto está disponible con Qwen Image 2.1 Uncensored';
+    const canGenerate = ['qwen21', 'qwen21alt', 'aioQwen', 'mossImage'].includes(selected);
+    imageCreateButton.classList.toggle('hidden', !canGenerate);
+    imageCreateButton.title = canGenerate ? 'Crear una imagen desde texto con ' + (imageEditorModelNames[selected] || imageEditorModelNames.qwen21) : 'La creación desde texto está disponible con los modelos Qwen y MOSS.';
+    imageEditButton.classList.toggle('hidden', !pendingImage || selected === 'mossImage');
   };
   imageEditorModelSelect?.addEventListener('change', updateImageActionButtons);
   updateImageActionButtons();
@@ -1677,6 +1681,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     imageEditButton.disabled = true;
     imageEditButton.textContent = 'Editando…';
     const imageEditorModel = $('#beta-image-editor-model')?.value || localStorage.getItem('beta-image-editor-model') || 'qwen21';
+    if (imageEditorModel === 'mossImage') { setStatus('MOSS-Image Uncensored permite crear imágenes desde texto, no editar imágenes adjuntas.', 'error'); return; }
     const imageEditorName = imageEditorModelNames[imageEditorModel] || imageEditorModelNames.qwen21;
     setStatus(`Editando con ${imageEditorName}…`);
     activity(`Procesando la edición con ${imageEditorName}.`, 'active');
@@ -1727,7 +1732,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     pendingImage = imageInput.files?.[0];
     if (pendingImage && pendingImage.size > 5 * 1024 * 1024) { pendingImage = undefined; imageInput.value = ''; setStatus('La imagen supera el límite de 5 MB.', 'error'); }
     attachmentLabel(pendingImage, '#beta-image-name');
-    imageEditButton.classList.toggle('hidden', !pendingImage);
+    imageEditButton.classList.toggle('hidden', !pendingImage || imageEditorModelSelect?.value === 'mossImage');
     if (pendingImage) {
       // Snapshot the selected file immediately. Android document providers can
       // revoke the temporary File handle before the user presses Edit or Send.

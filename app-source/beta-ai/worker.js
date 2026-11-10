@@ -1,4 +1,4 @@
-import { buildAioQwenInputData } from "./image-models.js";
+import { buildAioQwenInputData, buildMossImageInputData } from "./image-models.js";
 const APP_ORIGIN = "https://mediachafa-transfer.pages.dev";
 const APP_ORIGINS = new Set([APP_ORIGIN, "https://mediachafa-transfer.vercel.app"]);
 
@@ -1777,10 +1777,12 @@ export default {
       const match = dataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/i);
       const selectedImageModel = String(payload.model || "qwen21");
       if (!prompt) return json({ error: "Escribí una descripción para crear o editar la imagen." }, 400, origin);
-      if (action === "generate" && !["qwen21", "qwen21alt", "aioQwen"].includes(selectedImageModel)) return json({ error: "Este modelo solo permite editar imágenes." }, 400, origin);
+      if (action === "generate" && !["qwen21", "qwen21alt", "aioQwen", "mossImage"].includes(selectedImageModel)) return json({ error: "Este modelo solo permite editar imágenes." }, 400, origin);
+      if (action === "edit" && selectedImageModel === "mossImage") return json({ error: "MOSS-Image Uncensored permite crear imágenes desde texto, pero no editar imágenes adjuntas. Elegí Qwen Image 2.1 para editar." }, 400, origin);
       if (action === "edit" && (!match || dataUrl.length > MAX_MEDIA_BYTES * 1.4)) return json({ error: "Para editar, adjuntá una imagen PNG, JPEG o WebP de hasta 5 MB." }, 400, origin);
       const imageModelSpaces = {
         aioQwen: { id: "Daverrrr75/qwen-image-2.1-uncensored-aio-loras", base: "https://daverrrr75-qwen-image-2-1-uncensored-aio-loras.hf.space", endpoint: "generate", name: "Qwen 2.1 Uncensored AIO LoRA", family: "aioQwen", quota: "ZeroGPU gratuito compartido" },
+        mossImage: { id: "asrarkhann112/moss-image-nsfw-lora", base: "https://asrarkhann112-moss-image-nsfw-lora.hf.space", endpoint: "generate", name: "MOSS-Image Uncensored", family: "mossImage", quota: "ZeroGPU gratuito compartido", generationOnly: true },
         qwen2511: { id: "techfreakworm/qwen-image-editor", base: "https://techfreakworm-qwen-image-editor.hf.space", endpoint: "on_edit_generate", name: "Qwen Image Edit 2511", steps: 4, quota: "ZeroGPU xlarge: 2× cuota (aprox. 2,5 min GPU/día)", family: "qwen2511" },
         fluxKontext: { id: "zerogpu-aoti/FLUX.1-Kontext-Dev", base: "https://zerogpu-aoti-flux-1-kontext-dev.hf.space", endpoint: "infer", name: "FLUX.1 Kontext Dev", steps: 28, quota: "ZeroGPU estándar: hasta 5 min GPU/día compartidos", family: "flux" },
       };
@@ -1830,11 +1832,13 @@ export default {
             }
             imageFile = { path: uploadedPath, url: null, size: bytes.byteLength, orig_name: `mediachafa-input.${extension}`, mime_type: mime, meta: { _type: "gradio.FileData" } };
           }
-          const data = model.family === "qwen2511"
-            ? [imageFile, prompt, "Fast", 4, 1.0, "", -1, "", "", 1.0]
-            : model.family === "aioQwen"
-              ? buildAioQwenInputData(prompt, action, imageFile)
-              : [imageFile, prompt, 42, true, 2.5, 28];
+          const data = model.family === "mossImage"
+            ? buildMossImageInputData(prompt, crypto.getRandomValues(new Uint32Array(1))[0])
+            : model.family === "qwen2511"
+              ? [imageFile, prompt, "Fast", 4, 1.0, "", -1, "", "", 1.0]
+              : model.family === "aioQwen"
+                ? buildAioQwenInputData(prompt, action, imageFile)
+                : [imageFile, prompt, 42, true, 2.5, 28];
           const submitResponse = await fetch(`${model.base}/gradio_api/call/${model.endpoint}`, { method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" }, body: JSON.stringify({ data }), signal: AbortSignal.timeout(45000) });
           const submitted = await submitResponse.json().catch(() => ({}));
           if (!submitResponse.ok || !submitted.event_id) return json({ error: `${model.name} no pudo iniciar la edición (HTTP ${submitResponse.status}).` }, 502, origin);
