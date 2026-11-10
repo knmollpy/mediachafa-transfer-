@@ -1771,11 +1771,13 @@ export default {
         payload = JSON.parse(rawBody);
       } catch { return json({ error: "La solicitud de edición no tiene un formato válido." }, 400, origin); }
       const prompt = String(payload.prompt || "").trim().slice(0, 4000);
+      const action = payload.action === "generate" ? "generate" : "edit";
       const dataUrl = String(payload.image?.data || "");
       const match = dataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/i);
-      if (!prompt) return json({ error: "Explicá qué querés agregar, quitar o modificar en la imagen." }, 400, origin);
-      if (!match || dataUrl.length > MAX_MEDIA_BYTES * 1.4) return json({ error: "Para editar, adjuntá una imagen PNG, JPEG o WebP de hasta 5 MB." }, 400, origin);
       const selectedImageModel = String(payload.model || "qwen21");
+      if (!prompt) return json({ error: "Escribí una descripción para crear o editar la imagen." }, 400, origin);
+      if (action === "generate" && selectedImageModel !== "qwen21") return json({ error: "La creación desde texto está disponible por ahora con Qwen Image 2.1 Uncensored. Elegí ese modelo en Ajustes." }, 400, origin);
+      if (action === "edit" && (!match || dataUrl.length > MAX_MEDIA_BYTES * 1.4)) return json({ error: "Para editar, adjuntá una imagen PNG, JPEG o WebP de hasta 5 MB." }, 400, origin);
       const imageModelSpaces = {
         qwen2511: { id: "techfreakworm/qwen-image-editor", base: "https://techfreakworm-qwen-image-editor.hf.space", endpoint: "on_edit_generate", name: "Qwen Image Edit 2511", steps: 4, quota: "ZeroGPU xlarge: 2× cuota (aprox. 2,5 min GPU/día)" },
         fluxKontext: { id: "zerogpu-aoti/FLUX.1-Kontext-Dev", base: "https://zerogpu-aoti-flux-1-kontext-dev.hf.space", endpoint: "infer", name: "FLUX.1 Kontext Dev", steps: 28, quota: "ZeroGPU estándar: hasta 5 min GPU/día compartidos" },
@@ -1833,38 +1835,39 @@ export default {
         }
       }
       try {
-        const mime = `image/${match[1].toLowerCase()}`;
-        const binary = atob(match[2]);
-        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-        if (bytes.byteLength > MAX_MEDIA_BYTES) return json({ error: "La imagen supera el límite de 5 MB." }, 413, origin);
-
-        // Upload the reference image to the public Gradio Space using the user's free HF token.
-        const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
-        const uploadForm = new FormData();
-        uploadForm.append("files", new Blob([bytes], { type: mime }), `mediachafa-input.${extension}`);
         const authHeaders = { Authorization: `Bearer ${token}` };
-        const uploadResponse = await fetch(`${QWEN_IMAGE_SPACE}/gradio_api/upload`, {
-          method: "POST", headers: authHeaders, body: uploadForm, signal: AbortSignal.timeout(45000),
-        });
-        const uploadResult = await uploadResponse.json().catch(() => null);
-        const uploadedPath = Array.isArray(uploadResult) ? uploadResult[0] : uploadResult?.files?.[0];
-        if (!uploadResponse.ok || typeof uploadedPath !== "string") {
-          const detail = typeof uploadResult?.error === "string" ? uploadResult.error.slice(0, 300) : `HTTP ${uploadResponse.status}`;
-          return json({ error: `Hugging Face no aceptó la imagen (${detail}). Probá de nuevo más tarde.` }, 502, origin);
+        let imageFile = null;
+        let editPrompt = prompt;
+        if (action === "edit") {
+          const mime = `image/${match[1].toLowerCase()}`;
+          const binary = atob(match[2]);
+          const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+          if (bytes.byteLength > MAX_MEDIA_BYTES) return json({ error: "La imagen supera el límite de 5 MB." }, 413, origin);
+          const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
+          const uploadForm = new FormData();
+          uploadForm.append("files", new Blob([bytes], { type: mime }), `mediachafa-input.${extension}`);
+          const uploadResponse = await fetch(`${QWEN_IMAGE_SPACE}/gradio_api/upload`, {
+            method: "POST", headers: authHeaders, body: uploadForm, signal: AbortSignal.timeout(45000),
+          });
+          const uploadResult = await uploadResponse.json().catch(() => null);
+          const uploadedPath = Array.isArray(uploadResult) ? uploadResult[0] : uploadResult?.files?.[0];
+          if (!uploadResponse.ok || typeof uploadedPath !== "string") {
+            const detail = typeof uploadResult?.error === "string" ? uploadResult.error.slice(0, 300) : `HTTP ${uploadResponse.status}`;
+            return json({ error: `Hugging Face no aceptó la imagen (${detail}). Probá de nuevo más tarde.` }, 502, origin);
+          }
+          imageFile = {
+            path: uploadedPath, url: null, size: bytes.byteLength,
+            orig_name: `mediachafa-input.${extension}`, mime_type: mime,
+            meta: { _type: "gradio.FileData" },
+          };
+          editPrompt = `Editá esta imagen siguiendo estas instrucciones: ${prompt}. Conservá sin cambios todo lo que no se pidió modificar y respetá el encuadre, la identidad visual, las proporciones, los detalles y el estilo originales.`;
         }
-
-        const imageFile = {
-          path: uploadedPath, url: null, size: bytes.byteLength,
-          orig_name: `mediachafa-input.${extension}`, mime_type: mime,
-          meta: { _type: "gradio.FileData" },
-        };
         const submitResponse = await fetch(`${QWEN_IMAGE_SPACE}/gradio_api/call/generate`, {
           method: "POST",
           headers: { ...authHeaders, "Content-Type": "application/json" },
           body: JSON.stringify({
             data: [
-              `Editá esta imagen siguiendo estas instrucciones: ${prompt}. Conservá sin cambios todo lo que no se pidió modificar y respetá el encuadre, la identidad visual, las proporciones, los detalles y el estilo originales.`,
-              "Edit Image (1 Ref)", imageFile, null, "None (Base Uncensored)", 1.0,
+              editPrompt, action === "generate" ? "Text to Image" : "Edit Image (1 Ref)", imageFile, null, "None (Base Uncensored)", 1.0,
               "", "", "Square · 1:1 (1024x1024)", 30, 42, true,
             ],
           }),
