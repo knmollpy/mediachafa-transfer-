@@ -1776,14 +1776,14 @@ export default {
       const match = dataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/i);
       const selectedImageModel = String(payload.model || "qwen21");
       if (!prompt) return json({ error: "Escribí una descripción para crear o editar la imagen." }, 400, origin);
-      if (action === "generate" && selectedImageModel !== "qwen21") return json({ error: "La creación desde texto está disponible por ahora con Qwen Image 2.1 Uncensored. Elegí ese modelo en Ajustes." }, 400, origin);
+      if (action === "generate" && !["qwen21", "qwen21alt"].includes(selectedImageModel)) return json({ error: "La creación desde texto está disponible por ahora con Qwen Image 2.1 Uncensored. Elegí ese modelo en Ajustes." }, 400, origin);
       if (action === "edit" && (!match || dataUrl.length > MAX_MEDIA_BYTES * 1.4)) return json({ error: "Para editar, adjuntá una imagen PNG, JPEG o WebP de hasta 5 MB." }, 400, origin);
       const imageModelSpaces = {
         qwen2511: { id: "techfreakworm/qwen-image-editor", base: "https://techfreakworm-qwen-image-editor.hf.space", endpoint: "on_edit_generate", name: "Qwen Image Edit 2511", steps: 4, quota: "ZeroGPU xlarge: 2× cuota (aprox. 2,5 min GPU/día)", family: "qwen2511" },
         fluxKontext: { id: "zerogpu-aoti/FLUX.1-Kontext-Dev", base: "https://zerogpu-aoti-flux-1-kontext-dev.hf.space", endpoint: "infer", name: "FLUX.1 Kontext Dev", steps: 28, quota: "ZeroGPU estándar: hasta 5 min GPU/día compartidos", family: "flux" },
       };
-      if (selectedImageModel !== "qwen21" && !imageModelSpaces[selectedImageModel]) return json({ error: "Modelo de edición desconocido." }, 400, origin);
-      if (selectedImageModel !== "qwen21") {
+      if (!["qwen21", "qwen21alt"].includes(selectedImageModel) && !imageModelSpaces[selectedImageModel]) return json({ error: "Modelo de edición desconocido." }, 400, origin);
+      if (!["qwen21", "qwen21alt"].includes(selectedImageModel)) {
         let model = imageModelSpaces[selectedImageModel];
         const hfToken = await storedToken(env, user.id, "huggingface");
         if (!hfToken) return json({ error: "Conectá Hugging Face en Integraciones con un token gratuito de permiso Read." }, 409, origin);
@@ -1855,6 +1855,7 @@ export default {
       }
       try {
         const authHeaders = { Authorization: `Bearer ${token}` };
+        const imageSpace = selectedImageModel === "qwen21alt" ? "https://pp12546-qwen-image-21-uncensored.hf.space" : QWEN_IMAGE_SPACE;
         let imageFile = null;
         let editPrompt = prompt;
         if (action === "edit") {
@@ -1865,7 +1866,7 @@ export default {
           const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
           const uploadForm = new FormData();
           uploadForm.append("files", new Blob([bytes], { type: mime }), `mediachafa-input.${extension}`);
-          const uploadResponse = await fetch(`${QWEN_IMAGE_SPACE}/gradio_api/upload`, {
+          const uploadResponse = await fetch(`${imageSpace}/gradio_api/upload`, {
             method: "POST", headers: authHeaders, body: uploadForm, signal: AbortSignal.timeout(45000),
           });
           const uploadResult = await uploadResponse.json().catch(() => null);
@@ -1881,7 +1882,7 @@ export default {
           };
           editPrompt = `Editá esta imagen siguiendo estas instrucciones: ${prompt}. Conservá sin cambios todo lo que no se pidió modificar y respetá el encuadre, la identidad visual, las proporciones, los detalles y el estilo originales.`;
         }
-        const submitResponse = await fetch(`${QWEN_IMAGE_SPACE}/gradio_api/call/generate`, {
+        const submitResponse = await fetch(`${imageSpace}/gradio_api/call/generate`, {
           method: "POST",
           headers: { ...authHeaders, "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1898,7 +1899,7 @@ export default {
           return json({ error: `Qwen no pudo iniciar la edición: ${detail}` }, 502, origin);
         }
 
-        const resultResponse = await fetch(`${QWEN_IMAGE_SPACE}/gradio_api/call/generate/${encodeURIComponent(submitted.event_id)}`, {
+        const resultResponse = await fetch(`${imageSpace}/gradio_api/call/generate/${encodeURIComponent(submitted.event_id)}`, {
           headers: authHeaders, signal: AbortSignal.timeout(150000),
         });
         if (!resultResponse.ok) return json({ error: `No se pudo recuperar el resultado de Qwen (HTTP ${resultResponse.status}).` }, 502, origin);
@@ -1926,7 +1927,7 @@ export default {
         if (!outputPath) return json({ error: "Qwen devolvió un resultado sin ruta de imagen." }, 502, origin);
         const outputUrl = typeof outputFile.url === "string" && /^https?:\/\//i.test(outputFile.url)
           ? outputFile.url
-          : `${QWEN_IMAGE_SPACE}/gradio_api/file=${encodeURIComponent(outputPath)}`;
+          : `${imageSpace}/gradio_api/file=${encodeURIComponent(outputPath)}`;
         const imageResponse = await fetch(outputUrl, { headers: authHeaders, signal: AbortSignal.timeout(45000) });
         if (!imageResponse.ok) return json({ error: `No se pudo descargar la imagen editada (HTTP ${imageResponse.status}).` }, 502, origin);
         const outputBytes = new Uint8Array(await imageResponse.arrayBuffer());
@@ -1937,7 +1938,7 @@ export default {
         for (let offset = 0; offset < outputBytes.length; offset += 0x8000) {
           binaryOutput += String.fromCharCode(...outputBytes.subarray(offset, offset + 0x8000));
         }
-        return json({ ok: true, image: btoa(binaryOutput), mime: "image/png", model: "Qwen-Image-2.1-Uncensored" }, 200, origin);
+        return json({ ok: true, image: btoa(binaryOutput), mime: "image/png", model: selectedImageModel === "qwen21alt" ? "Qwen Image 2.1 Uncensored · Space alternativo" : "Qwen-Image-2.1-Uncensored" }, 200, origin);
       } catch (error) {
         const detail = String(error?.message || "No se pudo procesar la edición.").slice(0, 400);
         return json({ error: `Falló la edición con Qwen: ${detail}` }, 502, origin);
