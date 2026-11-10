@@ -2117,7 +2117,7 @@ async function callModel(env, candidate, messages, history, promptText, image, m
   let result, data, text;
   if (provider === "openrouter" || provider === "groq") {
     const endpoint = provider === "openrouter" ? OPENROUTER_CHAT : "https://api.groq.com/openai/v1/chat/completions";
-    result = await fetchImpl(endpoint, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(provider === "openrouter" ? { "HTTP-Referer": APP_ORIGIN, "X-Title": "MediaChafa Beta" } : {}) }, body: JSON.stringify({ model: nativeId, messages, max_tokens: maxTokens, temperature: 0.5, ...(provider === "openrouter" ? { provider: { allow_fallbacks: false } } : {}) }) });
+    result = await fetchImpl(endpoint, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(provider === "openrouter" ? { "HTTP-Referer": APP_ORIGIN, "X-Title": "MediaChafa Beta" } : {}) }, body: JSON.stringify({ model: nativeId, messages, max_tokens: provider === "groq" ? Math.min(maxTokens, 2048) : maxTokens, temperature: 0.5, ...(provider === "openrouter" ? { provider: { allow_fallbacks: false } } : {}) }) });
     data = await result.json().catch(() => ({}));
     if (result.ok) text = data?.choices?.[0]?.message?.content;
   } else if (provider === "cohere") {
