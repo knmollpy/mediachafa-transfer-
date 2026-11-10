@@ -1586,6 +1586,68 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   imageEditButton.textContent = 'Editar imagen';
   imageEditButton.setAttribute('aria-label', 'Editar imagen adjunta');
   $('#beta-image-name')?.insertAdjacentElement('afterend', imageEditButton);
+  const imageCreateButton = document.createElement('button');
+  imageCreateButton.type = 'button';
+  imageCreateButton.className = 'secondary';
+  imageCreateButton.textContent = 'Crear imagen';
+  imageCreateButton.setAttribute('aria-label', 'Crear imagen desde texto con Qwen Image 2.1 Uncensored');
+  imageEditButton.insertAdjacentElement('afterend', imageCreateButton);
+  const updateImageActionButtons = () => {
+    const selected = imageEditorModelSelect?.value || localStorage.getItem('beta-image-editor-model') || 'qwen21';
+    imageCreateButton.classList.toggle('hidden', selected !== 'qwen21');
+    imageCreateButton.title = selected === 'qwen21' ? 'Crear una imagen desde texto con Qwen Image 2.1 Uncensored' : 'La creación desde texto está disponible con Qwen Image 2.1 Uncensored';
+  };
+  imageEditorModelSelect?.addEventListener('change', updateImageActionButtons);
+  updateImageActionButtons();
+
+  imageCreateButton.addEventListener('click', async () => {
+    const prompt = input.value.trim();
+    if (!prompt) { setStatus('Escribí una descripción para crear la imagen.', 'error'); input.focus(); return; }
+    if (pendingImage) { setStatus('Para crear desde texto, quitá primero la imagen adjunta o usá Editar imagen.', 'error'); return; }
+    imageCreateButton.disabled = true;
+    imageCreateButton.textContent = 'Creando…';
+    const imageEditorName = 'Qwen Image 2.1 Uncensored';
+    setStatus('Creando imagen con Qwen Image 2.1 Uncensored…');
+    activity('Generando una imagen desde texto con Qwen Image 2.1 Uncensored.', 'active');
+    try {
+      const auth = await currentSession();
+      const response = await fetch(`${API}/image-edit`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, model: 'qwen21', action: 'generate' }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.image) throw new Error(data.error || 'No se pudo crear la imagen.');
+      const imageUrl = `data:image/png;base64,${data.image}`;
+      addMessage('user', `Crear imagen: ${prompt}`);
+      const resultMessage = addMessage('assistant', 'Imagen creada. Podés abrirla o guardarla.');
+      const preview = document.createElement('img');
+      preview.src = imageUrl;
+      preview.alt = `Imagen creada por ${data.model || imageEditorName} en MediaChafa`;
+      preview.loading = 'lazy';
+      preview.style.cssText = 'display:block;max-width:100%;height:auto;max-height:720px;object-fit:contain;border-radius:12px;margin:10px 0;border:1px solid rgba(130,160,190,.25)';
+      const download = document.createElement('a');
+      download.href = imageUrl;
+      download.download = 'MediaChafa-imagen-creada.png';
+      download.textContent = 'Guardar imagen creada';
+      download.className = 'beta-link';
+      download.style.display = 'inline-block';
+      download.style.margin = '4px 0 10px';
+      resultMessage.append(preview, download);
+      history.push({ role: 'user', content: `Crear imagen: ${prompt}` }, { role: 'assistant', content: 'Imagen creada y entregada en el chat.' });
+      history = history.slice(-30);
+      saveHistory();
+      input.value = '';
+      setStatus('Imagen creada con Qwen Image 2.1 Uncensored. Ya podés guardarla.');
+      activity('Imagen creada y entregada en el chat.', 'done');
+    } catch (error) {
+      setStatus(error.message || 'No se pudo crear la imagen.', 'error');
+      activity(error.message || 'No se pudo crear la imagen.', 'error');
+    } finally {
+      imageCreateButton.disabled = false;
+      imageCreateButton.textContent = 'Crear imagen';
+    }
+  });
 
   imageEditButton.addEventListener('click', async () => {
     const prompt = input.value.trim();
