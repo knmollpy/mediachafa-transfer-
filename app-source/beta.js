@@ -1558,13 +1558,13 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     qwen21: "Qwen Image 2.1 Uncensored · servidor principal",
     qwen21alt: "Qwen Image 2.1 Uncensored · servidor alternativo",
     aioQwen: "Qwen Image 2.1 Uncensored AIO LoRA",
-    mossImage: "MOSS-Image Uncensored · modelo base distinto"
+    mossImage: "MOSS-Image Uncensored · 18+ · experimental"
   };
   const imageEditorModelDetails = {
     qwen21: "Crear y editar · Qwen Image 2.1 Uncensored. Servidor principal; el proyecto declara el modo Base Uncensored sin safety checker. ZeroGPU gratuito compartido.",
     qwen21alt: "Crear y editar · la misma base Qwen Image 2.1 Uncensored en un Space independiente. Es una ruta alternativa, no un modelo distinto. ZeroGPU gratuito; cola variable.",
     aioQwen: "Crear y editar · la misma base Qwen Image 2.1 Uncensored con una colección de LoRAs en otra implementación. No es un modelo base distinto. ZeroGPU gratuito compartido.",
-    mossImage: "Solo crear · modelo base MOSS-Image-SFT con LoRA Uncensored y Realistic Snapshot. La implementación declara que desactiva por completo el filtrado de seguridad. No edita imágenes adjuntas. ZeroGPU gratuito compartido."
+    mossImage: "Solo crear · 18+ · modelo base MOSS-Image-SFT con LoRA Uncensored y Realistic Snapshot. El Space declara que desactiva el filtrado de seguridad y Hugging Face lo marca Not-For-All-Audiences. No edita imágenes adjuntas. API integrada; falta confirmar una generación real desde MediaChafa. ZeroGPU gratuito compartido."
   };
   let imageEditorModelSelect = $('#beta-image-editor-model');
   let imageEditorModelInfo = $('#beta-image-editor-model-info');
@@ -1581,7 +1581,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     label.innerHTML = '<strong>Modelo para editar o crear imágenes</strong>';
     imageEditorModelSelect = document.createElement('select');
     imageEditorModelSelect.id = 'beta-image-editor-model';
-    imageEditorModelSelect.innerHTML = '<option value="qwen21">Qwen Image 2.1 Uncensored · crear y editar</option><option value="mossImage">MOSS-Image Uncensored · solo crear (base distinto)</option>';
+    imageEditorModelSelect.innerHTML = '<option value="qwen21">Qwen Image 2.1 Uncensored · crear y editar</option><option value="mossImage">MOSS-Image Uncensored · 18+ · experimental (solo crear)</option>';
     imageEditorModelInfo = document.createElement('p');
     imageEditorModelInfo.id = 'beta-image-editor-model-info';
     imageEditorModelInfo.className = 'beta-settings-note';
@@ -1623,11 +1623,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 
   imageCreateButton.addEventListener('click', async () => {
     const prompt = input.value.trim();
+    const selectedImageModel = imageEditorModelSelect?.value || 'qwen21';
     if (!prompt) { setStatus('Escribí una descripción para crear la imagen.', 'error'); input.focus(); return; }
-    if (pendingImage) { setStatus('Para crear desde texto, quitá primero la imagen adjunta o usá Editar imagen.', 'error'); return; }
+    if (pendingImage) { setStatus(selectedImageModel === 'mossImage' ? 'MOSS-Image solo crea desde texto. Quitá la imagen adjunta o elegí Qwen si querés editarla.' : 'Para crear desde texto, quitá primero la imagen adjunta o usá Editar imagen.', 'error'); return; }
     imageCreateButton.disabled = true;
     imageCreateButton.textContent = 'Creando…';
-    const imageEditorName = imageEditorModelNames[imageEditorModelSelect?.value] || imageEditorModelNames.qwen21;
+    const imageEditorName = imageEditorModelNames[selectedImageModel] || imageEditorModelNames.qwen21;
     setStatus('Creando imagen con ' + imageEditorName + '…');
     activity('Generando una imagen desde texto con ' + imageEditorName + '.', 'active');
     try {
@@ -1635,7 +1636,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const response = await fetch(`${API}/image-edit`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, model: imageEditorModelSelect?.value || 'qwen21', action: 'generate' }),
+        body: JSON.stringify({ prompt, model: selectedImageModel, action: 'generate' }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.image) throw new Error(data.error || 'No se pudo crear la imagen.');
@@ -1678,10 +1679,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       setStatus('Para editar, usá PNG, JPG o WebP. Los GIF se pueden analizar, pero no editar directamente.', 'error');
       return;
     }
-    imageEditButton.disabled = true;
-    imageEditButton.textContent = 'Editando…';
     const imageEditorModel = $('#beta-image-editor-model')?.value || localStorage.getItem('beta-image-editor-model') || 'qwen21';
     if (imageEditorModel === 'mossImage') { setStatus('MOSS-Image Uncensored permite crear imágenes desde texto, no editar imágenes adjuntas.', 'error'); return; }
+    imageEditButton.disabled = true;
+    imageEditButton.textContent = 'Editando…';
     const imageEditorName = imageEditorModelNames[imageEditorModel] || imageEditorModelNames.qwen21;
     setStatus(`Editando con ${imageEditorName}…`);
     activity(`Procesando la edición con ${imageEditorName}.`, 'active');
@@ -1738,7 +1739,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       // revoke the temporary File handle before the user presses Edit or Send.
       setStatus('Leyendo imagen adjunta…');
       void fileToBase64(pendingImage).then(() => {
-        if (pendingImage === imageInput.files?.[0]) setStatus('Imagen lista para editar o enviar.');
+        if (pendingImage === imageInput.files?.[0]) setStatus(imageEditorModelSelect?.value === 'mossImage' ? 'Imagen adjunta. MOSS solo crea desde texto; elegí Qwen para editarla.' : 'Imagen lista para editar o enviar.');
       }).catch((error) => {
         if (pendingImage === imageInput.files?.[0]) setStatus(error.message || 'No se pudo leer la imagen. Guardala en el dispositivo y volvé a adjuntarla.', 'error');
       });

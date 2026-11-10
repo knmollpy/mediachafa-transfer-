@@ -1789,6 +1789,7 @@ export default {
       if (!["qwen21", "qwen21alt"].includes(selectedImageModel) && !imageModelSpaces[selectedImageModel]) return json({ error: "Modelo de edición desconocido." }, 400, origin);
       if (!["qwen21", "qwen21alt"].includes(selectedImageModel)) {
         let model = imageModelSpaces[selectedImageModel];
+        const operation = action === "generate" ? "generación" : "edición";
         const hfToken = await storedToken(env, user.id, "huggingface");
         if (!hfToken) return json({ error: "Conectá Hugging Face en Integraciones con un token gratuito de permiso Read." }, 409, origin);
         try {
@@ -1841,7 +1842,7 @@ export default {
                 : [imageFile, prompt, 42, true, 2.5, 28];
           const submitResponse = await fetch(`${model.base}/gradio_api/call/${model.endpoint}`, { method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" }, body: JSON.stringify({ data }), signal: AbortSignal.timeout(45000) });
           const submitted = await submitResponse.json().catch(() => ({}));
-          if (!submitResponse.ok || !submitted.event_id) return json({ error: `${model.name} no pudo iniciar la edición (HTTP ${submitResponse.status}).` }, 502, origin);
+          if (!submitResponse.ok || !submitted.event_id) return json({ error: `${model.name} no pudo iniciar la ${operation} (HTTP ${submitResponse.status}).` }, 502, origin);
           // Same 150-second ceiling as the established Qwen 2.1 route. Cloudflare HTTP requests have no hard wall-time limit while the client stays connected; fetch waiting does not consume CPU time.
           const resultResponse = await fetch(`${model.base}/gradio_api/call/${model.endpoint}/${encodeURIComponent(submitted.event_id)}`, { headers: authHeaders, signal: AbortSignal.timeout(150000) });
           if (!resultResponse.ok) return json({ error: `${model.name} no pudo devolver el resultado (HTTP ${resultResponse.status}).` }, 502, origin);
@@ -1866,7 +1867,7 @@ export default {
           for (let offset = 0; offset < outputBytes.length; offset += 0x8000) binaryOutput += String.fromCharCode(...outputBytes.subarray(offset, offset + 0x8000));
           return json({ ok: true, image: btoa(binaryOutput), mime: imageResponse.headers.get("content-type")?.startsWith("image/") ? imageResponse.headers.get("content-type").split(";")[0] : "image/png", model: model.name }, 200, origin);
         } catch (error) {
-          return json({ error: `Falló la edición con ${model.name}: ${String(error?.message || "error de inferencia").slice(0,300)}` }, 502, origin);
+          return json({ error: `Falló la ${operation} con ${model.name}: ${String(error?.message || "error de inferencia").slice(0,300)}` }, 502, origin);
         }
       }
       try {
