@@ -1510,13 +1510,34 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
   window.addEventListener('mediachafa:session-ready', () => { void refreshQuota(); });
 
-  function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
-      reader.readAsDataURL(file);
-    });
+  async function fileToBase64(file) {
+    if (!file || typeof file.size !== 'number' || file.size <= 0) throw new Error('El archivo está vacío o ya no está disponible. Volvé a adjuntarlo.');
+    if (file.size > 5 * 1024 * 1024) throw new Error('El archivo supera el límite de 5 MB.');
+    try {
+      // Prefer Blob.arrayBuffer(): Android WebView and some mobile browsers can
+      // reject FileReader for transient file-provider URIs even when the File exists.
+      let bytes;
+      if (typeof file.arrayBuffer === 'function') bytes = new Uint8Array(await file.arrayBuffer());
+      else {
+        const buffer = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('El navegador no pudo abrir el archivo adjunto.'));
+          reader.onabort = () => reject(new Error('Se canceló la lectura del archivo adjunto.'));
+          reader.readAsArrayBuffer(file);
+        });
+        bytes = new Uint8Array(buffer);
+      }
+      if (!bytes.length) throw new Error('El archivo está vacío.');
+      let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+      }
+      const mime = file.type || 'application/octet-stream';
+      return `data:${mime};base64,${btoa(binary)}`;
+    } catch (error) {
+      throw new Error(error?.message || 'No se pudo leer el archivo. Volvé a adjuntarlo e intentá nuevamente.');
+    }
   }
 
   function attachmentLabel(file, selector) { $(selector).textContent = file ? `Adjunto: ${file.name}` : ''; }
@@ -1643,6 +1664,21 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const opening = settingsPanel.classList.contains('hidden');
     settingsPanel.classList.toggle('hidden', !opening);
     settingsToggle.setAttribute('aria-expanded', String(opening));
+    if (opening && window.matchMedia('(max-width: 900px)').matches) {
+      // The mobile sidebar is a horizontally scrollable row; a normal-flow
+      // settings panel gets clipped off-screen. Anchor it as a viewport overlay.
+      const rect = settingsToggle.getBoundingClientRect();
+      const top = Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 220));
+      settingsPanel.style.position = 'fixed';
+      settingsPanel.style.top = `${top}px`;
+      settingsPanel.style.left = 'auto';
+      settingsPanel.style.right = '12px';
+      settingsPanel.style.width = 'min(360px, calc(100vw - 24px))';
+      settingsPanel.style.maxHeight = `${Math.max(160, window.innerHeight - top - 16)}px`;
+      settingsPanel.style.overflowY = 'auto';
+    } else if (!opening) {
+      settingsPanel.removeAttribute('style');
+    }
   });
   settingsPanel?.addEventListener('click', event => event.stopPropagation());
   document.addEventListener('click', event => {
