@@ -1789,12 +1789,17 @@ export default {
         const hfToken = await storedToken(env, user.id, "huggingface");
         if (!hfToken) return json({ error: "Conectá Hugging Face en Integraciones con un token gratuito de permiso Read." }, 409, origin);
         try {
-          const mime = `image/${match[1].toLowerCase()}`;
-          const binary = atob(match[2]);
-          const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-          if (bytes.byteLength > MAX_MEDIA_BYTES) return json({ error: "La imagen supera el límite de 5 MB." }, 413, origin);
-          const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
           const authHeaders = { Authorization: `Bearer ${hfToken}` };
+          let bytes = new Uint8Array();
+          let mime = "image/png";
+          let extension = "png";
+          if (action === "edit") {
+            mime = `image/${match[1].toLowerCase()}`;
+            const binary = atob(match[2]);
+            bytes = Uint8Array.from((character) => character.charCodeAt(0));
+            if (bytes.byteLength > MAX_MEDIA_BYTES) return json({ error: "La imagen supera el límite de 5 MB." }, 413, origin);
+            extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
+          }
           // fetch consume el body: cada intento debe crear un FormData nuevo.
           const uploadToSpace = async (space) => {
             let response, result, path;
@@ -1810,17 +1815,20 @@ export default {
             }
             return { response, result, path };
           };
-          let uploaded = await uploadToSpace(model);
-          if ((!uploaded.response.ok || typeof uploaded.path !== "string") && selectedImageModel === "fluxKontext" && [429, 500, 502, 503, 504].includes(uploaded.response.status)) {
-            model = imageModelSpaces.qwen2511;
-            uploaded = await uploadToSpace(model);
+          let imageFile = null;
+          if (action === "edit") {
+            let uploaded = await uploadToSpace(model);
+            if ((!uploaded.response.ok || typeof uploaded.path !== "string") && selectedImageModel === "fluxKontext" && [429, 500, 502, 503, 504].includes(uploaded.response.status)) {
+              model = imageModelSpaces.qwen2511;
+              uploaded = await uploadToSpace(model);
+            }
+            const { response: uploadResponse, result: uploadResult, path: uploadedPath } = uploaded;
+            if (!uploadResponse.ok || typeof uploadedPath !== "string") {
+              const detail = String(uploadResult?.error || `HTTP ${uploadResponse.status}`).slice(0, 220);
+              return json({ error: `${model.name} no aceptó la imagen (${detail}). Hugging Face puede seguir sin GPU; probá nuevamente en unos minutos.` }, 502, origin);
+            }
+            imageFile = { path: uploadedPath, url: null, size: bytes.byteLength, orig_name: `mediachafa-input.${extension}`, mime_type: mime, meta: { _type: "gradio.FileData" } };
           }
-          const { response: uploadResponse, result: uploadResult, path: uploadedPath } = uploaded;
-          if (!uploadResponse.ok || typeof uploadedPath !== "string") {
-            const detail = String(uploadResult?.error || `HTTP ${uploadResponse.status}`).slice(0, 220);
-            return json({ error: `${model.name} no aceptó la imagen (${detail}). Se reintentó el Space y el modelo alternativo gratuito cuando FLUX no estuvo disponible. Hugging Face puede seguir sin GPU; probá nuevamente en unos minutos.` }, 502, origin);
-          }
-          const imageFile = { path: uploadedPath, url: null, size: bytes.byteLength, orig_name: `mediachafa-input.${extension}`, mime_type: mime, meta: { _type: "gradio.FileData" } };
           const data = model.family === "qwen2511"
             ? [imageFile, prompt, "Fast", 4, 1.0, "", -1, "", "", 1.0]
             : model.family === "noctq"
