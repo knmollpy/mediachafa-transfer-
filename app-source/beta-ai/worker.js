@@ -1783,6 +1783,7 @@ export default {
       if (selectedImageModel !== "qwen21" && !imageModelSpaces[selectedImageModel]) return json({ error: "Modelo de edición desconocido." }, 400, origin);
       if (selectedImageModel !== "qwen21") {
         const model = imageModelSpaces[selectedImageModel];
+        const hfToken = token; // Token obtenido y validado en el ámbito de esta ruta autenticada.
         try {
           const mime = `image/${match[1].toLowerCase()}`;
           const binary = atob(match[2]);
@@ -1791,7 +1792,7 @@ export default {
           const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
           const uploadForm = new FormData();
           uploadForm.append("files", new Blob([bytes], { type: mime }), `mediachafa-input.${extension}`);
-          const authHeaders = { Authorization: `Bearer ${token}` };
+          const authHeaders = { Authorization: `Bearer ${hfToken}` };
           const uploadResponse = await fetch(`${model.base}/gradio_api/upload`, { method: "POST", headers: authHeaders, body: uploadForm, signal: AbortSignal.timeout(45000) });
           const uploadResult = await uploadResponse.json().catch(() => null);
           const uploadedPath = Array.isArray(uploadResult) ? uploadResult[0] : uploadResult?.files?.[0];
@@ -1803,7 +1804,8 @@ export default {
           const submitResponse = await fetch(`${model.base}/gradio_api/call/${model.endpoint}`, { method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" }, body: JSON.stringify({ data }), signal: AbortSignal.timeout(45000) });
           const submitted = await submitResponse.json().catch(() => ({}));
           if (!submitResponse.ok || !submitted.event_id) return json({ error: `${model.name} no pudo iniciar la edición (HTTP ${submitResponse.status}).` }, 502, origin);
-          const resultResponse = await fetch(`${model.base}/gradio_api/call/${model.endpoint}/${encodeURIComponent(submitted.event_id)}`, { headers: authHeaders, signal: AbortSignal.timeout(180000) });
+          // Same 150-second ceiling as the established Qwen 2.1 route. Cloudflare HTTP requests have no hard wall-time limit while the client stays connected; fetch waiting does not consume CPU time.
+          const resultResponse = await fetch(`${model.base}/gradio_api/call/${model.endpoint}/${encodeURIComponent(submitted.event_id)}`, { headers: authHeaders, signal: AbortSignal.timeout(150000) });
           if (!resultResponse.ok) return json({ error: `${model.name} no pudo devolver el resultado (HTTP ${resultResponse.status}).` }, 502, origin);
           const eventStream = await resultResponse.text();
           let completedData = null, eventName = "";
