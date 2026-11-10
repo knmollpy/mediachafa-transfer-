@@ -1664,6 +1664,21 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const opening = settingsPanel.classList.contains('hidden');
     settingsPanel.classList.toggle('hidden', !opening);
     settingsToggle.setAttribute('aria-expanded', String(opening));
+    if (opening && window.matchMedia('(max-width: 900px)').matches) {
+      // The mobile sidebar is a horizontally scrollable row; a normal-flow
+      // settings panel gets clipped off-screen. Anchor it as a viewport overlay.
+      const rect = settingsToggle.getBoundingClientRect();
+      const top = Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 220));
+      settingsPanel.style.position = 'fixed';
+      settingsPanel.style.top = `${top}px`;
+      settingsPanel.style.left = 'auto';
+      settingsPanel.style.right = '12px';
+      settingsPanel.style.width = 'min(360px, calc(100vw - 24px))';
+      settingsPanel.style.maxHeight = `${Math.max(160, window.innerHeight - top - 16)}px`;
+      settingsPanel.style.overflowY = 'auto';
+    } else if (!opening) {
+      settingsPanel.removeAttribute('style');
+    }
   });
   settingsPanel?.addEventListener('click', event => event.stopPropagation());
   document.addEventListener('click', event => {
