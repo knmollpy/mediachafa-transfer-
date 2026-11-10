@@ -1793,22 +1793,24 @@ export default {
           const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
           if (bytes.byteLength > MAX_MEDIA_BYTES) return json({ error: "La imagen supera el límite de 5 MB." }, 413, origin);
           const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
-          const uploadForm = new FormData();
-          uploadForm.append("files", new Blob([bytes], { type: mime }), `mediachafa-input.${extension}`);
           const authHeaders = { Authorization: `Bearer ${hfToken}` };
+          // fetch consume el body: cada intento debe crear un FormData nuevo.
           const uploadToSpace = async (space) => {
-            let response;
-            for (let attempt = 0; attempt < 3; attempt++) {
+            let response, result, path;
+            for (let attempt = 0; attempt < 4; attempt++) {
+              const uploadForm = new FormData();
+              uploadForm.append("files", new Blob([bytes], { type: mime }), `mediachafa-input.${extension}`);
               response = await fetch(`${space.base}/gradio_api/upload`, { method: "POST", headers: authHeaders, body: uploadForm, signal: AbortSignal.timeout(60000) });
-              if (response.status !== 503 || attempt === 2) break;
-              await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+              result = await response.json().catch(() => null);
+              path = Array.isArray(result) ? result[0] : result?.files?.[0];
+              if (response.ok && typeof path === "string") break;
+              if (![429, 500, 502, 503, 504].includes(response.status) || attempt === 3) break;
+              await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
             }
-            const result = await response.json().catch(() => null);
-            const path = Array.isArray(result) ? result[0] : result?.files?.[0];
             return { response, result, path };
           };
           let uploaded = await uploadToSpace(model);
-          if ((!uploaded.response.ok || typeof uploaded.path !== "string") && selectedImageModel === "fluxKontext" && uploaded.response.status === 503) {
+          if ((!uploaded.response.ok || typeof uploaded.path !== "string") && selectedImageModel === "fluxKontext" && [429, 500, 502, 503, 504].includes(uploaded.response.status)) {
             model = imageModelSpaces.qwen2511;
             uploaded = await uploadToSpace(model);
           }
