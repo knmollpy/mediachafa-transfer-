@@ -1521,6 +1521,20 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 
   function attachmentLabel(file, selector) { $(selector).textContent = file ? `Adjunto: ${file.name}` : ''; }
 
+  const imageEditorModelSelect = $('#beta-image-editor-model');
+  const imageEditorModelInfo = $('#beta-image-editor-model-info');
+  const imageEditorModelDetails = {"qwen21":"Razonamiento: no aplica (modelo de difusión). Fidelidad alta. Límite: 5 min GPU/día de ZeroGPU compartidos entre Spaces; cola variable.","qwen2511":"Razonamiento: no aplica (modelo de difusión). Fidelidad muy alta; modo rápido de 4 pasos. Límite: ZeroGPU xlarge consume 2×; aprox. 2,5 min GPU/día equivalentes.","fluxKontext":"Razonamiento: no aplica (modelo de difusión). Fidelidad alta y buena edición contextual. Límite: hasta 5 min GPU/día de ZeroGPU compartidos entre Spaces."};
+  if (imageEditorModelSelect) {
+    const savedImageModel = localStorage.getItem('beta-image-editor-model') || 'qwen21';
+    imageEditorModelSelect.value = ['qwen21', 'qwen2511', 'fluxKontext'].includes(savedImageModel) ? savedImageModel : 'qwen21';
+    const updateImageModelInfo = () => {
+      const selected = imageEditorModelSelect.value;
+      localStorage.setItem('beta-image-editor-model', selected);
+      if (imageEditorModelInfo) imageEditorModelInfo.textContent = imageEditorModelDetails[selected] || imageEditorModelDetails.qwen21;
+    };
+    imageEditorModelSelect.addEventListener('change', updateImageModelInfo);
+    updateImageModelInfo();
+  }
   const imageEditButton = document.createElement('button');
   imageEditButton.type = 'button';
   imageEditButton.className = 'secondary hidden';
@@ -1604,20 +1618,6 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   // para hacerte una pregunta necesaria, para pedirte aprobación de algo delicado
   // (borrados, SQL o cambios en la web en vivo de MediaChafa) o si tocás "Detener".
   const agent = window.MediaChafaBetaAgent;
-  const imageEditorModelSelect = $('#beta-image-editor-model');
-  const imageEditorModelInfo = $('#beta-image-editor-model-info');
-  const imageEditorModelDetails = {"qwen21":"Razonamiento: no aplica (modelo de difusión). Fidelidad alta. Límite: 5 min GPU/día de ZeroGPU compartidos entre Spaces; cola variable.","qwen2511":"Razonamiento: no aplica (modelo de difusión). Fidelidad muy alta; modo rápido de 4 pasos. Límite: ZeroGPU xlarge consume 2×; aprox. 2,5 min GPU/día equivalentes.","fluxKontext":"Razonamiento: no aplica (modelo de difusión). Fidelidad alta y buena edición contextual. Límite: hasta 5 min GPU/día de ZeroGPU compartidos entre Spaces."};
-  if (imageEditorModelSelect) {
-    const savedImageModel = localStorage.getItem('beta-image-editor-model') || 'qwen21';
-    imageEditorModelSelect.value = ['qwen21', 'qwen2511', 'fluxKontext'].includes(savedImageModel) ? savedImageModel : 'qwen21';
-    const updateImageModelInfo = () => {
-      const selected = imageEditorModelSelect.value;
-      localStorage.setItem('beta-image-editor-model', selected);
-      if (imageEditorModelInfo) imageEditorModelInfo.textContent = imageEditorModelDetails[selected] || imageEditorModelDetails.qwen21;
-    };
-    imageEditorModelSelect.addEventListener('change', updateImageModelInfo);
-    updateImageModelInfo();
-  }
   const settingsToggle = $('#beta-settings-toggle');
   const settingsPanel = $('#beta-settings');
   if (settingsPanel && !settingsPanel.contains(teamToggleLabel)) {
