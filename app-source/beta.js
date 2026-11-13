@@ -2277,6 +2277,157 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     activity(statusText, outcome.kind === 'error' ? 'error' : 'done');
   }
 
+  /**
+   * Routes only explicit, imperative artifact-build requests from a built-in MediaChafa model.
+   * Informational questions about APK, PKG, Android, or PS4 remain in the ordinary chat path.
+   */
+  function isMediaChafaBuildRequest(message, model) {
+    if (!String(model?.id || '').startsWith('mediachafa::')) return false;
+    const text = String(message || '').trim();
+    const hasArtifact = /\b(?:apk|pkg|\.pkg|homebrew|aplicaci[oó]n android)\b/i.test(text);
+    if (!hasArtifact || /^(?:¿?\s*)?(?:qué|que|cómo|como|por qué|para qué|qué es|explica|explícame|decime|dime|sabes|se puede|puedo)\b/i.test(text)) return false;
+    const directCommand = /^(?:por favor[, ]*)?(?:crea(?:r|me)?|creá(?:me)?|gener(?:a|ame|ar|á|áme)|compil(?:a|ame|ar|á|áme)|constru(?:ye|í|ir)|arm(?:a|ame|ar|á|áme)|empaquet(?:a|ar|á)|desarroll(?:a|ar|á)|prepar(?:a|ar|á)|implement(?:a|ar|á)|haceme|hacé)\b/i.test(text);
+    const explicitRequest = /^(?:quiero|necesito|podés|podrias|podrías|puedes)\s+(?:que\s+(?:me\s+)?)?(?:crees|generes|compiles|construyas|armes|empaquetes|hagas|crear|generar|compilar|construir|armar|empaquetar|desarrollar|preparar|implementar)\b/i.test(text);
+    return directCommand || explicitRequest;
+  }
+
+  async function runPersistentBuildAgent({ userText, model }) {
+    const run = { stopped: false, controller: new AbortController(), executionId: null };
+    autonomousRun = run;
+    setComposerMode('working');
+    const progress = addMessage('assistant', 'Preparando el entorno de creación y compilación…', model?.name || '');
+    progress.classList.add('beta-working');
+    progress.querySelector('.beta-copy-btn')?.remove();
+    const progressBody = progress.querySelector('p');
+    const liveList = document.createElement('ul');
+    liveList.className = 'beta-live-steps';
+    progress.insertBefore(liveList, progressBody);
+    const steps = [];
+    let stepCount = 0;
+    const showStep = (label, kind = 'active') => {
+      const value = String(label || '').slice(0, 260);
+      if (!value) return;
+      if (steps[steps.length - 1] !== value) steps.push(value);
+      liveList.replaceChildren(...steps.slice(-14).map((item, i, list) => {
+        const li = document.createElement('li');
+        li.dataset.state = i === list.length - 1 && kind === 'active' ? 'active' : 'done';
+        li.textContent = item;
+        return li;
+      }));
+      progressBody.textContent = 'MediaChafa está trabajando con herramientas de compilación…';
+      setStatus(value);
+      activity(value, kind === 'error' ? 'error' : 'active');
+      messagesNode.scrollTop = messagesNode.scrollHeight;
+    };
+    try {
+      const auth = await currentSession();
+      if (!auth?.token) throw new Error('No se pudo validar tu sesión de MediaChafa.');
+      showStep('Iniciando ejecución persistente con ' + (model?.name || 'MediaChafa') + '…');
+      const startResponse = await fetch(`${API}/agent/start`, {
+        method: 'POST',
+        signal: run.controller.signal,
+        headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+        // The chat injects this internal execution mode; the user never selects or switches modes.
+      body: JSON.stringify({ message: userText, model: model.id, mode: 'autonomous' }),
+      });
+      const started = await startResponse.json().catch(() => ({}));
+      if (!startResponse.ok || !started.executionId) {
+        throw new Error(started.error || `No se pudo iniciar la ejecución (HTTP ${startResponse.status}).`);
+      }
+      run.executionId = started.executionId;
+      run.pause = () => fetch(`${API}/agent/${encodeURIComponent(run.executionId)}/pause`, { method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: 'El dueño detuvo esta ejecución; dejá el estado pausado sin asumir que la herramienta pendiente se ejecutó.' }) }).catch(() => {});
+      showStep('Ejecución iniciada · rama aislada ' + String(started.branch || '').slice(0, 90));
+      let snapshot = null;
+      let finished = false;
+      for (let attempt = 0; attempt < 12; attempt++) {
+        if (run.stopped) break;
+        stepCount++;
+        showStep(`Etapa ${stepCount}: la IA está razonando y ejecutando la siguiente herramienta…`);
+        const response = await fetch(`${API}/agent/${encodeURIComponent(run.executionId)}/step`, {
+          method: 'POST',
+          signal: run.controller.signal,
+          headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        snapshot = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(snapshot.error || `Falló una etapa de ejecución (HTTP ${response.status}).`);
+        const tool = snapshot.lastToolResult;
+        if (tool?.name) {
+          if (tool.ok) {
+            const detail = tool.result?.status ? ` · ${tool.result.status}` : '';
+            showStep(`Herramienta ejecutada: ${tool.name}${detail}`);
+          } else {
+            showStep(`La herramienta ${tool.name} informó: ${tool.error || 'error'}`, 'error');
+          }
+        }
+        if (snapshot.status === 'completed') { finished = true; break; }
+        if (snapshot.status === 'failed') throw new Error(snapshot.error || 'La ejecución terminó con un error.');
+        if (snapshot.status === 'paused') { showStep('La ejecución quedó pausada.', 'error'); break; }
+        if (snapshot.status === 'step_in_progress' || snapshot.status === 'pausing') {
+          await new Promise(resolve => setTimeout(resolve, 1800));
+        }
+      }
+      if (run.stopped) {
+        const stoppedMessage = 'Ejecución detenida. No se informará como completada.';
+        showStep(stoppedMessage, 'error');
+        addMessage('assistant', stoppedMessage, model?.name || '');
+        history.push({ role: 'assistant', content: stoppedMessage });
+        history = history.slice(-30);
+        saveHistory();
+      } else if (finished && snapshot) {
+        let answer = String(snapshot.answer || 'La ejecución terminó.');
+        const buildResult = snapshot.lastToolResult?.name === 'github_build_status' && snapshot.lastToolResult?.ok
+          ? snapshot.lastToolResult.result : null;
+        const runUrl = buildResult?.url || snapshot.lastBuild?.workflowUrl || '';
+        const artifacts = Array.isArray(buildResult?.artifacts) ? buildResult.artifacts : Array.isArray(snapshot.lastBuild?.artifacts) ? snapshot.lastBuild.artifacts : [];
+        if (artifacts.length) answer += '\n\nArtefactos generados: ' + artifacts.map(item => String(item.name || 'archivo')).join(', ') + '.';
+        if (snapshot.verified) answer += '\n\nVerificación adicional: aprobada.';
+        const finalNode = addMessage('assistant', answer, model?.name || '');
+        if (runUrl.startsWith('https://github.com/')) {
+          const link = document.createElement('a');
+          link.href = runUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.className = 'beta-link';
+          link.textContent = 'Abrir compilación y descargar artefactos en GitHub';
+          finalNode.append(link);
+        }
+        history.push({ role: 'assistant', content: answer });
+        history = history.slice(-30);
+        saveHistory();
+        showStep('Ejecución finalizada.');
+        activity('Trabajo terminado.', 'done');
+      } else if (!run.stopped) {
+        const message = snapshot?.status === 'paused'
+          ? 'La ejecución quedó pausada. Podés volver a pedir la tarea para iniciarla nuevamente.'
+          : 'La ejecución no llegó a un estado final dentro de esta tanda. Volvé a pedir que continúe.';
+        addMessage('assistant', message, model?.name || '');
+        history.push({ role: 'assistant', content: message });
+        saveHistory();
+      }
+    } catch (error) {
+      if (run.stopped || error?.name === 'AbortError') {
+        const stoppedMessage = 'Trabajo detenido. La ejecución queda pausada y no se considera completada.';
+        showStep(stoppedMessage, 'error');
+        addMessage('assistant', stoppedMessage, model?.name || '');
+        history.push({ role: 'assistant', content: stoppedMessage });
+        history = history.slice(-30);
+        saveHistory();
+      } else {
+        const message = error?.message || 'No se pudo completar la ejecución.';
+        showStep(message, 'error');
+        addMessage('assistant', 'No pude completar la tarea: ' + message, model?.name || '');
+        history.push({ role: 'assistant', content: 'No pude completar la tarea: ' + message });
+        saveHistory();
+      }
+    } finally {
+      progress.remove();
+      if (autonomousRun === run) autonomousRun = null;
+      setComposerMode('idle');
+      setStatus(run.stopped ? 'Trabajo detenido.' : 'Listo.');
+    }
+  }
+
   async function startAutonomousFromForm({ userText, displayText, selectedModel }) {
     addMessage('user', displayText);
     history.push({ role: 'user', content: displayText });
@@ -2290,6 +2441,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     imageInput.value = audioInput.value = '';
     attachmentLabel(undefined, '#beta-image-name');
     attachmentLabel(undefined, '#beta-audio-name');
+    if (!attachments.image && !attachments.audio && isMediaChafaBuildRequest(userText, selectedModel)) {
+      await runPersistentBuildAgent({ userText, model: selectedModel });
+      return;
+    }
     const pending = pendingAgentRuns[currentThreadId];
     let state;
     let firstMessage;
@@ -2309,6 +2464,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     event.stopPropagation();
     if (autonomousRun) {
       autonomousRun.stopped = true;
+      autonomousRun.pause?.();
       autonomousRun.controller.abort();
       autonomousRun.waiting?.({ stopped: true });
       setStatus('Deteniendo Beta…');

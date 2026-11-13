@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 import { after, test } from "node:test";
 import worker from "../worker.js";
 
@@ -185,3 +187,46 @@ test("Vercel integration validates project access and stores its token encrypted
   assert.ok(stored);
   assert.equal(stored.includes("vercel-owner-token"), false);
 });
+
+test("MediaChafa Código, Pro, and Rápida use verified free-provider quotas", async () => {
+  kv.set(`integration:${userId}:openrouter`, await encryptToken("router-token"));
+  kv.set(`integration:${userId}:github`, await encryptToken("github-token"));
+  modelTurns.push(
+    { type: "final", answer: "Ejecución Código terminada.", summary: "Cuota gratuita aplicada.", verified: false },
+    { type: "final", answer: "Ejecución Pro terminada.", summary: "Cuota gratuita aplicada.", verified: false },
+    { type: "final", answer: "Ejecución Rápida terminada.", summary: "Cuota gratuita aplicada.", verified: false },
+  );
+  requestCount = modelTurns.length - 3;
+  const date = new Date().toISOString().slice(0, 10);
+  const quotaKey = `beta-ai-requests:${userId}:openrouter:day:${date}`;
+  const usedBefore = Number(kv.get(quotaKey) || 0);
+  const variants = [
+    ["codigo", "MediaChafa IA Código"],
+    ["pro", "MediaChafa IA Pro"],
+    ["rapida", "MediaChafa IA Rápida"],
+  ];
+  for (const [variant, expectedName] of variants) {
+    const start = await api("/agent/start", "POST", { mode: "autonomous", model: `mediachafa::${variant}`, message: "Creá un APK de prueba." });
+    assert.equal(start.status, 201, await start.clone().text());
+    const { executionId } = await start.json();
+    const step = await api(`/agent/${executionId}/step`, "POST", {});
+    const state = await step.json();
+    assert.equal(state.status, "completed", JSON.stringify(state));
+    assert.equal(state.modelName, expectedName);
+  }
+  assert.equal(Number(kv.get(quotaKey) || 0) - usedBefore, 3);
+});
+test("MediaChafa build routing requires an explicit artifact creation command", async () => {
+  const source = await readFile(new URL("../../beta.js", import.meta.url), "utf8");
+  const match = source.match(/function isMediaChafaBuildRequest\(message, model\) \{[\s\S]*?\n  \}/);
+  assert.ok(match, "the main chat must define the explicit build-intent guard");
+  const route = vm.runInNewContext(`(${match[0]})`);
+  const mediachafa = { id: "mediachafa::codigo" };
+  assert.equal(route("¿Qué es un APK?", mediachafa), false);
+  assert.equal(route("Quiero saber qué es un PKG", mediachafa), false);
+  assert.equal(route("Cómo compilar un APK", mediachafa), false);
+  assert.equal(route("Crea un APK para Android", mediachafa), true);
+  assert.equal(route("Quiero que me generes un PKG para PS4", mediachafa), true);
+  assert.equal(route("Crea un APK", { id: "openrouter::openai/gpt-oss-20b:free" }), false);
+});
+
