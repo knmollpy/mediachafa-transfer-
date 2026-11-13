@@ -914,7 +914,6 @@ function parseAgentTurn(output) {
 }
 
 async function agentStart(env, user, payload) {
-  if (payload.mode !== "autonomous") throw new Error("La ejecución con herramientas requiere trabajo autónomo.");
   const message = String(payload.message || "").trim().slice(0, 6000);
   if (!message) throw new Error("Escribí la tarea que querés ejecutar.");
   const modelId = String(payload.model || "");
