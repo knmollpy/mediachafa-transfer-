@@ -864,6 +864,12 @@ async function agentModelTurn(env, state, requestSignal) {
       if (!candidates.length) throw new Error("No hay modelos gratuitos disponibles para esta IA MediaChafa.");
       const failures = [];
       for (const candidate of candidates) {
+        // mediachafaCandidates valida el token, la lista gratuita y la cuota externa del proveedor; este saldo se vuelve a comprobar antes de reservar.
+        if (!candidate.token || !["openrouter", "groq", "gemini"].includes(candidate.provider) || !(Number(candidate.providerQuotaRemaining) > 0)) {
+          failures.push(candidate.name + ": token o cuota gratuita del proveedor no disponible");
+          continue;
+        }
+        // reserveRequest registra el consumo en el contador diario/mensual del proveedor subyacente, no en el alias MediaChafa.
         const quota = await reserveRequest(env, state.userId, candidate.modelId);
         if (!quota.allowed) { failures.push(candidate.name + ": cuota gratuita agotada"); continue; }
         // Reutiliza callModel, el adaptador de proveedores ya definido en este mismo worker; no agrega paquetes ni imports.
@@ -919,7 +925,7 @@ function parseAgentTurn(output) {
 async function agentStart(env, user, payload) {
   const message = String(payload.message || "").trim().slice(0, 6000);
   if (!message) throw new Error("Escribí la tarea que querés ejecutar.");
-  if (payload.mode !== undefined && payload.mode !== "autonomous") throw new Error("El modo explícito debe ser autónomo; el chat principal puede omitir este campo.");
+  if (payload.mode !== "autonomous") throw new Error("La ejecución con herramientas requiere modo autónomo.");
   const modelId = String(payload.model || "");
   const [provider, nativeModelId] = modelId.split("::", 2);
   let model;
@@ -2200,16 +2206,21 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
       for (const model of catalog) {
         if (needsVision && !model.vision) continue;
         if (provider === "openrouter" && (!String(model.nativeId || "").endsWith(":free") || providerRemaining <= 0)) continue;
+        let providerQuotaRemaining = provider === "openrouter" ? providerRemaining : Infinity;
         if (provider === "groq") {
+          const limit = Number(model.dailyLimit || 0);
           const used = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${userId}:groq:${model.nativeId}:${date}`) || 0);
-          if (used >= Number(model.dailyLimit || 0)) continue;
+          providerQuotaRemaining = limit - used;
+          if (providerQuotaRemaining <= 0) continue;
         }
         // Evita volver a elegir durante un breve período modelos que acaban de responder 429.
         const cooldownKey = `beta-model-cooldown:${userId}:${provider}:${model.nativeId}`;
         if (await env.BETA_LIMITS.get(cooldownKey)) continue;
         if (provider === "gemini") {
+          const limit = Number(PROVIDER_DAILY_LIMITS.gemini || 0);
           const used = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${userId}:gemini:day:${date}`) || 0);
-          if (used >= Number(PROVIDER_DAILY_LIMITS.gemini || 0)) continue;
+          providerQuotaRemaining = limit - used;
+          if (providerQuotaRemaining <= 0) continue;
         }
         eligible.push({
           provider,
@@ -2218,6 +2229,7 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
           name: model.name,
           vision: Boolean(model.vision),
           token,
+          providerQuotaRemaining,
           thinkingLevel: model.thinkingLevel || "medio",
         });
         if (provider === "openrouter") providerRemaining -= 1;
