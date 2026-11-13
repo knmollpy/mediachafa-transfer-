@@ -98,7 +98,7 @@ test("autonomous execution persists pause state and verifies isolated GitHub cha
   kv.set(`integration:${userId}:github`, await encryptToken("github-token"));
   kv.set(`integration:${userId}:vercel`, await encryptToken("vercel-token"));
 
-  const start = await api("/agent/start", "POST", { model: modelId, message: "Leé, modificá y verificá Beta." });
+  const start = await api("/agent/start", "POST", { mode: "autonomous", model: modelId, message: "Leé, modificá y verificá Beta." });
   assert.equal(start.status, 201);
   const { executionId: id, branch } = await start.json();
   assert.equal(branch, `beta-agent/${id}`);
@@ -144,7 +144,7 @@ test("pause during a model turn persists instructions and skips the pending tool
     { type: "tool_call", name: "github_write_files", arguments: { files: [{ path: "app-source/beta.js", content: "must not run while paused" }] } },
     { type: "final", answer: "Continué luego de la pausa.", verified: false },
   );
-  const start = await api("/agent/start", "POST", { model: modelId, message: "Modificá el archivo." });
+  const start = await api("/agent/start", "POST", { mode: "autonomous", model: modelId, message: "Modificá el archivo." });
   const { executionId: id } = await start.json();
   let markEntered;
   let releaseModel;
@@ -185,3 +185,31 @@ test("Vercel integration validates project access and stores its token encrypted
   assert.ok(stored);
   assert.equal(stored.includes("vercel-owner-token"), false);
 });
+
+test("MediaChafa Código, Pro, and Rápida use verified free-provider quotas", async () => {
+  kv.set(`integration:${userId}:openrouter`, await encryptToken("router-token"));
+  kv.set(`integration:${userId}:github`, await encryptToken("github-token"));
+  modelTurns.push(
+    { type: "final", answer: "Ejecución Código terminada.", summary: "Cuota gratuita aplicada.", verified: false },
+    { type: "final", answer: "Ejecución Pro terminada.", summary: "Cuota gratuita aplicada.", verified: false },
+    { type: "final", answer: "Ejecución Rápida terminada.", summary: "Cuota gratuita aplicada.", verified: false },
+  );
+  requestCount = modelTurns.length - 3;
+  const variants = [
+    ["codigo", "MediaChafa IA Código"],
+    ["pro", "MediaChafa IA Pro"],
+    ["rapida", "MediaChafa IA Rápida"],
+  ];
+  for (const [variant, expectedName] of variants) {
+    const start = await api("/agent/start", "POST", { mode: "autonomous", model: `mediachafa::${variant}`, message: "Creá un APK de prueba." });
+    assert.equal(start.status, 201, await start.clone().text());
+    const { executionId } = await start.json();
+    const step = await api(`/agent/${executionId}/step`, "POST", {});
+    const state = await step.json();
+    assert.equal(state.status, "completed", JSON.stringify(state));
+    assert.equal(state.modelName, expectedName);
+  }
+  const date = new Date().toISOString().slice(0, 10);
+  assert.equal(Number(kv.get(`beta-ai-requests:${userId}:openrouter:day:${date}`) || 0), 3);
+});
+
