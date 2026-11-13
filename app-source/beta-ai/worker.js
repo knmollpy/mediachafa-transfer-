@@ -671,6 +671,7 @@ async function readAgentBuildStatus(token, state) {
   const run = (data.workflow_runs || []).filter((item) => item.head_sha === build.commitSha && Date.parse(item.created_at || "") >= build.dispatchedAt - 60_000).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
   if (!run) return { status: "queued", platform: build.platform, commitSha: build.commitSha, message: "GitHub todavía no registró la ejecución." };
   build.runId = run.id;
+  build.workflowUrl = run.html_url;
   const result = { id: run.id, platform: build.platform, status: run.status, conclusion: run.conclusion, url: run.html_url, commitSha: run.head_sha };
   if (run.status === "completed") {
     const artifactsResponse = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${run.id}/artifacts`, {
@@ -678,7 +679,7 @@ async function readAgentBuildStatus(token, state) {
       signal: AbortSignal.timeout(15_000),
     });
     const artifactsData = await artifactsResponse.json().catch(() => ({}));
-    if (artifactsResponse.ok) result.artifacts = (artifactsData.artifacts || []).filter((item) => !item.expired).map((item) => ({ name: item.name, downloadUrl: item.archive_download_url, expiresAt: item.expires_at, sizeBytes: item.size_in_bytes }));
+    if (artifactsResponse.ok) { result.artifacts = (artifactsData.artifacts || []).filter((item) => !item.expired).map((item) => ({ name: item.name, downloadUrl: item.archive_download_url, expiresAt: item.expires_at, sizeBytes: item.size_in_bytes })); build.artifacts = result.artifacts; }
   }
   return result;
 }
