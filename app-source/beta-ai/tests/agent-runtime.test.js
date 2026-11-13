@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 import { after, test } from "node:test";
 import worker from "../worker.js";
 
@@ -213,5 +215,18 @@ test("MediaChafa Código, Pro, and Rápida use verified free-provider quotas", a
     assert.equal(state.modelName, expectedName);
   }
   assert.equal(Number(kv.get(quotaKey) || 0) - usedBefore, 3);
+});
+test("MediaChafa build routing requires an explicit artifact creation command", async () => {
+  const source = await readFile(new URL("../../beta.js", import.meta.url), "utf8");
+  const match = source.match(/function isMediaChafaBuildRequest\\(message, model\\) \\{[\\s\\S]*?\\n  \\}/);
+  assert.ok(match, "the main chat must define the explicit build-intent guard");
+  const route = vm.runInNewContext(`(${match[0]})`);
+  const mediachafa = { id: "mediachafa::codigo" };
+  assert.equal(route("¿Qué es un APK?", mediachafa), false);
+  assert.equal(route("Quiero saber qué es un PKG", mediachafa), false);
+  assert.equal(route("Cómo compilar un APK", mediachafa), false);
+  assert.equal(route("Crea un APK para Android", mediachafa), true);
+  assert.equal(route("Quiero que me generes un PKG para PS4", mediachafa), true);
+  assert.equal(route("Crea un APK", { id: "openrouter::openai/gpt-oss-20b:free" }), false);
 });
 
