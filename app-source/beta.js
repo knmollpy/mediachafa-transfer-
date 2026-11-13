@@ -2369,7 +2369,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         const buildResult = snapshot.lastToolResult?.name === 'github_build_status' && snapshot.lastToolResult?.ok
           ? snapshot.lastToolResult.result : null;
         const runUrl = buildResult?.url || snapshot.lastBuild?.workflowUrl || '';
-        const artifacts = Array.isArray(buildResult?.artifacts) ? buildResult.artifacts : [];
+        const artifacts = Array.isArray(buildResult?.artifacts) ? buildResult.artifacts : Array.isArray(snapshot.lastBuild?.artifacts) ? snapshot.lastBuild.artifacts : [];
         if (artifacts.length) answer += '\n\nArtefactos generados: ' + artifacts.map(item => String(item.name || 'archivo')).join(', ') + '.';
         if (snapshot.verified) answer += '\n\nVerificación adicional: aprobada.';
         const finalNode = addMessage('assistant', answer, model?.name || '');
