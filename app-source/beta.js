@@ -1983,6 +1983,15 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       const optionRow = document.createElement('div');
       optionRow.className = 'beta-question-options';
       let settled = false;
+      const customInput = document.createElement('textarea');
+      customInput.className = 'beta-question-custom';
+      customInput.rows = 3;
+      customInput.maxLength = 2000;
+      customInput.placeholder = isRepoNameQuestion ? 'Nombre exacto del repositorio…' : 'Escribí tu respuesta tal cual querés enviarla…';
+      const sendButton = document.createElement('button');
+      sendButton.type = 'button';
+      sendButton.className = 'primary beta-question-send';
+      sendButton.textContent = 'Enviar respuesta';
       const finish = (result) => {
         if (settled) return;
         settled = true;
@@ -1991,6 +2000,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         for (const button of controls.querySelectorAll('button')) button.disabled = true;
         customInput.disabled = true;
         if (result?.answer) {
+          // Mostrar y guardar exactamente el texto elegido/escrito; las instrucciones de continuación
+          // se agregan solamente al mensaje interno enviado al agente.
           addMessage('user', result.answer);
           history.push({ role: 'user', content: result.answer });
           history = history.slice(-30);
@@ -2004,46 +2015,59 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         }
         resolve(result || { answer: '' });
       };
+      const sendCustomAnswer = () => {
+        const value = customInput.value;
+        if (value.trim()) finish({ answer: value, rawAnswer: value });
+      };
       for (const choice of options) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'secondary beta-question-option';
         button.textContent = choice;
-        button.addEventListener('click', () => finish({
-          answer: 'Elijo esta opción: ' + choice + '. Aplicala a la decisión pendiente y continuá con el pedido original. No repitas esta pregunta.'
-        }));
+        button.addEventListener('click', () => finish({ answer: choice, rawAnswer: choice }));
         optionRow.append(button);
       }
       if (!options.length && !isRepoNameQuestion) {
         const hint = document.createElement('p');
         hint.className = 'beta-question-hint';
-        hint.textContent = 'La IA no proporcionó opciones concretas. Podés pedirle otra propuesta o escribir tu respuesta.';
+        hint.textContent = 'No hacen falta más datos si ya se entiende tu indicación. Podés responder directamente abajo.';
         controls.append(hint);
       }
       const alternativeButton = document.createElement('button');
       alternativeButton.type = 'button';
       alternativeButton.className = 'secondary beta-question-option beta-question-alternative';
-      alternativeButton.textContent = 'Proponé otra alternativa';
+      alternativeButton.textContent = 'Proponer otra alternativa';
       alternativeButton.addEventListener('click', () => finish({ action: 'alternative' }));
-      const customInput = document.createElement('textarea');
-      customInput.className = 'beta-question-custom';
-      customInput.rows = 2;
-      customInput.maxLength = 2000;
-      customInput.placeholder = isRepoNameQuestion ? 'Nombre exacto del repositorio…' : 'O escribí tu propia respuesta…';
       customInput.addEventListener('keydown', event => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
-          const value = customInput.value.trim();
-          if (value) finish({ answer: 'Mi respuesta personalizada: ' + value + '. Usala para resolver la decisión pendiente y continuá con el pedido original. No repitas esta pregunta.', rawAnswer: value });
+          sendCustomAnswer();
         }
       });
-      customInput.addEventListener('blur', () => {
-        customInput.dataset.hint = 'Escribí tu opinión y presioná Enter para continuar';
-      });
-      customInput.placeholder = isRepoNameQuestion ? 'Nombre exacto del repositorio… (Enter para enviar)' : 'Tu opinión o una respuesta propia… (Enter para enviar)';
-      if (isRepoNameQuestion) controls.append(customInput);
-      else controls.append(optionRow, alternativeButton, customInput);
+      sendButton.addEventListener('click', sendCustomAnswer);
+      if (options.length) controls.append(optionRow);
+      if (!isRepoNameQuestion) controls.append(alternativeButton);
+      const answerRow = document.createElement('div');
+      answerRow.className = 'beta-question-answer-row';
+      answerRow.append(customInput, sendButton);
+      controls.append(answerRow);
       node.append(controls);
+      if (!document.getElementById('beta-question-layout-style')) {
+        const style = document.createElement('style');
+        style.id = 'beta-question-layout-style';
+        style.textContent = `
+          .beta-interactive-question{width:100%;max-width:100%;box-sizing:border-box}
+          .beta-question-controls{display:flex;flex-direction:column;align-items:stretch;gap:12px;width:100%;max-width:100%;margin-top:14px;box-sizing:border-box}
+          .beta-question-options{display:grid;grid-template-columns:1fr;gap:8px;width:100%}
+          .beta-question-options button,.beta-question-alternative{width:100%;min-width:0;min-height:44px;white-space:normal;text-align:left;justify-content:flex-start;box-sizing:border-box}
+          .beta-question-answer-row{display:flex;flex-direction:column;gap:8px;width:100%}
+          .beta-question-custom{display:block;width:100%;min-width:0;max-width:100%;min-height:84px;resize:vertical;box-sizing:border-box;padding:12px;border-radius:12px}
+          .beta-question-send{width:100%;min-height:46px;box-sizing:border-box}
+          .beta-question-hint{margin:0;opacity:.8}
+          @media(min-width:620px){.beta-question-answer-row{flex-direction:row;align-items:stretch}.beta-question-answer-row .beta-question-custom{flex:1}.beta-question-answer-row .beta-question-send{width:auto;min-width:160px}}
+        `;
+        document.head.append(style);
+      }
       run.waitingKind = 'question';
       run.waiting = (outcome) => {
         if (settled) return;
@@ -2054,8 +2078,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         customInput.disabled = true;
         resolve(outcome?.stopped ? { stopped: true } : outcome?.paused ? { paused: true } : { answer: String(outcome?.answer || ''), rawAnswer: String(outcome?.rawAnswer || outcome?.answer || '') });
       };
-      setStatus('Beta está esperando tu decisión. Elegí una opción o escribí tu propia respuesta.');
+      setStatus('Beta espera tu respuesta. Cuando la envíes, retoma el pedido original.');
       activity('Esperando tu respuesta para continuar.', 'active');
+      node.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       messagesNode.scrollTop = messagesNode.scrollHeight;
     });
   }
@@ -2099,6 +2124,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       progressBody.textContent = `Trabajando · etapa ${state.turn} de ${state.maxTurns}`;
       setStatus(text);
       activity(text, kind === 'error' ? 'error' : 'active');
+      // Mantener el indicador vivo al final del chat, no en el mensaje inicial.
+      progress.remove();
+      messagesNode.append(progress);
       messagesNode.scrollTop = messagesNode.scrollHeight;
     };
     let message = firstMessage;
