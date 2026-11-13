@@ -2282,7 +2282,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const text = String(message || '').trim();
     const target = /\bapk\b|\bpkg\b|\.pkg\b|homebrew|aplicaci[oó]n android/i.test(text);
     const command = /^\s*(?:por favor[, ]*)?(?:crea(?:me)?|creá(?:me)?|gener(?:a|ame|á|áme)|compil(?:a|ame|á|áme)|constru(?:ye|í)|arm(?:a|ame|á|áme)|empaquet(?:a|á)|desarroll(?:a|á)|prepar(?:a|á)|implement(?:a|á)|haceme|hacé)\b/i.test(text);
-    const explicitRequest = /\b(?:quiero|necesito|podés|podrias|podrías|puedes)\s+(?:que\s+(?:me\s+)?)?(?:crees|generes|compiles|construyas|armes|empaquetes|desarrolles|prepares|hagas)\b/i.test(text);
+    const explicitRequest = /\b(?:quiero|necesito|podés|podrias|podrías|puedes)\s+(?:que\s+(?:me\s+)?)?(?:crees|generes|compiles|construyas|armes|empaquetes|desarrolles|prepares|hagas|crear|generar|compilar|construir|armar|empaquetar|desarrollar|preparar|implementar|hacer)\b/i.test(text);
     const wantsArtifact = /\b(?:quiero|necesito)\s+(?:un|una)\s+(?:apk|pkg)\b/i.test(text);
     return target && (command || explicitRequest || wantsArtifact);
   }
