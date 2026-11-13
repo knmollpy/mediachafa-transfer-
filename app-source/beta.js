@@ -2327,6 +2327,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         throw new Error(started.error || `No se pudo iniciar la ejecución (HTTP ${startResponse.status}).`);
       }
       run.executionId = started.executionId;
+      run.pause = () => fetch(`${API}/agent/${encodeURIComponent(run.executionId)}/pause`, { method: 'POST', headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: 'El dueño detuvo esta ejecución; dejá el estado pausado sin asumir que la herramienta pendiente se ejecutó.' }) }).catch(() => {});
       showStep('Ejecución iniciada · rama aislada ' + String(started.branch || '').slice(0, 90));
       let snapshot = null;
       let finished = false;
@@ -2445,6 +2446,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     event.stopPropagation();
     if (autonomousRun) {
       autonomousRun.stopped = true;
+      autonomousRun.pause?.();
       autonomousRun.controller.abort();
       autonomousRun.waiting?.({ stopped: true });
       setStatus('Deteniendo Beta…');
