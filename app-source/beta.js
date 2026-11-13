@@ -2280,11 +2280,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   function isMediaChafaBuildRequest(message, model) {
     if (!String(model?.id || '').startsWith('mediachafa::')) return false;
     const text = String(message || '').trim();
-    const target = /\bapk\b|\bpkg\b|\.pkg\b|homebrew|aplicaci[oó]n android/i.test(text);
-    const command = /^\s*(?:por favor[, ]*)?(?:crea(?:r|me)?|creá(?:me)?|gener(?:a|ame|ar|á|áme)|compil(?:a|ame|ar|á|áme)|constru(?:ye|í|ir)|arm(?:a|ame|ar|á|áme)|empaquet(?:a|ar|á)|desarroll(?:a|ar|á)|prepar(?:a|ar|á)|implement(?:a|ar|á)|haceme|hacé)\b/i.test(text);
-    const explicitRequest = /\b(?:quiero|necesito|podés|podrias|podrías|puedes)\s+(?:que\s+(?:me\s+)?)?(?:crees|generes|compiles|construyas|armes|empaquetes|desarrolles|prepares|hagas|crear|generar|compilar|construir|armar|empaquetar|desarrollar|preparar|implementar|hacer)\b/i.test(text);
-    const wantsArtifact = /\b(?:quiero|necesito)\s+(?:un|una)\s+(?:apk|pkg)\b/i.test(text);
-    return target && (command || explicitRequest || wantsArtifact);
+    const artifact = '(?:\\bapk\\b|\\bpkg\\b|\\.pkg\\b|homebrew|aplicaci[oó]n android)';
+    const commandWithArtifact = new RegExp('^\\s*(?:por favor[, ]*)?(?:crea(?:r|me)?|creá(?:me)?|gener(?:a|ame|ar|á|áme)|compil(?:a|ame|ar|á|áme)|constru(?:ye|í|ir)|arm(?:a|ame|ar|á|áme)|empaquet(?:a|ar|á)|desarroll(?:a|ar|á)|prepar(?:a|ar|á)|implement(?:a|ar|á)|haceme|hacé)\\b[\\s\\S]*?' + artifact, 'i');
+    const requestWithArtifact = new RegExp('\\b(?:quiero|necesito|podés|podrias|podrías|puedes)\\s+(?:que\\s+(?:me\\s+)?)?(?:crees|generes|compiles|construyas|armes|empaquetes|desarrolles|prepares|hagas|crear|generar|compilar|construir|armar|empaquetar|desarrollar|preparar|implementar|hacer)\\b[\\s\\S]*?' + artifact, 'i');
+    return commandWithArtifact.test(text) || requestWithArtifact.test(text);
   }
 
   async function runPersistentBuildAgent({ userText, model }) {
@@ -2323,7 +2322,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         method: 'POST',
         signal: run.controller.signal,
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userText, model: model.id }),
+        body: JSON.stringify({ message: userText, model: model.id, mode: 'autonomous' }),
       });
       const started = await startResponse.json().catch(() => ({}));
       if (!startResponse.ok || !started.executionId) {
