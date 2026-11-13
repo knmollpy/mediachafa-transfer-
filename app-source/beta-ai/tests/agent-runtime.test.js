@@ -218,7 +218,7 @@ test("MediaChafa Código, Pro, and Rápida use verified free-provider quotas", a
 });
 test("MediaChafa build routing requires an explicit artifact creation command", async () => {
   const source = await readFile(new URL("../../beta.js", import.meta.url), "utf8");
-  const match = source.match(/function isMediaChafaBuildRequest\\(message, model\\) \\{[\\s\\S]*?\\n  \\}/);
+  const match = source.match(/function isMediaChafaBuildRequest\(message, model\) \{[\s\S]*?\n  \}/);
   assert.ok(match, "the main chat must define the explicit build-intent guard");
   const route = vm.runInNewContext(`(${match[0]})`);
   const mediachafa = { id: "mediachafa::codigo" };
