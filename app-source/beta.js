@@ -2280,10 +2280,11 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   function isMediaChafaBuildRequest(message, model) {
     if (!String(model?.id || '').startsWith('mediachafa::')) return false;
     const text = String(message || '').trim();
-    const artifact = '(?:\\bapk\\b|\\bpkg\\b|\\.pkg\\b|homebrew|aplicaci[oó]n android)';
-    const commandWithArtifact = new RegExp('^\\s*(?:por favor[, ]*)?(?:crea(?:r|me)?|creá(?:me)?|gener(?:a|ame|ar|á|áme)|compil(?:a|ame|ar|á|áme)|constru(?:ye|í|ir)|arm(?:a|ame|ar|á|áme)|empaquet(?:a|ar|á)|desarroll(?:a|ar|á)|prepar(?:a|ar|á)|implement(?:a|ar|á)|haceme|hacé)\\b[\\s\\S]*?' + artifact, 'i');
-    const requestWithArtifact = new RegExp('\\b(?:quiero|necesito|podés|podrias|podrías|puedes)\\s+(?:que\\s+(?:me\\s+)?)?(?:crees|generes|compiles|construyas|armes|empaquetes|desarrolles|prepares|hagas|crear|generar|compilar|construir|armar|empaquetar|desarrollar|preparar|implementar|hacer)\\b[\\s\\S]*?' + artifact, 'i');
-    return commandWithArtifact.test(text) || requestWithArtifact.test(text);
+    const hasArtifact = /\b(?:apk|pkg|\.pkg|homebrew|aplicaci[oó]n android)\b/i.test(text);
+    if (!hasArtifact || /^(?:¿?\s*)?(?:qué|que|cómo|como|por qué|para qué|qué es|explica|explícame|decime|dime|sabes|se puede|puedo)\b/i.test(text)) return false;
+    const directCommand = /^(?:por favor[, ]*)?(?:crea(?:r|me)?|creá(?:me)?|gener(?:a|ame|ar|á|áme)|compil(?:a|ame|ar|á|áme)|constru(?:ye|í|ir)|arm(?:a|ame|ar|á|áme)|empaquet(?:a|ar|á)|desarroll(?:a|ar|á)|prepar(?:a|ar|á)|implement(?:a|ar|á)|haceme|hacé)\b/i.test(text);
+    const explicitRequest = /^(?:quiero|necesito|podés|podrias|podrías|puedes)\s+(?:que\s+(?:me\s+)?)?(?:crees|generes|compiles|construyas|armes|empaquetes|hagas|crear|generar|compilar|construir|armar|empaquetar|desarrollar|preparar|implementar)\b/i.test(text);
+    return directCommand || explicitRequest;
   }
 
   async function runPersistentBuildAgent({ userText, model }) {
