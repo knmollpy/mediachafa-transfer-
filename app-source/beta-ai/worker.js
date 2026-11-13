@@ -861,6 +861,7 @@ async function agentModelTurn(env, state, requestSignal) {
   try {
     let result;
     if (state.provider === "mediachafa") {
+      // mediachafaCandidates enforces connected tokens, free-model allowlists, provider cooldowns, and current provider quota.
       const candidates = await mediachafaCandidates(env, state.userId, state.mediachafaVariant, false);
       if (!candidates.length) throw new Error("No hay modelos gratuitos disponibles para esta IA MediaChafa.");
       const failures = [];
@@ -882,6 +883,7 @@ async function agentModelTurn(env, state, requestSignal) {
       }
       if (!result) throw new Error("Ningún modelo gratuito conectado pudo continuar: " + failures.slice(0, 4).join("; "));
     } else {
+      // Preserve the legacy OpenRouter gates: encrypted token, verified :free catalog, external quota, and reserveRequest.
       const token = await storedToken(env, state.userId, state.provider);
       if (!token) throw new Error("La integración del proveedor de modelos se desconectó.");
       const modelCatalog = await providerModelCatalog(state.provider, token);
