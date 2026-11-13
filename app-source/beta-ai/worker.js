@@ -866,6 +866,7 @@ async function agentModelTurn(env, state, requestSignal) {
       for (const candidate of candidates) {
         const quota = await reserveRequest(env, state.userId, candidate.modelId);
         if (!quota.allowed) { failures.push(candidate.name + ": cuota gratuita agotada"); continue; }
+        // Reutiliza callModel, el adaptador de proveedores ya definido en este mismo worker; no agrega paquetes ni imports.
         const call = await callModel(env, candidate, messages, state.messages, instruction, null, 2400, (input, init = {}) => globalThis.fetch(input, { ...init, signal: controller.signal }));
         if (call.ok) { result = { text: call.text, usage: {} }; break; }
         failures.push(candidate.name + ": " + String(call.detail || "falló").slice(0, 120));
@@ -918,6 +919,7 @@ function parseAgentTurn(output) {
 async function agentStart(env, user, payload) {
   const message = String(payload.message || "").trim().slice(0, 6000);
   if (!message) throw new Error("Escribí la tarea que querés ejecutar.");
+  if (payload.mode !== undefined && payload.mode !== "autonomous") throw new Error("El modo explícito debe ser autónomo; el chat principal puede omitir este campo.");
   const modelId = String(payload.model || "");
   const [provider, nativeModelId] = modelId.split("::", 2);
   let model;
