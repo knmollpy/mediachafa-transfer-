@@ -2112,19 +2112,59 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     setComposerMode('working');
     const progress = addMessage('assistant', 'Entendiendo el pedido y preparando el trabajo…');
     progress.classList.add('beta-working');
+    if (!document.getElementById('beta-live-progress-style')) {
+      const style = document.createElement('style');
+      style.id = 'beta-live-progress-style';
+      style.textContent = `
+        .beta-progress-meta,.beta-duration-summary{display:flex;align-items:center;gap:8px;margin:0 0 10px;color:var(--muted,#9ca3af);font-size:.88rem;font-weight:600}
+        .beta-live-steps{display:flex;flex-direction:column;gap:9px;margin:8px 0 12px;padding:0;list-style:none}
+        .beta-live-steps li{position:relative;padding:0 0 0 25px;line-height:1.45;color:var(--text,#e5e7eb);font-size:.94rem}
+        .beta-live-steps li:before{content:"";position:absolute;left:2px;top:.28em;width:11px;height:11px;border:2px solid currentColor;border-radius:50%;opacity:.65}
+        .beta-live-steps li[data-state="active"]:before{border-color:var(--accent,#d94b58);background:var(--accent,#d94b58);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent,#d94b58) 18%,transparent)}
+        .beta-live-steps li[data-state="done"]:before{content:"✓";width:15px;height:15px;top:0;border:0;color:var(--success,#63b982);font-size:14px;font-weight:800;opacity:1}
+        .beta-live-steps li[data-state="error"]:before{content:"!";width:15px;height:15px;top:0;border:0;color:var(--danger,#e45b5b);font-weight:900;opacity:1}
+        .beta-working p{margin-top:4px}
+      `;
+      document.head.append(style);
+    }
     progress.querySelector('.beta-copy-btn')?.remove();
     const progressBody = progress.querySelector('p');
+    const progressMeta = document.createElement('div');
+    progressMeta.className = 'beta-progress-meta';
+    progressMeta.setAttribute('aria-live', 'polite');
     const liveList = document.createElement('ul');
     liveList.className = 'beta-live-steps';
+    progress.insertBefore(progressMeta, progressBody);
     progress.insertBefore(liveList, progressBody);
+    const startedAt = Date.now();
+    const formatElapsed = (milliseconds) => {
+      const total = Math.max(0, Math.floor(milliseconds / 1000));
+      const minutes = Math.floor(total / 60);
+      const seconds = total % 60;
+      const hours = Math.floor(minutes / 60);
+      return hours
+        ? `${hours}h ${String(minutes % 60).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
+        : minutes
+          ? `${minutes}m ${String(seconds).padStart(2, '0')}s`
+          : `${seconds}s`;
+    };
+    const updateElapsed = () => { progressMeta.textContent = `Procesó durante ${formatElapsed(Date.now() - startedAt)}`; };
+    updateElapsed();
+    const elapsedTimer = setInterval(updateElapsed, 1000);
     const steps = [];
     const step = (text, kind = 'active') => {
-      steps.push(text);
-      liveList.replaceChildren(...steps.slice(-14).map((item, i, list) => { const li = document.createElement('li'); li.dataset.state = i === list.length - 1 && kind === 'active' ? 'active' : 'done'; li.textContent = item; return li; }));
-      progressBody.textContent = `Trabajando · etapa ${state.turn} de ${state.maxTurns}`;
-      setStatus(text);
-      activity(text, kind === 'error' ? 'error' : 'active');
-      // Mantener el indicador vivo al final del chat, no en el mensaje inicial.
+      const description = String(text || 'Trabajando…').replace(/\s+/g, ' ').trim().slice(0, 220);
+      if (!description || steps[steps.length - 1]?.text === description) return;
+      steps.push({ text: description, kind });
+      liveList.replaceChildren(...steps.slice(-14).map((item, i, list) => {
+        const li = document.createElement('li');
+        li.dataset.state = i === list.length - 1 && item.kind === 'active' ? 'active' : item.kind === 'error' ? 'error' : 'done';
+        li.textContent = item.text;
+        return li;
+      }));
+      progressBody.textContent = description;
+      setStatus(description);
+      activity(description, kind === 'error' ? 'error' : 'active');
       progress.remove();
       messagesNode.append(progress);
       messagesNode.scrollTop = messagesNode.scrollHeight;
@@ -2182,7 +2222,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         if (data.modelName) lastModelName = data.modelName;
         const classified = agent.classifyAnswer(data.answer);
         const proposals = Array.isArray(data.proposals) ? data.proposals : [];
-        if (classified.text) step(`Turno ${state.turn}: ${classified.text.slice(0, 220)}`, 'done');
+        if (classified.kind === 'done') step('Comprobando el resultado final y preparando el resumen…');
+        else if (proposals.length) step('Planificando y organizando las próximas tareas…');
+        else step('Analizando el resultado y determinando el siguiente paso…');
         const results = [];
         for (const error of data.proposalErrors || []) results.push(`❌ No se pudo preparar una acción: ${error}`);
         let failed = false;
@@ -2292,6 +2334,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     } catch (error) {
       outcome = error.stopped || run.stopped ? { kind: 'stopped', text: '' } : { kind: 'error', text: error.message || 'Error desconocido.' };
     } finally {
+      clearInterval(elapsedTimer);
+      updateElapsed();
       autonomousRun = null;
       run.waiting = null;
       setComposerMode('idle');
@@ -2301,8 +2345,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (outcome.kind === 'done') delete pendingAgentRuns[currentThreadId];
     else pendingAgentRuns[currentThreadId] = { ...state, nextMessageAfterQuestion: outcome.kind === 'question' };
     const node = addMessage('assistant', finalText, lastModelName);
-    attachSteps(node, steps);
-    history.push({ role: 'assistant', content: finalText, modelName: lastModelName, steps: steps.slice(-40) });
+    const duration = document.createElement('div');
+    duration.className = 'beta-duration-summary';
+    duration.textContent = `Procesó durante ${formatElapsed(Date.now() - startedAt)}`;
+    node.insertBefore(duration, node.firstChild);
+    attachSteps(node, steps.map(item => item.text));
+    history.push({ role: 'assistant', content: finalText, modelName: lastModelName, steps: steps.slice(-40).map(item => item.text) });
     history = history.slice(-30);
     saveHistory();
     renderModelOptions();
