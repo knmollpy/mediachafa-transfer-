@@ -2277,6 +2277,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     activity(statusText, outcome.kind === 'error' ? 'error' : 'done');
   }
 
+  /**
+   * Routes only explicit, imperative artifact-build requests from a built-in MediaChafa model.
+   * Informational questions about APK, PKG, Android, or PS4 remain in the ordinary chat path.
+   */
   function isMediaChafaBuildRequest(message, model) {
     if (!String(model?.id || '').startsWith('mediachafa::')) return false;
     const text = String(message || '').trim();
