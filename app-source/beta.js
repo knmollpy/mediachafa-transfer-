@@ -2368,7 +2368,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         }
       }
       if (run.stopped) {
-        showStep('Ejecución detenida. No se informará como completada.', 'error');
+        const stoppedMessage = 'Ejecución detenida. No se informará como completada.';
+        showStep(stoppedMessage, 'error');
+        addMessage('assistant', stoppedMessage, model?.name || '');
+        history.push({ role: 'assistant', content: stoppedMessage });
+        history = history.slice(-30);
+        saveHistory();
       } else if (finished && snapshot) {
         let answer = String(snapshot.answer || 'La ejecución terminó.');
         const buildResult = snapshot.lastToolResult?.name === 'github_build_status' && snapshot.lastToolResult?.ok
@@ -2402,7 +2407,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       }
     } catch (error) {
       if (run.stopped || error?.name === 'AbortError') {
-        showStep('Trabajo detenido.', 'error');
+        const stoppedMessage = 'Trabajo detenido. La ejecución queda pausada y no se considera completada.';
+        showStep(stoppedMessage, 'error');
+        addMessage('assistant', stoppedMessage, model?.name || '');
+        history.push({ role: 'assistant', content: stoppedMessage });
+        history = history.slice(-30);
+        saveHistory();
       } else {
         const message = error?.message || 'No se pudo completar la ejecución.';
         showStep(message, 'error');
