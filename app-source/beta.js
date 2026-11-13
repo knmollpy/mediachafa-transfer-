@@ -29,7 +29,7 @@
 
   function newState(goal, model) {
     const safeGoal = String(goal || '').slice(0, 6000);
-    return { goal: safeGoal, modelId: model.id, turn: 0, maxTurns: turnLimit(model), loopHistory: [], links: [], emptyStreak: 0, deleteRepositoryName: requestedRepositoryName(safeGoal) };
+    return { goal: safeGoal, modelId: model.id, turn: 0, maxTurns: turnLimit(model), loopHistory: [], links: [], emptyStreak: 0, questionCount: 0, deleteRepositoryName: requestedRepositoryName(safeGoal) };
   }
 
   function classifyAnswer(answer) {
@@ -68,7 +68,7 @@ PRIMERO CLASIFICÁ LA INTENCIÓN DEL MENSAJE ANTES DE PLANIFICAR:
 - Si el usuario pide explícitamente crear, editar, borrar, publicar, configurar, buscar o ejecutar algo en un servicio/recurso, tratá eso como una tarea y prepará las acciones necesarias. Preguntá solo si falta un dato imprescindible que no puedas inferir con seguridad.
 - Si el usuario pide ayuda para pensar o planificar, pero no pide ejecutar cambios, ayudalo conversando y no prepares acciones externas.
 - No confundas mencionar una herramienta, repositorio o servicio en una pregunta con autorizar una acción sobre él.
-Trabajá sola hasta terminar TODO el pedido de acción; no te frenes después de un paso ni pidas permiso para seguir. En cada turno devolvé en "actions" todas las acciones del próximo paso (podés mandar varias, en orden). Las acciones normales se aprueban y ejecutan solas y en el turno siguiente recibís su resultado real: nunca digas que algo se hizo antes de verlo en los resultados. Borrados de repositorios: si el pedido es borrar/eliminar un repositorio y falta el nombre exacto, hacé UNA sola pregunta: "¿Cuál es el nombre exacto del repositorio que querés borrar?". No pidas URL, propietario, motivo, visibilidad, rama, descripción ni otros datos; la cuenta es knmollpy. Cuando recibas el nombre, usá exactamente "knmollpy/nombre" en delete_repository y seguí sin volver a preguntar. La solicitud original de borrado más el nombre exacto indicado por el dueño autorizan ese borrado: no pidas una segunda confirmación. Si el nombre ya aparece claramente en el pedido original, no lo vuelvas a preguntar.
+No conviertas la tarea en una entrevista: hacé como máximo UNA pregunta de aclaración por ejecución, solo si falta un dato realmente imprescindible. Agrupá en esa única pregunta lo indispensable; para lo demás elegí valores predeterminados razonables, seguros y fáciles de cambiar, y seguí trabajando. Si el dueño ya respondió, no repitas ni reformules esa pregunta: aplicá la respuesta y avanzá. Excepción: para borrar un repositorio sin nombre exacto, pedí ese único nombre obligatorio. Nunca preguntes cómo compilar o qué proveedor usar si ya hay una herramienta integrada para hacerlo; usala.\nTrabajá sola hasta terminar TODO el pedido de acción; no te frenes después de un paso ni pidas permiso para seguir. En cada turno devolvé en "actions" todas las acciones del próximo paso (podés mandar varias, en orden). Las acciones normales se aprueban y ejecutan solas y en el turno siguiente recibís su resultado real: nunca digas que algo se hizo antes de verlo en los resultados. Borrados de repositorios: si el pedido es borrar/eliminar un repositorio y falta el nombre exacto, hacé UNA sola pregunta: "¿Cuál es el nombre exacto del repositorio que querés borrar?". No pidas URL, propietario, motivo, visibilidad, rama, descripción ni otros datos; la cuenta es knmollpy. Cuando recibas el nombre, usá exactamente "knmollpy/nombre" en delete_repository y seguí sin volver a preguntar. La solicitud original de borrado más el nombre exacto indicado por el dueño autorizan ese borrado: no pidas una segunda confirmación. Si el nombre ya aparece claramente en el pedido original, no lo vuelvas a preguntar.
 Borrados de archivos/rutas, SQL y cambios en ${LIVE_REPO} (la web en vivo) siguen requiriendo aprobación del dueño.
 "answer" tiene que empezar con UNA etiqueta:
 - "SIGO: ..." cuando mandás acciones y todavía falta trabajo.
@@ -2251,6 +2251,12 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         state.loopHistory = state.loopHistory.slice(-12);
         if (decision.kind === 'question') {
           const needsRepoName = agent.isRepositoryDeletionRequest(state.goal) && !state.deleteRepositoryName;
+          if (!needsRepoName && Number(state.questionCount || 0) >= 1) {
+            message = 'El dueño ya respondió la única pregunta de aclaración permitida. No hagas más preguntas ni pidas permisos genéricos. Usá esa respuesta y valores predeterminados razonables, seguros y reversibles para cualquier detalle secundario; continuá con el pedido original y ejecutá los pasos disponibles.';
+            step('Ya tengo tu respuesta. Resuelvo los detalles secundarios con valores predeterminados y sigo trabajando…');
+            continue;
+          }
+          state.questionCount = Number(state.questionCount || 0) + 1;
           const questionToShow = needsRepoName
             ? '¿Cuál es el nombre exacto del repositorio que querés borrar? Escribí únicamente el nombre.'
             : (classified.text || data.answer || '');
