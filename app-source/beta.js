@@ -2320,7 +2320,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         method: 'POST',
         signal: run.controller.signal,
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userText, model: model.id, mode: 'autonomous' }),
+        body: JSON.stringify({ message: userText, model: model.id }),
       });
       const started = await startResponse.json().catch(() => ({}));
       if (!startResponse.ok || !started.executionId) {
