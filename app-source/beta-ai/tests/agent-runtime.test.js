@@ -98,7 +98,7 @@ test("autonomous execution persists pause state and verifies isolated GitHub cha
   kv.set(`integration:${userId}:github`, await encryptToken("github-token"));
   kv.set(`integration:${userId}:vercel`, await encryptToken("vercel-token"));
 
-  const start = await api("/agent/start", "POST", { mode: "autonomous", model: modelId, message: "Leé, modificá y verificá Beta." });
+  const start = await api("/agent/start", "POST", { model: modelId, message: "Leé, modificá y verificá Beta." });
   assert.equal(start.status, 201);
   const { executionId: id, branch } = await start.json();
   assert.equal(branch, `beta-agent/${id}`);
@@ -144,7 +144,7 @@ test("pause during a model turn persists instructions and skips the pending tool
     { type: "tool_call", name: "github_write_files", arguments: { files: [{ path: "app-source/beta.js", content: "must not run while paused" }] } },
     { type: "final", answer: "Continué luego de la pausa.", verified: false },
   );
-  const start = await api("/agent/start", "POST", { mode: "autonomous", model: modelId, message: "Modificá el archivo." });
+  const start = await api("/agent/start", "POST", { model: modelId, message: "Modificá el archivo." });
   const { executionId: id } = await start.json();
   let markEntered;
   let releaseModel;
