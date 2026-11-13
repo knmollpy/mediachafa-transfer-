@@ -195,6 +195,9 @@ test("MediaChafa Código, Pro, and Rápida use verified free-provider quotas", a
     { type: "final", answer: "Ejecución Rápida terminada.", summary: "Cuota gratuita aplicada.", verified: false },
   );
   requestCount = modelTurns.length - 3;
+  const date = new Date().toISOString().slice(0, 10);
+  const quotaKey = `beta-ai-requests:${userId}:openrouter:day:${date}`;
+  const usedBefore = Number(kv.get(quotaKey) || 0);
   const variants = [
     ["codigo", "MediaChafa IA Código"],
     ["pro", "MediaChafa IA Pro"],
@@ -209,7 +212,6 @@ test("MediaChafa Código, Pro, and Rápida use verified free-provider quotas", a
     assert.equal(state.status, "completed", JSON.stringify(state));
     assert.equal(state.modelName, expectedName);
   }
-  const date = new Date().toISOString().slice(0, 10);
-  assert.equal(Number(kv.get(`beta-ai-requests:${userId}:openrouter:day:${date}`) || 0), 3);
+  assert.equal(Number(kv.get(quotaKey) || 0) - usedBefore, 3);
 });
 
