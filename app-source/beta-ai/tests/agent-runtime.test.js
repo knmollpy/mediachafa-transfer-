@@ -238,6 +238,7 @@ test("build-flow goal classification distinguishes APK/PKG builds from questions
   assert.ok(match, "the worker must classify explicit build requests before model execution");
   const detect = vm.runInNewContext("(" + match[0] + ")");
   assert.equal(detect("¿Qué es un APK?"), null);
+  assert.equal(detect("Quiero saber qué es un APK"), null);
   assert.equal(detect("Cómo compilar un APK"), null);
   assert.equal(detect("Haz un APK de un calendario"), "apk");
   assert.equal(detect("Creá un PKG para PS4"), "pkg");
