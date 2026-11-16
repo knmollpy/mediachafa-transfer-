@@ -13,13 +13,13 @@
           const brand = document.querySelector('.login-card .brand');
           if (brand) brand.innerHTML = '<img class="brand-mark" src="/beta-assets/beta-icon.svg" alt=""> Beta';
           const heading = document.querySelector('.login-card h1');
-          if (heading) heading.textContent = 'Entrá a Beta';
+          if (heading) heading.textContent = 'Tu espacio. Tu Beta.';
           const subtitle = document.querySelector('.login-card .sub');
-          if (subtitle) subtitle.textContent = 'Iniciá sesión con tu cuenta nxmollpy para abrir tu espacio privado.';
+          if (subtitle) subtitle.textContent = 'Iniciá sesión para continuar en tu asistente privado.';
           const note = document.querySelector('.login-note');
           if (note) note.textContent = 'Acceso privado exclusivo del usuario nxmollpy. Usá tu contraseña habitual.';
           const submit = document.querySelector('#login-form button[type="submit"]');
-          if (submit) submit.textContent = 'Entrar a Beta →';
+          if (submit) submit.textContent = 'Continuar →';
         });
       } catch { window.MEDIA_BETA_APP = new URLSearchParams(location.search).get('betaApp') === '1'; }
     })();
@@ -227,8 +227,33 @@
     html.beta-app-shell #app.beta-mode #beta-panel .beta-policy{display:none!important}
     html.beta-app-shell #app.beta-mode #beta-panel .beta-brand{color:#fff!important}
     html.beta-app-shell #app.beta-mode #beta-panel .beta-orb{background-image:url('/beta-assets/beta-icon.svg')!important;background-size:cover!important;color:transparent!important}
-    html.beta-app-shell #login{background:linear-gradient(180deg,rgba(4,9,30,.16),rgba(4,9,30,.42)),url('/beta-assets/beta-wallpaper.svg') center/cover fixed!important}
-    html.beta-app-shell .login-card{background:rgba(5,10,32,.88)!important}
+    /* App Beta: pantalla independiente y fondo original en TODAS las vistas. */
+    html.beta-app-shell,html.beta-app-shell body{min-height:100%;margin:0!important;background:#07112f url('/beta-assets/beta-wallpaper.svg') center center/cover fixed no-repeat!important;color:#f4f6ff!important}
+    html.beta-app-shell body{background-attachment:fixed!important}
+    html.beta-app-shell #login.login-screen{position:fixed!important;inset:0!important;z-index:1000!important;display:grid!important;place-items:center!important;overflow:auto!important;padding:24px 18px!important;background:linear-gradient(180deg,rgba(3,8,29,.20),rgba(3,8,29,.42)),url('/beta-assets/beta-wallpaper.svg') center center/cover fixed no-repeat!important}
+    html.beta-app-shell #login .login-card{width:min(430px,100%)!important;padding:30px 26px!important;border:1px solid rgba(202,218,255,.25)!important;border-radius:24px!important;background:rgba(4,10,35,.82)!important;color:#f6f7ff!important;box-shadow:0 22px 90px rgba(0,0,0,.45)!important;backdrop-filter:blur(14px)!important}
+    html.beta-app-shell #login .brand{color:#fff!important;font-size:22px!important}
+    html.beta-app-shell #login .brand-mark{width:48px!important;height:48px!important;border-radius:15px!important}
+    html.beta-app-shell #login h1{margin:28px 0 8px!important;color:#fff!important;font-size:32px!important;letter-spacing:-1px!important}
+    html.beta-app-shell #login .sub,html.beta-app-shell #login .field-label,html.beta-app-shell #login .remember-session,html.beta-app-shell #login .turnstile-help{color:#d4ddff!important}
+    html.beta-app-shell #login .field{background:rgba(6,14,43,.86)!important;border:1px solid rgba(194,210,255,.30)!important;color:#fff!important;border-radius:12px!important}
+    html.beta-app-shell #login .field::placeholder{color:#9eadd5!important}
+    html.beta-app-shell #login .primary{background:#243f91!important;color:#fff!important;border-radius:12px!important}
+    html.beta-app-shell #login .secondary,html.beta-app-shell #login #guest-ps4-entry,html.beta-app-shell #login .install-mobile-option,html.beta-app-shell #login .install-mobile-help{display:none!important}
+    html.beta-app-shell #login .login-note{margin-top:16px!important;background:rgba(7,18,53,.7)!important;color:#cbd6ff!important;border:1px solid rgba(194,210,255,.18)!important}
+    html.beta-app-shell #app{min-height:100svh!important;background:transparent!important}
+    html.beta-app-shell #app>.topbar,html.beta-app-shell #app .welcome,html.beta-app-shell #app .storage,html.beta-app-shell #app #files-layout,html.beta-app-shell #app #links-panel,html.beta-app-shell #app #ps4-panel,html.beta-app-shell #app #dm-panel,html.beta-app-shell #app .paypal-donation,html.beta-app-shell #app .install-mobile-option{display:none!important}
+    html.beta-app-shell #app.beta-mode .wrap{width:100%!important;max-width:none!important;min-height:100svh!important;margin:0!important;padding:env(safe-area-inset-top) 10px calc(10px + env(safe-area-inset-bottom))!important}
+    html.beta-app-shell #app.beta-mode #beta-panel{display:flex!important;position:relative!important;width:100%!important;min-height:100svh!important;margin:0!important;padding:14px!important;border:0!important;border-radius:0!important;background:linear-gradient(180deg,rgba(3,8,29,.20),rgba(3,8,29,.30)),url('/beta-assets/beta-wallpaper.svg') center center/cover fixed no-repeat!important;box-shadow:none!important;backdrop-filter:none!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-workspace{min-height:calc(100svh - 28px)!important;background:transparent!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-header{background:rgba(4,10,35,.52)!important;border:1px solid rgba(202,218,255,.20)!important;border-radius:16px!important;padding:10px 12px!important;backdrop-filter:blur(8px)!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-chat-stage{min-height:calc(100svh - 115px)!important;background:rgba(3,8,29,.08)!important;border:1px solid rgba(202,218,255,.14)!important;border-radius:18px!important;backdrop-filter:none!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-messages{background:transparent!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-message{background:rgba(5,14,42,.78)!important;color:#f6f7ff!important;backdrop-filter:blur(8px)!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-composer,html.beta-app-shell #app.beta-mode #beta-panel .beta-activity{background:rgba(4,10,35,.82)!important;border-color:rgba(202,218,255,.25)!important;backdrop-filter:blur(12px)!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-settings{background:rgba(4,10,35,.97)!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-policy{display:none!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-orb{background:url('/beta-assets/beta-icon.svg') center/cover no-repeat!important;color:transparent!important}
   </style>
 </head>
 <body>

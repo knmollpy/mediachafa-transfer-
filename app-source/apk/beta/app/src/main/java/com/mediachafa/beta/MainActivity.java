@@ -22,7 +22,7 @@ import android.widget.Toast;
 public final class MainActivity extends Activity {
     private static final int FILE_PICKER = 4201;
     private static final int MEDIA_PERMISSION = 4202;
-    private static final String APP_URL = "https://mediachafa-transfer.pages.dev/?betaApp=1";
+    private static final String APP_URL = "https://mediachafa-transfer.pages.dev/?betaApp=1&betaStandalone=20261116";
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest pendingWebPermission;
