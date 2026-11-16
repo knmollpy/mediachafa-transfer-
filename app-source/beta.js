@@ -2622,6 +2622,13 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (!selectedModel.unlimited && Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
     if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
     if (pendingAudio && !selectedModel?.audio) { setStatus('Este modelo no admite audio. Elegí uno que indique audio.', 'error'); return; }
+    // Los pedidos explícitos de APK/PKG de las IAs MediaChafa siempre usan el agente persistente,
+    // incluso si la interfaz está en modo Normal. No deben caer en una respuesta de chat/propuesta.
+    if (!pendingImage && !pendingAudio && isMediaChafaBuildRequest(prompt, selectedModel)) {
+      input.value = '';
+      await startAutonomousFromForm({ userText: prompt, displayText: prompt, selectedModel });
+      return;
+    }
     if (agent) {
       input.value = '';
       const goalText = prompt || (pendingImage ? 'Analizá la imagen adjunta.' : 'Transcribí y analizá el audio adjunto.');
