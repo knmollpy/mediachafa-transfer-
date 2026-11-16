@@ -69,9 +69,11 @@ jobs:
           echo "OO_PS4_TOOLCHAIN=$SDK_DIR" >> "$GITHUB_ENV"
           echo "$SDK_DIR/bin" >> "$GITHUB_PATH"
           if [ -d "$SDK_DIR/bin/linux" ]; then echo "$SDK_DIR/bin/linux" >> "$GITHUB_PATH"; fi
+          # OpenOrbis' setup script reads OO_PS4_TOOLCHAIN from the current process,
+          # not only from GITHUB_ENV (which applies to later workflow steps).
+          export OO_PS4_TOOLCHAIN="$SDK_DIR"
           if [ -f "$SDK_DIR/extra/setup-toolchain.sh" ]; then
-            chmod +x "$SDK_DIR/extra/setup-toolchain.sh"
-            "$SDK_DIR/extra/setup-toolchain.sh"
+            sh "$SDK_DIR/extra/setup-toolchain.sh"
           fi
           for tool in "$SDK_DIR/bin/linux/PkgTool.Core" "$SDK_DIR/bin/linux/create-gp4" "$SDK_DIR/bin/linux/create-fself"; do
             if [ -f "$tool" ]; then chmod u+x "$tool"; fi
