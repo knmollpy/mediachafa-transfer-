@@ -2504,8 +2504,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       if (run.stopped) {
         const stoppedMessage = 'Ejecución detenida. No se informará como completada.';
         showStep(stoppedMessage, 'error');
-        addMessage('assistant', stoppedMessage, model?.name || '');
-        history.push({ role: 'assistant', content: stoppedMessage });
+        const finalNode = addMessage('assistant', stoppedMessage, model?.name || '');
+        attachSteps(finalNode, steps, true);
+        history.push({ role: 'assistant', content: stoppedMessage, modelName: model?.name || '', steps: steps.slice(-80) });
         history = history.slice(-30);
         saveHistory();
       } else if (finished && snapshot) {
@@ -2517,6 +2518,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         if (artifacts.length) answer += '\n\nArtefactos generados: ' + artifacts.map(item => String(item.name || 'archivo')).join(', ') + '.';
         if (snapshot.verified) answer += '\n\nVerificación adicional: aprobada.';
         const finalNode = addMessage('assistant', answer, model?.name || '');
+        attachSteps(finalNode, steps, true);
         if (runUrl.startsWith('https://github.com/')) {
           const link = document.createElement('a');
           link.href = runUrl;
@@ -2526,7 +2528,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           link.textContent = 'Abrir compilación y descargar artefactos en GitHub';
           finalNode.append(link);
         }
-        history.push({ role: 'assistant', content: answer });
+        history.push({ role: 'assistant', content: answer, modelName: model?.name || '', steps: steps.slice(-80) });
         history = history.slice(-30);
         saveHistory();
         showStep('Ejecución finalizada.');
@@ -2535,8 +2537,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         const message = snapshot?.status === 'paused'
           ? 'La ejecución quedó pausada. Podés volver a pedir la tarea para iniciarla nuevamente.'
           : 'La ejecución no llegó a un estado final dentro de esta tanda. Volvé a pedir que continúe.';
-        addMessage('assistant', message, model?.name || '');
-        history.push({ role: 'assistant', content: message });
+        const finalNode = addMessage('assistant', message, model?.name || '');
+        attachSteps(finalNode, steps, true);
+        history.push({ role: 'assistant', content: message, modelName: model?.name || '', steps: steps.slice(-80) });
         saveHistory();
       }
     } catch (error) {
@@ -2550,8 +2553,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       } else {
         const message = error?.message || 'No se pudo completar la ejecución.';
         showStep(message, 'error');
-        addMessage('assistant', 'No pude completar la tarea: ' + message, model?.name || '');
-        history.push({ role: 'assistant', content: 'No pude completar la tarea: ' + message });
+        const finalNode = addMessage('assistant', 'No pude completar la tarea: ' + message, model?.name || '');
+        attachSteps(finalNode, steps, true);
+        history.push({ role: 'assistant', content: 'No pude completar la tarea: ' + message, modelName: model?.name || '', steps: steps.slice(-80) });
         saveHistory();
       }
     } finally {
