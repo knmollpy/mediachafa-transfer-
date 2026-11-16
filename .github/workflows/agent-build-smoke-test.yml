@@ -18,7 +18,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const branch = context.ref.replace(/^refs\\/heads\\//, "");
+            const branch = context.ref.replace("refs/heads/", "");
             const common = { owner: context.repo.owner, repo: context.repo.repo, ref: branch, inputs: { execution_id: `smoke-${context.runId}` } };
             await github.rest.actions.createWorkflowDispatch({ ...common, workflow_id: "agent-build-apk.yml", inputs: { ...common.inputs, project_path: "app-source/apk/agent-smoke" } });
             await github.rest.actions.createWorkflowDispatch({ ...common, workflow_id: "agent-build-ps4-pkg.yml", inputs: { ...common.inputs, project_path: "app-source/ps4/agent-smoke" } });
