@@ -174,6 +174,36 @@ Para una página web pública: create_repository con visibility "public", despu�
     setStatus(useSixAgentTeam ? 'Equipo de 6 IA activado para tus próximas consultas.' : 'Equipo de 6 IA desactivado: responderá solo la IA seleccionada.');
   });
   modelControl.append(modelLabel, modelSelect, modelHealthNote, modelCount, modelProbe);
+  // Fondo personal exclusivo de Beta: se guarda en el almacenamiento local de esta instalación.
+  const betaSettings = $('#beta-settings');
+  if (betaSettings && !$('#beta-wallpaper-picker')) {
+    const wallpaperBox = document.createElement('div');
+    wallpaperBox.className = 'beta-wallpaper-setting';
+    wallpaperBox.innerHTML = '<strong>Fondo de Beta</strong><p>Elegí una imagen del dispositivo. Solo cambia el fondo de esta app.</p><input id="beta-wallpaper-file" type="file" accept="image/png,image/jpeg,image/webp" hidden><div class="beta-wallpaper-actions"><button id="beta-wallpaper-picker" class="secondary" type="button">Añadir imagen de fondo</button><button id="beta-wallpaper-reset" class="secondary" type="button">Restablecer</button></div><small id="beta-wallpaper-status" role="status"></small>';
+    betaSettings.append(wallpaperBox);
+    const picker = $('#beta-wallpaper-picker'), file = $('#beta-wallpaper-file'), reset = $('#beta-wallpaper-reset'), note = $('#beta-wallpaper-status');
+    const wallpaperKey = 'mediachafa-beta-wallpaper-v1';
+    function applyWallpaper(dataUrl) {
+      const value = dataUrl ? `url("${dataUrl}")` : 'none';
+      document.documentElement.style.setProperty('--beta-user-wallpaper', value);
+      document.documentElement.dataset.betaWallpaper = dataUrl ? 'true' : 'false';
+      document.body.style.setProperty('--beta-user-wallpaper', value);
+    }
+    try { applyWallpaper(localStorage.getItem(wallpaperKey) || ''); } catch {}
+    picker.addEventListener('click', () => file.click());
+    file.addEventListener('change', () => {
+      const image = file.files?.[0]; if (!image) return;
+      if (!['image/png','image/jpeg','image/webp'].includes(image.type) || image.size > 3 * 1024 * 1024) { note.textContent = 'Usá PNG, JPG o WebP de hasta 3 MB.'; file.value = ''; return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        try { localStorage.setItem(wallpaperKey, String(reader.result)); applyWallpaper(String(reader.result)); note.textContent = 'Fondo aplicado y guardado solo en esta app.'; }
+        catch { note.textContent = 'No se pudo guardar. Probá una imagen más liviana (máximo 3 MB).'; }
+      };
+      reader.onerror = () => { note.textContent = 'No se pudo leer la imagen.'; };
+      reader.readAsDataURL(image);
+    });
+    reset.addEventListener('click', () => { try { localStorage.removeItem(wallpaperKey); } catch {} applyWallpaper(''); file.value=''; note.textContent='Se restauró el fondo original de Beta.'; });
+  }
   const betaHeader = $('#beta-panel .beta-header');
   betaHeader.insertBefore(modelControl, betaHeader.querySelector('.beta-nav'));
   // Zona de trabajo: cola persistente en Supabase, independiente del historial del chat.
@@ -893,17 +923,21 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   drawerClose.addEventListener('click', () => toggleActivity(false));
   $('#beta-show-activity')?.addEventListener('click', (e) => { e.preventDefault(); e.stopImmediatePropagation(); toggleActivity(true); }, true);
 
-  function activity(message, state = 'active') {
+  function renderActivityHistory() {
     if (!activityList) return;
-    if (state === 'active') activityItems = activityItems.map(item => item.state === 'active' ? { ...item, state: 'done' } : item);
-    activityItems.push({ message, state, at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
-    activityItems = activityItems.slice(-6);
     activityList.replaceChildren(...activityItems.map(item => {
       const row = document.createElement('li');
       row.dataset.state = item.state;
       row.textContent = `${item.at} · ${item.message}`;
       return row;
     }));
+  }
+  function activity(message, state = 'active') {
+    if (state === 'active') activityItems = activityItems.map(item => item.state === 'active' ? { ...item, state: 'done' } : item);
+    activityItems.push({ message, state, at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) });
+    activityItems = activityItems.slice(-120);
+    renderActivityHistory();
+    try { if (ownerId && currentThreadId) localStorage.setItem(`mediachafa-beta-activity:${ownerId}:${currentThreadId}`, JSON.stringify(activityItems)); } catch {}
     showWorkPreview(message, state);
   }
 
@@ -1027,8 +1061,16 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const list = document.createElement('ul');
     for (const step of steps) { const li = document.createElement('li'); li.textContent = step; list.append(li); }
     details.append(summary, list);
+    const copy = document.createElement('button');
+    copy.type = 'button'; copy.className = 'beta-copy-btn beta-copy-steps'; copy.textContent = 'Copiar pasos';
+    copy.addEventListener('click', async () => {
+      const value = steps.map((step, index) => `${index + 1}. ${step}`).join('\\n');
+      try { await navigator.clipboard.writeText(value); } catch { const ta=document.createElement('textarea');ta.value=value;document.body.append(ta);ta.select();try{document.execCommand('copy');}catch{}ta.remove(); }
+      copy.textContent = 'Copiado'; setTimeout(() => { copy.textContent = 'Copiar pasos'; }, 1500);
+    });
     const body = node.querySelector('p');
     node.insertBefore(details, body);
+    details.append(copy);
   }
 
   // Convierte los enlaces (https://..., www....) en links azules que abren en otra pestaña.
@@ -1442,6 +1484,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     renderThreadList();
     try { renderChanges(); } catch {}
     history = [];
+    try { activityItems = JSON.parse(localStorage.getItem(`mediachafa-beta-activity:${ownerId}:${currentThreadId}`) || '[]'); if (!Array.isArray(activityItems)) activityItems = []; } catch { activityItems = []; }
+    renderActivityHistory();
     messagesNode.replaceChildren();
     stage.classList.remove('has-messages');
     try {
@@ -2136,6 +2180,14 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     liveList.className = 'beta-live-steps';
     progress.insertBefore(progressMeta, progressBody);
     progress.insertBefore(liveList, progressBody);
+    const liveCopy = document.createElement('button');
+    liveCopy.type = 'button'; liveCopy.className = 'beta-copy-btn beta-copy-steps'; liveCopy.textContent = 'Copiar pasos';
+    liveCopy.addEventListener('click', async () => {
+      const value = steps.map((item, index) => `${index + 1}. ${item.text}`).join('\\n');
+      try { await navigator.clipboard.writeText(value); } catch { const ta=document.createElement('textarea');ta.value=value;document.body.append(ta);ta.select();try{document.execCommand('copy');}catch{}ta.remove(); }
+      liveCopy.textContent = 'Copiado'; setTimeout(() => { liveCopy.textContent = 'Copiar pasos'; }, 1500);
+    });
+    progress.insertBefore(liveCopy, progressBody);
     const startedAt = Date.now();
     const formatElapsed = (milliseconds) => {
       const total = Math.max(0, Math.floor(milliseconds / 1000));
@@ -2452,8 +2504,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       if (run.stopped) {
         const stoppedMessage = 'Ejecución detenida. No se informará como completada.';
         showStep(stoppedMessage, 'error');
-        addMessage('assistant', stoppedMessage, model?.name || '');
-        history.push({ role: 'assistant', content: stoppedMessage });
+        const finalNode = addMessage('assistant', stoppedMessage, model?.name || '');
+        attachSteps(finalNode, steps, true);
+        history.push({ role: 'assistant', content: stoppedMessage, modelName: model?.name || '', steps: steps.slice(-80) });
         history = history.slice(-30);
         saveHistory();
       } else if (finished && snapshot) {
@@ -2465,6 +2518,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         if (artifacts.length) answer += '\n\nArtefactos generados: ' + artifacts.map(item => String(item.name || 'archivo')).join(', ') + '.';
         if (snapshot.verified) answer += '\n\nVerificación adicional: aprobada.';
         const finalNode = addMessage('assistant', answer, model?.name || '');
+        attachSteps(finalNode, steps, true);
         if (runUrl.startsWith('https://github.com/')) {
           const link = document.createElement('a');
           link.href = runUrl;
@@ -2474,7 +2528,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           link.textContent = 'Abrir compilación y descargar artefactos en GitHub';
           finalNode.append(link);
         }
-        history.push({ role: 'assistant', content: answer });
+        history.push({ role: 'assistant', content: answer, modelName: model?.name || '', steps: steps.slice(-80) });
         history = history.slice(-30);
         saveHistory();
         showStep('Ejecución finalizada.');
@@ -2483,8 +2537,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         const message = snapshot?.status === 'paused'
           ? 'La ejecución quedó pausada. Podés volver a pedir la tarea para iniciarla nuevamente.'
           : 'La ejecución no llegó a un estado final dentro de esta tanda. Volvé a pedir que continúe.';
-        addMessage('assistant', message, model?.name || '');
-        history.push({ role: 'assistant', content: message });
+        const finalNode = addMessage('assistant', message, model?.name || '');
+        attachSteps(finalNode, steps, true);
+        history.push({ role: 'assistant', content: message, modelName: model?.name || '', steps: steps.slice(-80) });
         saveHistory();
       }
     } catch (error) {
@@ -2498,8 +2553,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       } else {
         const message = error?.message || 'No se pudo completar la ejecución.';
         showStep(message, 'error');
-        addMessage('assistant', 'No pude completar la tarea: ' + message, model?.name || '');
-        history.push({ role: 'assistant', content: 'No pude completar la tarea: ' + message });
+        const finalNode = addMessage('assistant', 'No pude completar la tarea: ' + message, model?.name || '');
+        attachSteps(finalNode, steps, true);
+        history.push({ role: 'assistant', content: 'No pude completar la tarea: ' + message, modelName: model?.name || '', steps: steps.slice(-80) });
         saveHistory();
       }
     } finally {
