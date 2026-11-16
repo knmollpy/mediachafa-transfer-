@@ -934,7 +934,7 @@ function parseAgentTurn(output) {
 function detectAgentBuildGoal(message) {
   const text = String(message || "").trim();
   if (/^(?:¿?\s*)?(?:qué|que|cómo|como|por qué|para qué|qué es|explica|explícame|decime|dime|sabes|se puede|puedo)\b/i.test(text)) return null;
-  if (!/\b(?:crea|creá|genera|generá|compila|compilá|construye|construí|arma|armá|hace|hacé|haz|has|quiero|necesito|desarrolla|prepara|empaqueta)\b/i.test(text)) return null;
+  if (!/(?:crea|creá|genera|generá|compila|compilá|construye|construí|arma|armá|hace|hacé|haz|has|quiero|necesito|desarrolla|prepara|empaqueta)/i.test(text)) return null;
   if (/\b(?:pkg|\.pkg|ps4|playstation\s*4|homebrew|orbis)\b/i.test(text)) return "pkg";
   if (/\b(?:apk|android|app|aplicación|aplicacion|programa|software|calendario|agenda)\b/i.test(text)) return "apk";
   return null;
