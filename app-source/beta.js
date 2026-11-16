@@ -2425,7 +2425,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const asksForCreation = /\b(?:app|aplicaci[oó]n|programa|software|calendario|agenda)\b/i.test(text);
     if (!hasArtifact && !asksForCreation) return false;
     if (/^(?:¿?\s*)?(?:qué|que|cómo|como|por qué|para qué|qué es|explica|explícame|decime|dime|sabes|se puede|puedo)\b/i.test(text)) return false;
-    const directCommand = /^(?:por favor[, ]*)?(?:crea(?:r|me)?|creá(?:me)?|gener(?:a|ame|ar|á|áme)|compil(?:a|ame|ar|á|áme)|constru(?:ye|í|ir)|arm(?:a|ame|ar|á|áme)|empaquet(?:a|ar|á)|desarroll(?:a|ar|á)|prepar(?:a|ar|á)|implement(?:a|ar|á)|haceme|hacé|haz(?:me)?|hacer)\b/i.test(text);
+    const directCommand = /^(?:por favor[, ]*)?(?:crea(?:r|me)?|creá(?:me)?|gener(?:a|ame|ar|á|áme)|compil(?:a|ame|ar|á|áme)|constru(?:ye|í|ir)|arm(?:a|ame|ar|á|áme)|empaquet(?:a|ar|á)|desarroll(?:a|ar|á)|prepar(?:a|ar|á)|implement(?:a|ar|á)|haceme|hacé|haz(?:me)?|has|hacer)\b/i.test(text);
     const explicitRequest = /^(?:quiero|necesito|podés|podrias|podrías|puedes)\s+(?:que\s+(?:me\s+)?)?(?:crees|generes|compiles|construyas|armes|empaquetes|hagas|crear|generar|compilar|construir|armar|empaquetar|desarrollar|preparar|implementar|hacer)\b/i.test(text);
     return directCommand || explicitRequest;
   }
@@ -2467,7 +2467,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         signal: run.controller.signal,
         headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
         // The chat injects this internal execution mode; the user never selects or switches modes.
-      body: JSON.stringify({ message: userText, model: model.id, mode: 'autonomous' }),
+      body: JSON.stringify({ message: userText, model: model.id, mode: 'autonomous', buildFlow: true }),
       });
       const started = await startResponse.json().catch(() => ({}));
       if (!startResponse.ok || !started.executionId) {
@@ -2478,7 +2478,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       showStep('Ejecución iniciada · rama aislada ' + String(started.branch || '').slice(0, 90));
       let snapshot = null;
       let finished = false;
-      for (let attempt = 0; attempt < 12; attempt++) {
+      const buildDeadline = Date.now() + 35 * 60 * 1000;
+      let pollDelay = 1000;
+      while (Date.now() < buildDeadline && stepCount < 160) {
         if (run.stopped) break;
         stepCount++;
         showStep(`Etapa ${stepCount}: la IA está razonando y ejecutando la siguiente herramienta…`);
@@ -2500,11 +2502,16 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           }
         }
         if (snapshot.status === 'completed') { finished = true; break; }
-        if (snapshot.status === 'failed') throw new Error(snapshot.error || 'La ejecución terminó con un error.');
+        if (snapshot.status === 'failed' || snapshot.status === 'blocked') throw new Error(snapshot.error || (snapshot.status === 'blocked' ? 'La compilación quedó bloqueada por permisos.' : 'La ejecución terminó con un error.'));
         if (snapshot.status === 'paused') { showStep('La ejecución quedó pausada.', 'error'); break; }
         if (snapshot.status === 'step_in_progress' || snapshot.status === 'pausing') {
-          await new Promise(resolve => setTimeout(resolve, 1800));
-        }
+          await new Promise(resolve => setTimeout(resolve, Math.min(5000, pollDelay)));
+          pollDelay = Math.min(5000, pollDelay * 1.5);
+        } else if (snapshot.goalKind && snapshot.lastBuild && !snapshot.buildReady) {
+          showStep(`Compilación ${snapshot.lastBuild.status || 'en cola'} · ${snapshot.lastBuild.workflowUrl || 'esperando URL de GitHub'}`);
+          await new Promise(resolve => setTimeout(resolve, pollDelay));
+          pollDelay = Math.min(12000, pollDelay * 1.5);
+        } else { pollDelay = 1000; }
       }
       if (run.stopped) {
         const stoppedMessage = 'Ejecución detenida. No se informará como completada.';
@@ -2530,7 +2537,17 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           link.target = '_blank';
           link.rel = 'noopener noreferrer';
           link.className = 'beta-link';
-          link.textContent = 'Abrir compilación y descargar artefactos en GitHub';
+          link.textContent = 'Abrir compilación en GitHub';
+          finalNode.append(link);
+        }
+        for (const artifact of artifacts) {
+          if (!/^https:\/\//i.test(String(artifact.downloadUrl || ''))) continue;
+          const link = document.createElement('a');
+          link.href = artifact.downloadUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.className = 'beta-link';
+          link.textContent = 'Descargar artifact: ' + String(artifact.name || 'compilación');
           finalNode.append(link);
         }
         history.push({ role: 'assistant', content: answer, modelName: model?.name || '', steps: steps.slice(-80) });
