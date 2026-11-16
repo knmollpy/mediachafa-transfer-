@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "Running the OpenOrbis PKG smoke test after exporting SDK environment"
+echo "Running the OpenOrbis PKG smoke test with required SDK tools only"
 make
 mkdir -p dist
 find . -maxdepth 1 -type f -iname '*.pkg' -size +0c -exec cp {} dist/ \;
