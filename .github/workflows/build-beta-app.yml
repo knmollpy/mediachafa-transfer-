@@ -1,0 +1,55 @@
+name: Build Beta Android app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app-source/apk/beta/**"
+      - "app-source/index.html"
+      - "app-source/beta-assets/**"
+      - ".github/workflows/build-beta-app.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-android-app
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-35 build-tools;35.0.0
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Prepare app icon from supplied artwork
+        run: |
+          set -euo pipefail
+          mkdir -p app-source/apk/beta/app/src/main/res/drawable
+          base64 --decode app-source/beta-assets/beta-icon.b64 > app-source/apk/beta/app/src/main/res/drawable/beta_icon.jpg
+          test -s app-source/apk/beta/app/src/main/res/drawable/beta_icon.jpg
+      - name: Build Beta APK
+        run: |
+          set -euo pipefail
+          gradle --no-daemon -p app-source/apk/beta assembleDebug
+          test -s app-source/apk/beta/app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Beta-Android-APK-${{ github.run_number }}
+          path: app-source/apk/beta/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
