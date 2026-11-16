@@ -2502,7 +2502,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           }
         }
         if (snapshot.status === 'completed') { finished = true; break; }
-        if (snapshot.status === 'failed') throw new Error(snapshot.error || 'La ejecución terminó con un error.');
+        if (snapshot.status === 'failed' || snapshot.status === 'blocked') throw new Error(snapshot.error || (snapshot.status === 'blocked' ? 'La compilación quedó bloqueada por permisos.' : 'La ejecución terminó con un error.'));
         if (snapshot.status === 'paused') { showStep('La ejecución quedó pausada.', 'error'); break; }
         if (snapshot.status === 'step_in_progress' || snapshot.status === 'pausing') {
           await new Promise(resolve => setTimeout(resolve, Math.min(5000, pollDelay)));
