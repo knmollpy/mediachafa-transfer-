@@ -53,12 +53,19 @@ jobs:
           mkdir -p "$ROOT"
           curl --fail --location --retry 3 --output "$ARCHIVE" https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz
           tar -xzf "$ARCHIVE" -C "$ROOT"
-          SDK_DIR="$(find "$ROOT" -type d -name include -print -quit | xargs -r dirname)"
-          if [ -z "$SDK_DIR" ] || [ ! -d "$SDK_DIR/bin" ]; then
-            echo "OpenOrbis SDK archive layout was not recognized." >&2
-            find "$ROOT" -maxdepth 3 -type d | head -80
+          PKG_TOOL="$(find "$ROOT" -type f -name PkgTool.Core -print -quit)"
+          if [ -z "$PKG_TOOL" ]; then
+            echo "OpenOrbis SDK archive does not contain PkgTool.Core." >&2
+            find "$ROOT" -maxdepth 5 -type f | head -100
             exit 1
           fi
+          SDK_DIR="$(dirname "$(dirname "$(dirname "$PKG_TOOL")")")"
+          if [ ! -d "$SDK_DIR/include" ] || [ ! -d "$SDK_DIR/bin" ]; then
+            echo "OpenOrbis SDK root could not be resolved from PkgTool.Core: $PKG_TOOL" >&2
+            find "$ROOT" -maxdepth 4 -type d | head -100
+            exit 1
+          fi
+          echo "Resolved OpenOrbis SDK root: $SDK_DIR"
           echo "OO_PS4_TOOLCHAIN=$SDK_DIR" >> "$GITHUB_ENV"
           echo "$SDK_DIR/bin" >> "$GITHUB_PATH"
           if [ -d "$SDK_DIR/bin/linux" ]; then echo "$SDK_DIR/bin/linux" >> "$GITHUB_PATH"; fi
@@ -66,7 +73,12 @@ jobs:
             chmod +x "$SDK_DIR/extra/setup-toolchain.sh"
             "$SDK_DIR/extra/setup-toolchain.sh"
           fi
-          find "$SDK_DIR/bin" -type f -exec chmod u+x {} +
+          for tool in "$SDK_DIR/bin/linux/PkgTool.Core" "$SDK_DIR/bin/linux/create-gp4" "$SDK_DIR/bin/linux/create-fself"; do
+            if [ -f "$tool" ]; then chmod u+x "$tool"; fi
+          done
+          test -f "$SDK_DIR/bin/linux/PkgTool.Core"
+          test -f "$SDK_DIR/bin/linux/create-gp4"
+          test -f "$SDK_DIR/bin/linux/create-fself"
       - name: Build PS4 homebrew package
         env:
           PROJECT_PATH: ${{ steps.project.outputs.path }}
