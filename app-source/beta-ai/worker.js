@@ -934,7 +934,10 @@ function parseAgentTurn(output) {
 function detectAgentBuildGoal(message) {
   const text = String(message || "").trim();
   if (/^(?:¿?\s*)?(?:qué|que|cómo|como|por qué|para qué|qué es|explica|explícame|decime|dime|sabes|se puede|puedo)\b/i.test(text)) return null;
-  if (!/(?:crea|creá|genera|generá|compila|compilá|construye|construí|arma|armá|hace|hacé|haz|has|quiero|necesito|desarrolla|prepara|empaqueta)/i.test(text)) return null;
+  const directCommand = /^(?:por favor[, ]*)?(?:crea|creá|genera|generá|compila|compilá|construye|construí|arma|armá|hace|hacé|haz|has|desarrolla|prepara|empaqueta)(?:me)?(?:\\s|$)/i.test(text);
+  const explicitCommand = /^(?:quiero|necesito|podés|podrias|podrías|puedes)\\s+(?:que\\s+(?:me\\s+)?)?(?:crees|generes|compiles|construyas|armes|hagas|crear|generar|compilar|construir|armar|empaquetar|desarrollar|preparar|implementar|hacer)(?:\\s|$)/i.test(text);
+  const directArtifact = /^(?:quiero|necesito)\\s+(?:un|una)\\s+(?:apk|pkg|app|aplicaci[oó]n)\\b/i.test(text);
+  if (!directCommand && !explicitCommand && !directArtifact) return null;
   if (/\b(?:pkg|\.pkg|ps4|playstation\s*4|homebrew|orbis)\b/i.test(text)) return "pkg";
   if (/\b(?:apk|android|app|aplicación|aplicacion|programa|software|calendario|agenda)\b/i.test(text)) return "apk";
   return null;
