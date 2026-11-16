@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "Running the current main-branch OpenOrbis PKG workflow smoke test"
 make
 mkdir -p dist
 find . -maxdepth 1 -type f -iname '*.pkg' -size +0c -exec cp {} dist/ \;
