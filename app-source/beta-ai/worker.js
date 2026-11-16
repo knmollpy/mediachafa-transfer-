@@ -1081,7 +1081,10 @@ async function agentStep(env, state, requestSignal) {
       if (turn.name === "vercel_preview_status" && result?.readyState === "READY" && result.httpStatus >= 200 && result.httpStatus < 300) state.lastPreviewSucceeded = true;
       if (turn.name === "vercel_preview_status" && (result?.readyState === "ERROR" || (result?.httpStatus && result.httpStatus >= 400))) state.lastPreviewSucceeded = false;
       state.messages.push({ role: "user", content: boundedAgentText(`RESULTADO DE HERRAMIENTA ${turn.name}:\n${JSON.stringify(state.lastToolResult)}`) });
-      if (state.status !== "failed") state.status = "running";
+      if (state.goalKind && !state.lastToolResult.ok && ["github_build_android_apk", "github_build_ps4_pkg"].includes(turn.name)) {
+        state.error = state.lastToolResult.error || "GitHub no pudo iniciar la compilación.";
+        state.status = /HTTP (?:401|403|404)|conectá github|actions: write|permiso/i.test(state.error) ? "blocked" : "failed";
+      } else if (state.status !== "failed") state.status = "running";
     }
     const latestAfterTool = await loadAgentState(env, state.userId, state.id) || state;
     const persisted = latestAfterTool.pauseRequested || latestAfterTool.status === "pausing" ? latestAfterTool : state;
@@ -1121,8 +1124,8 @@ async function agentStep(env, state, requestSignal) {
       latest.pauseRequested = false;
       latest.pendingInstructions = [...(latest.pendingInstructions || []), "La petición se interrumpió durante el paso actual; continuá sin asumir que una herramienta pendiente se ejecutó."];
     } else {
-      latest.status = "failed";
       latest.error = String(error?.message || "Falló un paso del agente.").slice(0, 600);
+      latest.status = latest.goalKind && /HTTP (?:401|403|404)|conectá github|actions: write|permiso/i.test(latest.error) ? "blocked" : "failed";
     }
     latest.updatedAt = Date.now();
     await saveAgentState(env, latest);
