@@ -2425,7 +2425,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const asksForCreation = /\b(?:app|aplicaci[oó]n|programa|software|calendario|agenda)\b/i.test(text);
     if (!hasArtifact && !asksForCreation) return false;
     if (/^(?:¿?\s*)?(?:qué|que|cómo|como|por qué|para qué|qué es|explica|explícame|decime|dime|sabes|se puede|puedo)\b/i.test(text)) return false;
-    const directCommand = /^(?:por favor[, ]*)?(?:crea(?:r|me)?|creá(?:me)?|gener(?:a|ame|ar|á|áme)|compil(?:a|ame|ar|á|áme)|constru(?:ye|í|ir)|arm(?:a|ame|ar|á|áme)|empaquet(?:a|ar|á)|desarroll(?:a|ar|á)|prepar(?:a|ar|á)|implement(?:a|ar|á)|haceme|hacé|haz(?:me)?|hacer)\b/i.test(text);
+    const directCommand = /^(?:por favor[, ]*)?(?:crea(?:r|me)?|creá(?:me)?|gener(?:a|ame|ar|á|áme)|compil(?:a|ame|ar|á|áme)|constru(?:ye|í|ir)|arm(?:a|ame|ar|á|áme)|empaquet(?:a|ar|á)|desarroll(?:a|ar|á)|prepar(?:a|ar|á)|implement(?:a|ar|á)|haceme|hacé|haz(?:me)?|has|hacer)\b/i.test(text);
     const explicitRequest = /^(?:quiero|necesito|podés|podrias|podrías|puedes)\s+(?:que\s+(?:me\s+)?)?(?:crees|generes|compiles|construyas|armes|empaquetes|hagas|crear|generar|compilar|construir|armar|empaquetar|desarrollar|preparar|implementar|hacer)\b/i.test(text);
     return directCommand || explicitRequest;
   }
