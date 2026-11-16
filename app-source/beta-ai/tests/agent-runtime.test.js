@@ -242,7 +242,7 @@ test("build-flow goal classification distinguishes APK/PKG builds from questions
   assert.equal(detect("Haz un APK de un calendario"), "apk");
   assert.equal(detect("Creá un PKG para PS4"), "pkg");
   assert.equal(detect("Quiero que me generes un PKG homebrew"), "pkg");
-  assert.match(source, /buildFlow === true \\? detectAgentBuildGoal\\(message\\)/);
-  assert.match(source, /Las pruebas generales están prohibidas durante una compilación APK\\/PKG/);
-  assert.match(source, /RESULTADO DE COMPILACIÓN/);
+  assert.ok(source.includes("payload.buildFlow === true ? detectAgentBuildGoal(message)"));
+  assert.ok(source.includes("Las pruebas generales están prohibidas durante una compilación APK/PKG"));
+  assert.ok(source.includes("RESULTADO DE COMPILACIÓN"));
 });
