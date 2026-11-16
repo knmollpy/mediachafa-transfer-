@@ -22,7 +22,31 @@ import android.widget.Toast;
 public final class MainActivity extends Activity {
     private static final int FILE_PICKER = 4201;
     private static final int MEDIA_PERMISSION = 4202;
-    private static final String APP_URL = "https://mediachafa-transfer.pages.dev/?betaApp=1&betaStandalone=20261116";
+    private static final String APP_URL = "https://mediachafa-transfer.pages.dev/?betaApp=1&betaStandalone=20261117&nativeShell=2";
+
+    private static final String BETA_APP_ENFORCER =
+        "(function(){try{" +
+        "window.MEDIA_BETA_APP=true;localStorage.setItem('mediachafa-beta-app','1');document.documentElement.classList.add('beta-app-shell');" +
+        "if(!document.getElementById('native-beta-app-style')){var st=document.createElement('style');st.id='native-beta-app-style';" +
+        "st.textContent=" +
+        "'html,body{margin:0!important;min-height:100%!important;background:#07112f url(/beta-assets/beta-wallpaper.svg) center center/cover fixed no-repeat!important;color:#f4f6ff!important}'+" +
+        "'#login.login-screen{position:fixed!important;inset:0!important;z-index:10000!important;display:grid!important;place-items:center!important;padding:24px 18px!important;overflow:auto!important;background:linear-gradient(180deg,rgba(3,8,29,.12),rgba(3,8,29,.32)),url(/beta-assets/beta-wallpaper.svg) center/cover fixed no-repeat!important}'+" +
+        "'#login .login-card{width:min(420px,100%)!important;padding:28px 24px!important;border-radius:24px!important;background:rgba(4,10,35,.78)!important;color:#fff!important;border:1px solid rgba(202,218,255,.28)!important;box-shadow:0 22px 90px #0008!important;backdrop-filter:blur(12px)!important}'+" +
+        "'#login .brand,#login h1{color:#fff!important}#login .brand-mark{width:52px!important;height:52px!important;border-radius:15px!important;object-fit:cover!important}'+" +
+        "'#login .sub,#login .field-label,#login .remember-session,#login .login-note{color:#e0e8ff!important}#login .field{background:rgba(6,14,43,.88)!important;color:#fff!important;border:1px solid rgba(194,210,255,.4)!important;border-radius:12px!important}'+" +
+        "'#login .primary{background:#29499d!important;color:#fff!important;border-radius:12px!important}#guest-ps4-entry,.install-mobile-option,.install-mobile-help{display:none!important}'+" +
+        "'#app>.topbar,#app .welcome,#app .storage,#app #files-layout,#app #links-panel,#app #ps4-panel,#app #dm-panel,#app .paypal-donation{display:none!important}'+" +
+        "'#app.beta-mode{min-height:100svh!important;background:transparent!important}#app.beta-mode .wrap{width:100%!important;max-width:none!important;min-height:100svh!important;margin:0!important;padding:env(safe-area-inset-top) 10px calc(10px + env(safe-area-inset-bottom))!important}'+" +
+        "'#app.beta-mode #beta-panel{display:flex!important;width:100%!important;min-height:100svh!important;margin:0!important;padding:12px!important;border:0!important;border-radius:0!important;background:linear-gradient(180deg,rgba(3,8,29,.12),rgba(3,8,29,.20)),url(/beta-assets/beta-wallpaper.svg) center/cover fixed no-repeat!important;box-shadow:none!important}'+" +
+        "'#app.beta-mode #beta-panel .beta-workspace{background:transparent!important;min-height:calc(100svh - 24px)!important}#app.beta-mode #beta-panel .beta-header{background:rgba(4,10,35,.48)!important;border:1px solid rgba(202,218,255,.2)!important;border-radius:16px!important;backdrop-filter:blur(8px)!important}'+" +
+        "'#app.beta-mode #beta-panel .beta-chat-stage{background:rgba(3,8,29,.08)!important;border:1px solid rgba(202,218,255,.14)!important;border-radius:18px!important;backdrop-filter:none!important}#app.beta-mode #beta-panel .beta-messages{background:transparent!important}'+" +
+        "'#app.beta-mode #beta-panel .beta-message{background:rgba(5,14,42,.76)!important;color:#f6f7ff!important;backdrop-filter:blur(8px)!important}#app.beta-mode #beta-panel .beta-composer,#app.beta-mode #beta-panel .beta-activity{background:rgba(4,10,35,.82)!important;border-color:rgba(202,218,255,.24)!important;backdrop-filter:blur(12px)!important}'+" +
+        "'#app.beta-mode #beta-panel .beta-settings{background:rgba(4,10,35,.97)!important}#app.beta-mode #beta-panel .beta-orb{background:url(/beta-assets/beta-icon.svg) center/cover no-repeat!important;color:transparent!important}';" +
+        "document.head.appendChild(st);}" +
+        "var a=document.getElementById('app'),t=document.getElementById('beta-tab');if(a&&!a.classList.contains('hidden')&&!a.classList.contains('beta-mode')&&t&&!t.classList.contains('hidden'))t.click();" +
+        "if(!window.__nativeBetaObserver){window.__nativeBetaObserver=new MutationObserver(function(){var x=document.getElementById('app'),b=document.getElementById('beta-tab');if(x&&!x.classList.contains('hidden')&&!x.classList.contains('beta-mode')&&b&&!b.classList.contains('hidden'))b.click();});window.__nativeBetaObserver.observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']});}" +
+        "}catch(e){console.error('Beta native shell:',e);}})();";
+
     private WebView webView;
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest pendingWebPermission;
@@ -35,6 +59,8 @@ public final class MainActivity extends Activity {
         webView.setBackgroundColor(0xFF050B27);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+        webView.clearCache(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(false);
@@ -47,6 +73,10 @@ public final class MainActivity extends Activity {
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(webView, true);
         webView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                if (url != null && (url.startsWith("https://mediachafa-transfer.pages.dev/") || url.startsWith("https://mediachafa-transfer.vercel.app/"))) view.evaluateJavascript(BETA_APP_ENFORCER, null);
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase();
