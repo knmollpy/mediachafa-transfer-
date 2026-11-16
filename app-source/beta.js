@@ -2537,7 +2537,17 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
           link.target = '_blank';
           link.rel = 'noopener noreferrer';
           link.className = 'beta-link';
-          link.textContent = 'Abrir compilación y descargar artefactos en GitHub';
+          link.textContent = 'Abrir compilación en GitHub';
+          finalNode.append(link);
+        }
+        for (const artifact of artifacts) {
+          if (!/^https:\/\//i.test(String(artifact.downloadUrl || ''))) continue;
+          const link = document.createElement('a');
+          link.href = artifact.downloadUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.className = 'beta-link';
+          link.textContent = 'Descargar artifact: ' + String(artifact.name || 'compilación');
           finalNode.append(link);
         }
         history.push({ role: 'assistant', content: answer, modelName: model?.name || '', steps: steps.slice(-80) });
