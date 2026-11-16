@@ -739,13 +739,15 @@ async function loadGoogleDriveStatus() {
       if ($('#remember-session').checked) localStorage.setItem(REMEMBERED_USERNAME_KEY, username);
       else localStorage.removeItem(REMEMBERED_USERNAME_KEY);
       const submit = $('#login-form button[type="submit"]');
-      submit.disabled = true; submit.textContent = 'Verificando…';
+      if (submit.disabled) return;
+      submit.disabled = true; submit.textContent = 'Ingresando a Beta…';
       try {
         const response = await fetch(`${SUPABASE_URL}/functions/v1/create-uploader`, {method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({action:'login',username,password,captchaToken})});
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || 'No se pudo iniciar sesión.');
         const {error} = await client.auth.setSession(result.session); if (error) throw error;
-        resetLoginCaptcha();
+        // Siteverify already consumed this token. Resetting Turnstile here
+        // starts a fresh challenge during the Android WebView transition.
         if (username === OWNER_USER) {
           if ((result.user?.email || '').toLowerCase() !== OWNER_EMAIL || result.user?.is_anonymous) { await client.auth.signOut({scope:'local'}); throw new Error('Esta cuenta no tiene acceso de dueño.'); }
           await enterLibrary(true, result.user);
@@ -756,7 +758,7 @@ async function loadGoogleDriveStatus() {
         errorBox.textContent = error.message || 'No se pudo iniciar sesión.';
         resetLoginCaptcha();
       } finally {
-        submit.disabled = false; submit.innerHTML = 'Entrar a la página <span aria-hidden="true">→</span>';
+        submit.disabled = false; submit.innerHTML = window.MEDIA_BETA_APP ? 'Entrar a Beta <span aria-hidden="true">→</span>' : 'Entrar a la página <span aria-hidden="true">→</span>';
       }
     });
 
