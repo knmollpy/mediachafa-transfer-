@@ -69,18 +69,17 @@ jobs:
           echo "OO_PS4_TOOLCHAIN=$SDK_DIR" >> "$GITHUB_ENV"
           echo "$SDK_DIR/bin" >> "$GITHUB_PATH"
           if [ -d "$SDK_DIR/bin/linux" ]; then echo "$SDK_DIR/bin/linux" >> "$GITHUB_PATH"; fi
-          # OpenOrbis' setup script reads OO_PS4_TOOLCHAIN from the current process,
-          # not only from GITHUB_ENV (which applies to later workflow steps).
-          export OO_PS4_TOOLCHAIN="$SDK_DIR"
-          if [ -f "$SDK_DIR/extra/setup-toolchain.sh" ]; then
-            sh "$SDK_DIR/extra/setup-toolchain.sh"
-          fi
-          for tool in "$SDK_DIR/bin/linux/PkgTool.Core" "$SDK_DIR/bin/linux/create-gp4" "$SDK_DIR/bin/linux/create-fself"; do
-            if [ -f "$tool" ]; then chmod u+x "$tool"; fi
+          # The v0.5.4 release omits optional create-eboot/create-lib/readelf binaries
+          # referenced by extra/setup-toolchain.sh, so validate only the tools this build uses.
+          for name in PkgTool.Core create-gp4 create-fself; do
+            tool="$SDK_DIR/bin/linux/$name"
+            if [ ! -f "$tool" ]; then
+              echo "Required OpenOrbis tool is missing: $tool" >&2
+              find "$SDK_DIR/bin" -maxdepth 3 -type f | sort | head -100
+              exit 1
+            fi
+            chmod u+x "$tool"
           done
-          test -f "$SDK_DIR/bin/linux/PkgTool.Core"
-          test -f "$SDK_DIR/bin/linux/create-gp4"
-          test -f "$SDK_DIR/bin/linux/create-fself"
       - name: Build PS4 homebrew package
         env:
           PROJECT_PATH: ${{ steps.project.outputs.path }}
