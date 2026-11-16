@@ -35,6 +35,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      - name: Prepare app icon from supplied artwork
+        run: |
+          set -euo pipefail
+          mkdir -p app-source/apk/beta/app/src/main/res/drawable
+          base64 --decode app-source/beta-assets/beta-icon.b64 > app-source/apk/beta/app/src/main/res/drawable/beta_icon.jpg
+          test -s app-source/apk/beta/app/src/main/res/drawable/beta_icon.jpg
       - name: Build Beta APK
         run: |
           set -euo pipefail
