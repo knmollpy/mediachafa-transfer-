@@ -9,6 +9,18 @@
         if (requested) localStorage.setItem('mediachafa-beta-app', '1');
         window.MEDIA_BETA_APP = requested || localStorage.getItem('mediachafa-beta-app') === '1';
         if (window.MEDIA_BETA_APP) document.documentElement.classList.add('beta-app-shell');
+        if (window.MEDIA_BETA_APP) document.addEventListener('DOMContentLoaded', () => {
+          const brand = document.querySelector('.login-card .brand');
+          if (brand) brand.innerHTML = '<img class="brand-mark" src="/beta-assets/beta-icon.svg" alt=""> Beta';
+          const heading = document.querySelector('.login-card h1');
+          if (heading) heading.textContent = 'Entrá a Beta';
+          const subtitle = document.querySelector('.login-card .sub');
+          if (subtitle) subtitle.textContent = 'Iniciá sesión con tu cuenta nxmollpy para abrir tu espacio privado.';
+          const note = document.querySelector('.login-note');
+          if (note) note.textContent = 'Acceso privado exclusivo del usuario nxmollpy. Usá tu contraseña habitual.';
+          const submit = document.querySelector('#login-form button[type="submit"]');
+          if (submit) submit.textContent = 'Entrar a Beta →';
+        });
       } catch { window.MEDIA_BETA_APP = new URLSearchParams(location.search).get('betaApp') === '1'; }
     })();
   </script>
@@ -168,11 +180,11 @@
   </style>
   <style id="beta-standalone-app-style">
     html.beta-app-shell,html.beta-app-shell body{min-height:100%;background:#050b27!important}
-    html.beta-app-shell body{background-image:linear-gradient(180deg,rgba(3,8,29,.2),rgba(3,8,29,.5)),url('/beta-assets/beta-wallpaper.jpg')!important;background-size:cover!important;background-position:center center!important;background-attachment:fixed!important;color:#f6f7ff!important}
-    html.beta-app-shell #login{min-height:100svh;background:linear-gradient(180deg,rgba(4,9,30,.35),rgba(4,9,30,.78)),url('/beta-assets/beta-wallpaper.jpg') center/cover fixed!important}
+    html.beta-app-shell body{background-image:linear-gradient(180deg,rgba(3,8,29,.2),rgba(3,8,29,.5)),url('/beta-assets/beta-wallpaper.svg')!important;background-size:cover!important;background-position:center center!important;background-attachment:fixed!important;color:#f6f7ff!important}
+    html.beta-app-shell #login{min-height:100svh;background:linear-gradient(180deg,rgba(4,9,30,.35),rgba(4,9,30,.78)),url('/beta-assets/beta-wallpaper.svg') center/cover fixed!important}
     html.beta-app-shell .login-card{background:rgba(5,10,32,.91)!important;color:#f7f8ff!important;border:1px solid rgba(151,177,255,.25)!important;box-shadow:0 24px 90px #0009!important;backdrop-filter:blur(14px)}
     html.beta-app-shell .login-card .brand,html.beta-app-shell .login-card h1{color:#fff!important}
-    html.beta-app-shell .login-card .brand-mark{content:url('/beta-assets/beta-icon.jpg');object-fit:cover}
+    html.beta-app-shell .login-card .brand-mark{content:url('/beta-assets/beta-icon.svg');object-fit:cover}
     html.beta-app-shell .login-card .sub,html.beta-app-shell .login-note,html.beta-app-shell .turnstile-help{color:#c5d0f5!important}
     html.beta-app-shell .login-note{background:rgba(91,116,190,.16)!important}
     html.beta-app-shell .login-card .field{background:#0d1638!important;color:#fff!important;border-color:#354777!important}
