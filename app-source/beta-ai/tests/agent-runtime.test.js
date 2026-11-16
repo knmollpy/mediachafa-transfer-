@@ -230,3 +230,19 @@ test("MediaChafa build routing requires an explicit artifact creation command", 
   assert.equal(route("Crea un APK", { id: "openrouter::openai/gpt-oss-20b:free" }), false);
 });
 
+
+
+test("build-flow goal classification distinguishes APK/PKG builds from questions", async () => {
+  const source = await readFile(new URL("../worker.js", import.meta.url), "utf8");
+  const match = source.match(/function detectAgentBuildGoal\(message\) \{[\s\S]*?\n\}/);
+  assert.ok(match, "the worker must classify explicit build requests before model execution");
+  const detect = vm.runInNewContext("(" + match[0] + ")");
+  assert.equal(detect("¿Qué es un APK?"), null);
+  assert.equal(detect("Cómo compilar un APK"), null);
+  assert.equal(detect("Haz un APK de un calendario"), "apk");
+  assert.equal(detect("Creá un PKG para PS4"), "pkg");
+  assert.equal(detect("Quiero que me generes un PKG homebrew"), "pkg");
+  assert.match(source, /buildFlow === true \\? detectAgentBuildGoal\\(message\\)/);
+  assert.match(source, /Las pruebas generales están prohibidas durante una compilación APK\\/PKG/);
+  assert.match(source, /RESULTADO DE COMPILACIÓN/);
+});
