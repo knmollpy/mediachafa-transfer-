@@ -96,6 +96,9 @@ jobs:
             if [ ! -f "$PROJECT_PATH/sce_module/$module" ] && [ -f "$SAMPLE/sce_module/$module" ]; then cp "$SAMPLE/sce_module/$module" "$PROJECT_PATH/sce_module/$module"; fi
           done
           chmod +x "$PROJECT_PATH/build.sh"
+          # PkgTool.Core is a bundled .NET executable built without ICU; invariant
+          # globalization keeps its SFO/PKG metadata operations working on Ubuntu 26.04.
+          export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
           cd "$PROJECT_PATH"
           ./build.sh
           cd "$GITHUB_WORKSPACE"
