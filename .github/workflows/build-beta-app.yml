@@ -6,6 +6,8 @@ on:
     paths:
       - "app-source/apk/beta/**"
       - "app-source/index.html"
+      - "app-source/beta.js"
+      - "app-source/beta-*.js"
       - "app-source/beta-assets/**"
       - ".github/workflows/build-beta-app.yml"
   workflow_dispatch:
