@@ -45,6 +45,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang-18 lld-18 python3 python3-pip curl ca-certificates tar
+          # The upstream sample Makefile invokes ld.lld by its unversioned name.
+          sudo ln -sf "$(command -v ld.lld-18)" /usr/local/bin/ld.lld
       - name: Install pinned OpenOrbis PS4 Toolchain
         run: |
           set -euo pipefail
