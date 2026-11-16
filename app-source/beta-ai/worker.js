@@ -1013,7 +1013,7 @@ async function agentStep(env, state, requestSignal) {
     await saveAgentState(env, state);
     return state;
   }
-  if (state.rounds >= MAX_AGENT_ROUNDS || state.toolCalls >= MAX_AGENT_TOOLS) {
+  if (state.rounds >= (state.goalKind ? 12 : MAX_AGENT_ROUNDS) || state.toolCalls >= MAX_AGENT_TOOLS) {
     state.status = "failed";
     state.error = `Se alcanzó el límite de ejecución (${MAX_AGENT_ROUNDS} rondas o ${MAX_AGENT_TOOLS} herramientas).`;
     await saveAgentState(env, state);
@@ -1025,7 +1025,6 @@ async function agentStep(env, state, requestSignal) {
   await saveAgentState(env, state);
   try {
     if (state.goalKind && state.lastBuild && !state.buildReady) {
-      state.toolCalls++;
       const buildStatus = await executeAgentTool(env, state, "github_build_status", {});
       state.lastToolResult = { name: "github_build_status", ok: true, result: buildStatus };
       state.messages.push({ role: "user", content: boundedAgentText("RESULTADO DE COMPILACIÓN:\n" + JSON.stringify(buildStatus)) });
