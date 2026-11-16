@@ -200,6 +200,35 @@
     html.beta-app-shell #app.beta-mode #beta-panel .beta-settings{z-index:20;max-width:calc(100vw - 44px)}
     html.beta-app-shell #app.beta-mode #beta-panel .beta-nav{max-width:100%;overflow-x:auto}
     html.beta-app-shell #app.beta-mode #beta-panel .beta-nav button{white-space:nowrap}
+
+    /* Beta Android: experiencia aislada, sin el chrome ni las secciones del portal. */
+    html.beta-app-shell,html.beta-app-shell body{width:100%;min-height:100%;margin:0;background:#050b27!important}
+    html.beta-app-shell body{background-image:linear-gradient(180deg,rgba(3,8,29,.08),rgba(3,8,29,.16)),url('/beta-assets/beta-wallpaper.svg')!important;background-size:cover!important;background-position:center center!important;background-attachment:fixed!important;background-repeat:no-repeat!important;color:#f6f7ff!important}
+    html.beta-app-shell #app{min-height:100svh;background:transparent!important}
+    html.beta-app-shell #app>.topbar,
+    html.beta-app-shell #app>.wrap>.welcome,
+    html.beta-app-shell #app>.wrap>.storage,
+    html.beta-app-shell #app #files-layout,
+    html.beta-app-shell #app #links-panel,
+    html.beta-app-shell #app #ps4-panel,
+    html.beta-app-shell #app #dm-panel,
+    html.beta-app-shell #app .paypal-donation,
+    html.beta-app-shell #app .install-mobile-option{display:none!important}
+    html.beta-app-shell #app.beta-mode .wrap{width:100%;max-width:none;min-height:100svh;margin:0;padding:env(safe-area-inset-top) 8px calc(8px + env(safe-area-inset-bottom))!important}
+    html.beta-app-shell #app.beta-mode #beta-panel{display:flex!important;width:100%;min-height:calc(100svh - env(safe-area-inset-top) - env(safe-area-inset-bottom))!important;margin:0!important;padding:10px!important;border:0!important;border-radius:0!important;background:linear-gradient(180deg,rgba(4,9,30,.12),rgba(4,9,30,.22)),url('/beta-assets/beta-wallpaper.svg') center center/cover fixed!important;box-shadow:none!important;backdrop-filter:none!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-workspace{background:transparent!important;min-height:inherit!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-header{background:rgba(4,9,30,.42)!important;border:1px solid rgba(190,205,255,.16)!important;backdrop-filter:blur(5px)}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-chat-stage{background:rgba(3,8,25,.10)!important;border:1px solid rgba(210,220,255,.13)!important;backdrop-filter:blur(1px)}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-messages{background:transparent!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-message{background:rgba(8,20,52,.76)!important;color:#f5f7ff!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-composer,
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-activity{background:rgba(4,9,30,.82)!important;border-color:rgba(190,205,255,.22)!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-settings{background:rgba(5,10,32,.97)!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-policy{display:none!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-brand{color:#fff!important}
+    html.beta-app-shell #app.beta-mode #beta-panel .beta-orb{background-image:url('/beta-assets/beta-icon.svg')!important;background-size:cover!important;color:transparent!important}
+    html.beta-app-shell #login{background:linear-gradient(180deg,rgba(4,9,30,.16),rgba(4,9,30,.42)),url('/beta-assets/beta-wallpaper.svg') center/cover fixed!important}
+    html.beta-app-shell .login-card{background:rgba(5,10,32,.88)!important}
   </style>
 </head>
 <body>
