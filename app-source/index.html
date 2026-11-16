@@ -610,23 +610,28 @@ async function loadGoogleDriveStatus() {
       $('#customize-button').classList.toggle('hidden', !ownerMode && !uploaderMode);
       $('#own-links').classList.toggle('hidden', !currentUser);
       $('#app > .topbar').classList.toggle('guest-only-hide',guestOnly); $('.welcome').classList.toggle('hidden',guestOnly);
-      if(!guestOnly) { try { const health = await fetch(`${R2_WORKER_URL}/health`); const status = await health.json(); r2Available = health.ok && status.storage && status.configured; } catch { r2Available = false; } }
-      $('#drive-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
-      if(!guestOnly) await loadGoogleDriveStatus();
-      if(new URLSearchParams(location.search).get('drive')==='connected'){
-        toast('Google Drive quedó conectado.');
-        history.replaceState(null,'',location.pathname+location.hash);
+      if (window.MEDIA_BETA_APP) {
+        // Beta independiente: no cargar archivos, enlaces, catálogo PS4 ni Drive.
+        switchView('beta');
+      } else {
+        if(!guestOnly) { try { const health = await fetch(`${R2_WORKER_URL}/health`); const status = await health.json(); r2Available = health.ok && status.storage && status.configured; } catch { r2Available = false; } }
+        $('#drive-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
+        if(!guestOnly) await loadGoogleDriveStatus();
+        if(new URLSearchParams(location.search).get('drive')==='connected'){
+          toast('Google Drive quedó conectado.');
+          history.replaceState(null,'',location.pathname+location.hash);
+        }
+        const capacity = getCapacity();
+        $('#r2-capacity-label').textContent = formatBytes(capacity);
+        $('#guest-note').classList.toggle('hidden', ownerMode);
+        $('#today').textContent = new Intl.DateTimeFormat('es-AR', {dateStyle:'full'}).format(new Date());
+        if(!guestOnly && (!memberMode || accountPermissions.can_view_public_files || accountPermissions.can_create_folders || canUploadMode)) await loadLibrary();
+        await Promise.all([!guestOnly && (!memberMode || accountPermissions.can_view_links) ? loadLinks() : Promise.resolve(), !guestOnly ? loadPreferences() : Promise.resolve(), (guestOnly || !memberMode || accountPermissions.can_view_ps4_games) ? loadPs4Catalog() : Promise.resolve()]);
+        const landingView=window.MEDIA_BETA_APP?'beta':(guestOnly?'ps4':(!memberMode||accountPermissions.can_view_public_files||accountPermissions.can_create_folders||canUploadMode?'files':accountPermissions.can_view_links?'links':accountPermissions.can_view_ps4_games?'ps4':'files'));switchView(landingView);
+        if(isNativeApp)setNativeSyncStatus('Datos cargados · conectando en vivo…');
+        if(!guestOnly) await startLibraryRealtime();
+        if(isNativeApp)initializeNativeState();
       }
-      const capacity = getCapacity();
-      $('#r2-capacity-label').textContent = formatBytes(capacity);
-      $('#guest-note').classList.toggle('hidden', ownerMode);
-      $('#today').textContent = new Intl.DateTimeFormat('es-AR', {dateStyle:'full'}).format(new Date());
-      if(!guestOnly && (!memberMode || accountPermissions.can_view_public_files || accountPermissions.can_create_folders || canUploadMode)) await loadLibrary();
-      await Promise.all([!guestOnly && (!memberMode || accountPermissions.can_view_links) ? loadLinks() : Promise.resolve(), !guestOnly ? loadPreferences() : Promise.resolve(), (guestOnly || !memberMode || accountPermissions.can_view_ps4_games) ? loadPs4Catalog() : Promise.resolve()]);
-      const landingView=window.MEDIA_BETA_APP?'beta':(guestOnly?'ps4':(!memberMode||accountPermissions.can_view_public_files||accountPermissions.can_create_folders||canUploadMode?'files':accountPermissions.can_view_links?'links':accountPermissions.can_view_ps4_games?'ps4':'files'));switchView(landingView);
-      if(isNativeApp)setNativeSyncStatus('Datos cargados · conectando en vivo…');
-      if(!guestOnly) await startLibraryRealtime();
-      if(isNativeApp)initializeNativeState();
     }
 
     const rememberedUsername = localStorage.getItem(REMEMBERED_USERNAME_KEY);
