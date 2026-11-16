@@ -241,6 +241,7 @@ test("build-flow goal classification distinguishes APK/PKG builds from questions
   assert.equal(detect("Cómo compilar un APK"), null);
   assert.equal(detect("Haz un APK de un calendario"), "apk");
   assert.equal(detect("Creá un PKG para PS4"), "pkg");
+  assert.equal(detect("Haz un APK de un calendario"), "apk");
   assert.equal(detect("Quiero que me generes un PKG homebrew"), "pkg");
   assert.ok(source.includes("payload.buildFlow === true ? detectAgentBuildGoal(message)"));
   assert.ok(source.includes("Las pruebas generales están prohibidas durante una compilación APK/PKG"));
