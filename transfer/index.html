@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MediaChafa Transfer</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101713;color:#edf5ee;font:16px Arial,sans-serif}.wrap{max-width:760px;margin:42px auto;padding:22px}.brand{font-size:13px;letter-spacing:3px;color:#7bd59b;font-weight:bold}.panel{margin-top:18px;background:#1b2820;border:1px solid #304437;border-radius:16px;padding:26px}h1{font-size:30px;margin:8px 0}p{color:#b7c9bb;line-height:1.5}.field{display:block;width:100%;padding:13px;margin:9px 0 16px;border:1px solid #405448;border-radius:9px;background:#111a14;color:white;font-size:16px}button{border:0;border-radius:9px;padding:13px 19px;background:#55c77c;color:#092012;font-weight:bold;font-size:15px;cursor:pointer}button:disabled{opacity:.5}label{display:block;color:#d6e5d9;font-size:13px;font-weight:bold;margin-top:15px}.muted{font-size:12px;color:#9db2a2}.status{margin-top:16px;padding:12px;border-radius:8px;background:#14251a;color:#a9e5b9;white-space:pre-wrap}.hidden{display:none}.bar{height:9px;background:#34483a;border-radius:9px;overflow:hidden;margin-top:12px}.fill{height:100%;width:0;background:#55c77c}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.top a{color:#9de5b3}.foot{font-size:12px;color:#83988a;margin-top:18px}@media(max-width:600px){.wrap{margin:12px auto;padding:14px}.panel{padding:20px}h1{font-size:25px}}
+</style>
+</head>
+<body><main class="wrap">
+<div class="brand">MEDIACHAFA</div><div class="panel">
+<div class="top"><span class="muted">TRANSFERENCIA DE ARCHIVOS</span><a href="/ps3/">Vista PS3</a></div>
+<h1>Subir para descargar en PS3</h1><p>Elegí un archivo desde tu celular o computadora. Cuando termine, aparecerá en la lista de la PlayStation 3.</p>
+<section id="login">
+<label>Correo de MediaChafa</label><input class="field" id="email" type="email" autocomplete="username" placeholder="Tu correo">
+<label>Contraseña</label><input class="field" id="password" type="password" autocomplete="current-password" placeholder="Tu contraseña">
+<button id="loginBtn">Iniciar sesión</button>
+</section>
+<section id="uploader" class="hidden">
+<div class="top"><span id="account" class="muted"></span><button id="logout" type="button">Cerrar sesión</button></div>
+<label for="file">Archivo para enviar</label><input class="field" id="file" type="file">
+<p class="muted">Hasta 10 GB por archivo. Los archivos se guardan en Cloudflare R2 y quedan disponibles en la página de PS3.</p>
+<button id="uploadBtn" type="button">Subir archivo</button>
+<div id="progress" class="bar hidden"><div id="fill" class="fill"></div></div><div id="status" class="status hidden"></div>
+</section>
+<div class="foot">Los archivos subidos quedan visibles para cualquiera que conozca el enlace de esta página. No subas contenido privado.</div>
+</div></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+var SUPABASE_URL='https://velxgwkujcabdaxbppyj.supabase.co';
+var SUPABASE_KEY='sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-';
+var WORKER='https://mediachafa-storage.nxmollpy.workers.dev';
+var client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+var $=function(id){return document.getElementById(id)};
+function say(message){$('status').textContent=message;$('status').className='status'}
+function showSession(session){$('login').className=session?'hidden':'';$('uploader').className=session?'':'hidden';if(session)$('account').textContent=session.user.email||'Sesión iniciada'}
+async function refresh(){var r=await client.auth.getSession();showSession(r.data.session)}
+$('loginBtn').onclick=async function(){var b=$('loginBtn');b.disabled=true;b.textContent='Conectando…';var r=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});b.disabled=false;b.textContent='Iniciar sesión';if(r.error){alert('No se pudo iniciar sesión: '+r.error.message);return}showSession(r.data.session)};
+$('logout').onclick=async function(){await client.auth.signOut();showSession(null)};
+function uid(){return (window.crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)}
+function progress(n){$('fill').style.width=Math.max(0,Math.min(100,n))+'%'}
+function xhrPut(url,file,token,onProgress){return new Promise(function(resolve,reject){var x=new XMLHttpRequest();x.open('PUT',url);x.setRequestHeader('Authorization','Bearer '+token);x.setRequestHeader('Content-Type',file.type||'application/octet-stream');x.upload.onprogress=function(e){if(e.lengthComputable)onProgress(e.loaded/e.total*100)};x.onload=function(){if(x.status>=200&&x.status<300)resolve();else{var m=x.responseText;try{m=JSON.parse(m).error||m}catch(e){}reject(new Error(m||'Error '+x.status))}};x.onerror=function(){reject(new Error('Error de conexión'))};x.send(file)})}
+async function uploadLarge(file,path,token){var r=await fetch(WORKER+'/multipart/create',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({path:path,size:file.size,contentType:file.type||'application/octet-stream'})});var data=await r.json();if(!r.ok)throw new Error(data.error||'No se pudo iniciar la carga');var parts=[],count=Math.ceil(file.size/data.partSize),done=0;for(var i=0;i<count;i++){var start=i*data.partSize,end=Math.min(file.size,start+data.partSize),part=file.slice(start,end),url=WORKER+'/multipart/part?path='+encodeURIComponent(path)+'&uploadId='+encodeURIComponent(data.uploadId)+'&partNumber='+(i+1);var result=await new Promise(function(resolve,reject){var x=new XMLHttpRequest();x.open('PUT',url);x.setRequestHeader('Authorization','Bearer '+token);x.upload.onprogress=function(e){if(e.lengthComputable)progress((done+e.loaded)/file.size*100)};x.onload=function(){var j={};try{j=JSON.parse(x.responseText)}catch(e){}if(x.status>=200&&x.status<300)resolve(j);else reject(new Error(j.error||'Falló una parte de la carga'))};x.onerror=function(){reject(new Error('Se perdió la conexión'))};x.send(part)});parts.push({partNumber:i+1,etag:result.etag});done+=part.size;progress(done/file.size*100)}
+var c=await fetch(WORKER+'/multipart/complete',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({path:path,uploadId:data.uploadId,parts:parts})});var j=await c.json();if(!c.ok)throw new Error(j.error||'No se pudo finalizar la carga')}
+$('uploadBtn').onclick=async function(){var file=$('file').files[0];if(!file){alert('Primero elegí un archivo.');return}if(file.size>10*1024*1024*1024){alert('El máximo es 10 GB.');return}var s=await client.auth.getSession(),session=s.data.session;if(!session){showSession(null);return}var token=session.access_token,path='transfer/'+uid()+'/'+file.name.replace(/[\\/]/g,'_'),b=$('uploadBtn');b.disabled=true;b.textContent='Subiendo…';$('progress').className='bar';$('status').className='status';say('Preparando '+file.name+'…');progress(0);
+try{if(file.size>100*1024*1024)await uploadLarge(file,path,token);else await xhrPut(WORKER+'/object/'+path.split('/').map(encodeURIComponent).join('/'),file,token,function(n){progress(n/file.size*100)});
+say('Registrando archivo…');var row={storage_path:path,file_name:file.name,file_type:(file.name.split('.').pop()||'').toLowerCase(),size_bytes:file.size,description:'Transferencia para PS3',folder:'Transfer PS3',created_by:session.user.id,is_private:false,allowed_user_ids:[]};var ins=await client.from('media_files').insert(row);if(ins.error)throw new Error('Se subió el archivo, pero no se pudo registrar: '+ins.error.message);progress(100);say('¡Listo! '+file.name+' ya aparece en la página de PS3.\nAbrí la PS3 y entrá en /ps3/.');$('file').value=''}catch(e){say('Error: '+e.message)}finally{b.disabled=false;b.textContent='Subir archivo'}};
+refresh();client.auth.onAuthStateChange(function(event,session){showSession(session)});
+})();
+</script></body></html>
