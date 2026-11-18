@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MediaChafa Transfer - PS3</title>
+<style>
+body{margin:0;background:#101820;color:#fff;font:18px Arial,sans-serif}#page{width:90%;max-width:900px;margin:28px auto}.head{background:#182b3b;border:1px solid #34516a;padding:20px;margin-bottom:18px}.brand{color:#8ad6ff;font-size:14px;letter-spacing:3px;font-weight:bold}h1{font-size:30px;margin:8px 0}p{color:#b7c9d6;font-size:15px}.file{background:#1a2936;border:1px solid #344c5e;padding:18px;margin:12px 0}.name{font-size:19px;font-weight:bold;word-wrap:break-word}.meta{font-size:13px;color:#aabac7;margin:8px 0 14px}.download{display:inline-block;background:#147fc0;color:white;text-decoration:none;font-weight:bold;padding:13px 22px;border:1px solid #62b8ec}.download:focus,.download:hover{background:#269fe9;color:#fff}.status{background:#1b2b38;padding:15px;color:#c6d9e7}.foot{font-size:12px;color:#8da4b5;margin-top:22px}a{color:#8ad6ff}
+</style></head><body><div id="page">
+<div class="head"><div class="brand">MEDIACHAFA</div><h1>Transfer para PlayStation 3</h1><p>Seleccioná un archivo y presioná DESCARGAR. La PS3 gestionará la descarga con su menú habitual.</p><p><a href="/transfer/">Subir archivos desde celular o PC</a></p></div>
+<div id="list" class="status">Cargando archivos…</div><div class="foot">MediaChafa Transfer · Si no ves un archivo recién subido, actualizá la página.</div></div>
+<script>
+(function(){
+var API='https://velxgwkujcabdaxbppyj.supabase.co/rest/v1/media_files?select=file_name,storage_path,size_bytes,created_at&created_by=eq.3da2624d-d1cc-49e9-a536-ed8c0c480779&is_private=eq.false&folder=eq.Transfer%20PS3&order=created_at.desc&limit=100';
+var KEY='sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-';
+var WORKER='https://mediachafa-storage.nxmollpy.workers.dev';
+var root=document.getElementById('list');
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function size(n){n=Number(n)||0;if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';if(n<1073741824)return (n/1048576).toFixed(1)+' MB';return (n/1073741824).toFixed(2)+' GB'}
+var x=new XMLHttpRequest();x.open('GET',API,true);x.setRequestHeader('apikey',KEY);x.setRequestHeader('Accept','application/json');
+x.onreadystatechange=function(){if(x.readyState!==4)return;if(x.status<200||x.status>=300){root.innerHTML='No se pudo cargar la lista ('+x.status+'). Comprobá la conexión e intentá actualizar.';return}try{var files=JSON.parse(x.responseText);if(!files.length){root.innerHTML='Todavía no hay archivos. Subí uno desde el celular o la computadora.';return}var html='';for(var i=0;i<files.length;i++){var f=files[i],path=String(f.storage_path||'').split('/').map(encodeURIComponent).join('/'),url=WORKER+'/object/'+path;html+='<div class="file"><div class="name">'+esc(f.file_name)+'</div><div class="meta">'+size(f.size_bytes)+'</div><a class="download" href="'+url+'">DESCARGAR</a></div>'}root.innerHTML=html}catch(e){root.innerHTML='La respuesta del servidor no se pudo interpretar.'}};
+x.onerror=function(){root.innerHTML='No se pudo conectar al servidor. Revisá la conexión de red de la PS3.'};x.send(null);
+})();
+</script></body></html>
