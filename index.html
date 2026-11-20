@@ -679,7 +679,7 @@ async function loadGoogleDriveStatus() {
         if(startMove&&ownerMode){toast(`Drive cambiado a ${googleDriveStatus?.account?.email||'la cuenta nueva'}. Moviendo tus archivos…`);setTimeout(()=>runDriveMigration().catch(error=>toast(error.message)),300);}
         else toast('Google Drive quedó conectado.');
       } else if(ownerMode&&driveMigrationPending(googleDriveStatus?.migration)){
-        toast('Hay archivos por mover a tu nueva cuenta de Drive. Tocá el botón de Drive para continuar.');
+        toast('Hay archivos por mover a tu nueva cuenta de Drive. Tocá “Migrar” para continuar.');
       }
       const capacity = getCapacity();
       $('#r2-capacity-label').textContent = formatBytes(capacity);
