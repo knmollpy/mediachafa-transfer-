@@ -465,7 +465,8 @@ async function loadGoogleDriveStatus() {
     function updateDriveButtonForMigration(){
       const migration=googleDriveStatus?.migration;
       if(!ownerMode||!googleDriveAvailable)return;
-      if(driveMigrationPending(migration)){$('#drive-button').textContent=migration.status==='pending'?'Drive: mover archivos':`Drive: moviendo ${driveMigrationPercent(migration)}%`;$('#drive-button').title='Hay archivos por mover a la nueva cuenta de Drive';}
+      if(migration?.status==='error'){$('#drive-button').textContent='Drive: revisar '+(migration.failed||'');$('#drive-button').title=migration.lastError||'Hay archivos que todavía no se migraron.';}
+      else if(driveMigrationPending(migration)){$('#drive-button').textContent=migration.status==='pending'?'Drive: mover archivos':'Drive: moviendo '+driveMigrationPercent(migration)+'%';$('#drive-button').title='Hay archivos por mover a la nueva cuenta de Drive';}
       else $('#drive-button').textContent='Drive conectado';
     }
     async function switchDriveAccount({deleteOriginals=true}={}){
@@ -515,7 +516,7 @@ async function loadGoogleDriveStatus() {
         show('#drive-mig-bar').style.width=`${percent}%`;show('#drive-mig-percent').textContent=`${percent}%`;
         show('#drive-mig-stats').textContent=`${Math.min(migration.total,migration.processed+(migration.status==='complete'?0:1))} de ${migration.total} archivos · ${formatBytes(migration.movedBytes)} de ${formatBytes(migration.totalBytes)}${speed>0&&migration.status==='running'?` · ${(speed/1024/1024).toFixed(1)} MB/s${eta}`:''}`;
         show('#drive-mig-file').textContent=migration.status==='running'&&migration.currentName?`Ahora: ${migration.currentName}${migration.currentSize?` (${Math.floor(migration.currentDone/migration.currentSize*100)}%)`:''}`:'';
-        show('#drive-mig-label').textContent=migration.status==='complete'?'Mudanza terminada':migration.status==='paused'?'En pausa':migration.lastError?`Reintentando: ${migration.lastError}`:'Moviendo archivos…';
+         show('#drive-mig-label').textContent=migration.status==='complete'?'Mudanza terminada':migration.status==='error'?'Hay archivos sin migrar':migration.status==='paused'?'En pausa':migration.lastError?'Reintentando: '+migration.lastError:'Moviendo archivos…';
         const errors=show('#drive-mig-errors');
         if(errors){errors.classList.toggle('hidden',!migration.failed);errors.innerHTML=migration.failed?`<strong>${migration.failed} archivo(s) no se pudieron mover:</strong><br>${migration.errors.map(item=>`${esc(item.name)}: ${esc(item.error||'error')}`).join('<br>')}`:'';}
       };
@@ -528,7 +529,7 @@ async function loadGoogleDriveStatus() {
           if(migration?.lastError)await new Promise(resolve=>setTimeout(resolve,1500));
         }
         render(migration);
-        if(migration?.status==='complete'){
+         if(migration?.status==='complete'||migration?.status==='error')await loadLibrary();
           toast(`Listo: ${migration.moved} archivo(s) movidos${migration.skipped?`, ${migration.skipped} ya estaban`:''}${migration.failed?`, ${migration.failed} con error`:''}.`);
           await loadLibrary();
         } else if(migration?.status==='paused')toast('Mudanza en pausa. Tocá el botón de Drive para continuar.');
