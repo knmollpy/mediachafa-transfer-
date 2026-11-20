@@ -858,7 +858,7 @@ async function loadGoogleDriveStatus() {
       let rows=(accounts||[]).map(u=>{const caps=u.role==='collaborator'?'Acceso total de colaborador':[
         u.can_view_public_files?'Archivos y carpetas públicos':'Sin biblioteca',u.can_view_links?'Enlaces':'Sin enlaces',u.can_view_ps4_games?'Juegos PS4':'Sin juegos PS4',u.can_upload?'Puede subir':'Sin subida',u.can_create_folders?'Puede crear carpetas':'Sin crear carpetas',
         'Cupo '+(u.storage_limit_bytes?formatBytes(u.storage_limit_bytes):'sin límite')].join(' · ');
-        return '<div class="file-card" style="grid-template-columns:1fr auto"><div><div class="file-name">'+esc(u.username)+'</div><div class="file-meta">'+esc(caps)+' · usado '+formatBytes(usageByUser.get(u.id)||0)+'</div></div><span class="role-chip">'+(u.role==='collaborator'?'Colaborador':'Usuario')+'</span></div>';
+        return '<div class="file-card" style="grid-template-columns:minmax(0,1fr) auto auto"><div><div class="file-name">'+esc(u.username)+'</div><div class="file-meta">'+esc(caps)+' · usado '+formatBytes(usageByUser.get(u.id)||0)+'</div></div><span class="role-chip">'+(u.role==='collaborator'?'Colaborador':'Usuario')+'</span><button type="button" data-remove-user="'+esc(u.id)+'" data-remove-username="'+esc(u.username)+'" style="border:1px solid #efcfcc;background:#fff6f5;color:#a33e37;padding:8px 11px;border-radius:9px;font-size:12px;font-weight:700">Eliminar</button></div>';
       }).join('');
       if(!rows)rows='<div class="notice">Todavía no hay usuarios registrados.</div>';
       modal('Usuarios','<div class="file-list">'+rows+'</div><hr style="border:0;border-top:1px solid #e5ece7;margin:22px 0"><h3 style="font:700 15px Manrope">Crear usuario</h3><label class="field-label">Tipo de usuario</label><select class="field" id="new-role"><option value="collaborator">Colaborador · acceso total</option><option value="member">Usuario normal · permisos elegidos</option></select><label class="field-label">Nombre de usuario</label><input class="field" id="new-username" autocomplete="off" placeholder="por ejemplo, juan_01"><label class="field-label">Contraseña inicial</label><input class="field" id="new-password" type="password" minlength="8" placeholder="Mínimo 8 caracteres"><div id="member-permissions" class="hidden"><label class="field-label"><input id="perm-files" type="checkbox"> Ver archivos y carpetas públicas</label><label class="field-label"><input id="perm-links" type="checkbox"> Ver enlaces</label><label class="field-label"><input id="perm-games" type="checkbox" checked> Ver Juegos PS4</label><label class="field-label"><input id="perm-folders" type="checkbox"> Crear carpetas</label><label class="field-label"><input id="perm-upload" type="checkbox"> Subir y gestionar sus propios archivos</label><label class="field-label">Cupo de almacenamiento (GB; 0 = sin límite)</label><input class="field" id="member-quota" type="number" min="0" max="10" step="0.5" value="0"></div><div class="notice">Solo vos podés crear cuentas. Los colaboradores tienen acceso completo; los usuarios normales reciben únicamente los permisos marcados.</div>','Crear usuario',async root=>{
@@ -869,6 +869,33 @@ async function loadGoogleDriveStatus() {
         const response=await fetch(SUPABASE_URL+'/functions/v1/create-uploader',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY,'Authorization':'Bearer '+(session?.access_token||'')},body:JSON.stringify(payload)});
         const result=await response.json();if(!response.ok){toast(result.error||'No se pudo crear el usuario.');return;}
         root.replaceChildren();toast('Usuario creado. Ya puede iniciar sesión.');showUsers();
+      });
+      const usersModalRoot=$('#modal-root');
+      usersModalRoot.querySelectorAll('[data-remove-user]').forEach(button=>{
+        button.onclick=async()=>{
+          const userId=button.getAttribute('data-remove-user'),username=button.getAttribute('data-remove-username')||'este usuario';
+          if(!window.confirm('Vas a eliminar permanentemente la cuenta «'+username+'». Se cerrarán sus sesiones y ya no podrá volver a entrar. Sus archivos, carpetas, enlaces y contenido de PS4 se conservarán bajo tu cuenta. También se quitarán sus datos personales asociados, como preferencias y presencia. ¿Continuar?'))return;
+          const backdrop=usersModalRoot.querySelector('.modal-backdrop'),submit=usersModalRoot.querySelector('.modal-actions .submit');
+          if(backdrop)backdrop.dataset.locked='true';
+          if(submit)submit.disabled=true;
+          button.disabled=true;button.textContent='Eliminando…';
+          try{
+            const {data:{session}}=await client.auth.getSession();
+            if(!session?.access_token)throw new Error('La sesión del dueño venció. Volvé a iniciar sesión.');
+            const response=await fetch(SUPABASE_URL+'/functions/v1/create-uploader',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY,'Authorization':'Bearer '+session.access_token},body:JSON.stringify({action:'remove',userId})});
+            const result=await response.json().catch(()=>({}));
+            if(!response.ok)throw new Error(result.error||'No se pudo eliminar la cuenta.');
+            usersModalRoot.replaceChildren();
+            toast('Cuenta '+username+' eliminada. Se conservaron sus archivos y contenido.');
+            await loadLibrary();
+            showUsers();
+          }catch(error){
+            if(backdrop)backdrop.dataset.locked='false';
+            if(submit)submit.disabled=false;
+            button.disabled=false;button.textContent='Eliminar';
+            toast(error.message||'No se pudo eliminar la cuenta.');
+          }
+        };
       });
       const roleSelect=$('#modal-root #new-role'),permissionBox=$('#modal-root #member-permissions'),uploadToggle=$('#modal-root #perm-upload'),quotaField=$('#modal-root #member-quota');roleSelect.onchange=()=>permissionBox.classList.toggle('hidden',roleSelect.value!=='member');uploadToggle.onchange=()=>quotaField.disabled=!uploadToggle.checked;quotaField.disabled=!uploadToggle.checked;
     }
