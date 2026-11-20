@@ -482,7 +482,7 @@ async function loadGoogleDriveStatus() {
       modal('Google Drive',`<p class="sub">Cuenta conectada: <strong>${esc(account?.email||'cuenta de Google')}</strong>${account?.name?` · ${esc(account.name)}`:''}</p>${previousNote}${pendingNote}
         <div class="notice" style="margin-top:12px">Al cambiar de cuenta, Google te deja elegir la cuenta nueva. Después MediaChafa mueve todos los archivos de <strong>Archivos</strong> que están en Drive a esa cuenta y los deja igual que antes: mismos nombres, carpetas y enlaces compartidos. Vas a ver una barra con el avance; puede tardar unos minutos.</div>
         <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:12px"><input type="checkbox" id="drive-delete-originals" checked> <span>Borrar cada original de la cuenta anterior cuando su copia quede confirmada (libera espacio).</span></label>
-        ${pending?'<button class="secondary" id="drive-resume-migration" type="button" style="margin-top:12px;width:100%">Continuar moviendo archivos</button>':''}`,'Cambiar de cuenta de Drive',async root=>{
+        ${pending?'<button class="secondary" id="drive-resume-migration" type="button" style="margin-top:12px;width:100%">${migration.status==='error'?'Reintentar archivos pendientes':'Continuar moviendo archivos'}</button>':''}`,'Cambiar de cuenta de Drive',async root=>{
         const button=root.querySelector('.submit');button.disabled=true;button.textContent='Abriendo Google…';
         try{await switchDriveAccount({deleteOriginals:root.querySelector('#drive-delete-originals').checked});}
         catch(error){button.disabled=false;button.textContent='Cambiar de cuenta de Drive';toast(error.message||'No se pudo abrir Google.');}
