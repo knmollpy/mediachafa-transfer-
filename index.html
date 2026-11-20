@@ -464,10 +464,12 @@ async function loadGoogleDriveStatus() {
     function driveMigrationPercent(migration){if(!migration)return 0;if(migration.totalBytes>0)return Math.min(100,Math.floor(migration.movedBytes/migration.totalBytes*100));return migration.total?Math.floor(migration.processed/migration.total*100):0;}
     function updateDriveButtonForMigration(){
       const migration=googleDriveStatus?.migration;
-      if(!ownerMode||!googleDriveAvailable)return;
-      if(migration?.status==='error'){$('#drive-button').textContent='Drive: revisar '+(migration.failed||'');$('#drive-button').title=migration.lastError||'Hay archivos que todavía no se migraron.';}
-      else if(driveMigrationPending(migration)){$('#drive-button').textContent=migration.status==='pending'?'Drive: mover archivos':'Drive: moviendo '+driveMigrationPercent(migration)+'%';$('#drive-button').title='Hay archivos por mover a la nueva cuenta de Drive';}
-      else $('#drive-button').textContent='Drive conectado';
+      if(!ownerMode)return;
+      const button=$('#migrate-button');
+      if(!button)return;
+      button.textContent='Migrar';
+      button.title=migration?.status==='error'?(migration.lastError||'Hay archivos pendientes; tocá para reintentar.'):
+        driveMigrationPending(migration)?`Migración ${driveMigrationPercent(migration)}% · tocá para continuar`:'Migrar la biblioteca de MediaChafa a otro Gmail';
     }
     async function switchDriveAccount({deleteOriginals=false}={}){
       if(!ownerMode)throw new Error('Solo el dueño puede cambiar la cuenta de Google Drive.');
@@ -477,6 +479,11 @@ async function loadGoogleDriveStatus() {
     function openMigrationDialog(){
       if(!ownerMode){toast('La migración solo está disponible para la cuenta dueña.');return;}
       const status=googleDriveStatus||{},migration=status.migration;
+      if(driveMigrationPending(migration)){
+        if(migration.status==='running'){toast('La migración ya está en marcha.');return;}
+        runDriveMigration({deleteOriginals:migration.deleteOriginals===true,restart:migration.status==='error'}).catch(error=>toast(error.message||'No se pudo continuar la migración.'));
+        return;
+      }
       if(!googleDriveAvailable){modal('Migrar MediaChafa',`<p class="sub">Primero necesitás tener Google Drive conectado. Si la sesión venció, usá <strong>Vincular Drive</strong> para reconectarlo; ese botón seguirá siendo únicamente para conexión.</p>`,'Entendido',root=>root.replaceChildren());return;}
       const pending=driveMigrationPending(migration);
       const note=pending?`<div class="notice" style="margin-top:12px">Hay una migración ${migration.status==='error'?'con archivos pendientes':migration.status==='paused'?'en pausa':'sin terminar'} (${migration.processed||0} de ${migration.total||0} archivos).</div>`:'';
@@ -566,7 +573,7 @@ async function loadGoogleDriveStatus() {
     $('#migrate-button').onclick=openMigrationDialog;
     $('#drive-button').onclick=async()=>{
       if(!ownerMode){toast(googleDriveAvailable?'Google Drive está conectado por el dueño.':'El dueño debe conectar Google Drive desde su cuenta.');return;}
-      if(googleDriveAvailable){if(driveMigrationRunning){toast('La mudanza de Drive está en marcha.');return;}openDrivePanel();return;}
+      if(googleDriveAvailable){toast('Google Drive ya está conectado. Usá “Migrar” para cambiarlo a otro Gmail.');return;}
       const {data:{session}}=await client.auth.getSession();
       const response=await fetch(`${R2_WORKER_URL}/google/connect`,{method:'POST',headers:{Authorization:`Bearer ${session?.access_token||''}`}});
       const result=await response.json().catch(()=>({}));
