@@ -2,7 +2,8 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
-type Input = { action?: string; username?: string; password?: string; captchaToken?: string; role?: "collaborator" | "member"; can_view_public_files?: boolean; can_view_links?: boolean; can_view_ps4_games?: boolean; can_create_folders?: boolean; can_upload?: boolean; storage_limit_bytes?: number };
+type Input = { action?: string; username?: string; password?: string; captchaToken?: string; userId?: string; role?: "collaborator" | "member"; can_view_public_files?: boolean; can_view_links?: boolean; can_view_ps4_games?: boolean; can_create_folders?: boolean; can_upload?: boolean; storage_limit_bytes?: number };
+const OWNER_ID = "3da2624d-d1cc-49e9-a536-ed8c0c480779";
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -47,10 +48,69 @@ Deno.serve(async (req: Request) => {
     if (error || !data.session) return json({ error: "Usuario o contraseña incorrectos." }, 401);
     return json({ session: data.session, user: data.user, account });
   }
+  if (input.action === "remove") {
+    const authorization = req.headers.get("Authorization") || "";
+    const caller = createClient(url, anon, { global: { headers: { Authorization: authorization } } });
+    const { data: { user }, error: authError } = await caller.auth.getUser();
+    if (authError || !user || user.id !== OWNER_ID) return json({ error: "Solo el dueño puede eliminar cuentas." }, 403);
+    const targetId = typeof input.userId === "string" ? input.userId.trim() : "";
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId) || targetId === OWNER_ID) return json({ error: "La cuenta seleccionada no es válida." }, 400);
+    const { data: target, error: targetError } = await admin.from("media_users").select("id,username,role").eq("id", targetId).maybeSingle();
+    if (targetError) return json({ error: "No se pudo comprobar la cuenta seleccionada." }, 500);
+    if (!target) return json({ error: "La cuenta ya no existe o fue eliminada." }, 404);
+
+    const preserveRows = async (table: string, primaryKey: string, includeAllowList = true) => {
+      const columns = includeAllowList ? `${primaryKey},created_by,allowed_user_ids` : `${primaryKey},created_by`;
+      const { data: rows, error } = await caller.from(table).select(columns);
+      if (error) throw new Error(`No se pudieron revisar los registros de ${table}.`);
+      let changed = 0;
+      for (const row of rows || []) {
+        const patch: Record<string, unknown> = {};
+        if (row.created_by === targetId) patch.created_by = OWNER_ID;
+        if (includeAllowList && Array.isArray(row.allowed_user_ids) && row.allowed_user_ids.includes(targetId)) {
+          patch.allowed_user_ids = row.allowed_user_ids.filter((id: string) => id !== targetId);
+        }
+        if (!Object.keys(patch).length) continue;
+        const { data: updated, error: updateError } = await caller.from(table).update(patch).eq(primaryKey, String(row[primaryKey] ?? "")).select(primaryKey);
+        if (updateError || !updated?.length) throw new Error(`No se pudo preservar un registro de ${table}; la cuenta todavía sigue activa.`);
+        changed++;
+      }
+      return changed;
+    };
+
+    try {
+      const preserved = {
+        files: await preserveRows("media_files", "id"),
+        folders: await preserveRows("media_folders", "name"),
+        links: await preserveRows("media_links", "id", false),
+        ps4Games: await preserveRows("ps4_games", "id"),
+        ps4Folders: await preserveRows("ps4_game_folders", "id")
+      };
+      const { error: creatorError } = await caller.from("media_users").update({ created_by: OWNER_ID }).eq("created_by", targetId);
+      if (creatorError) throw new Error("No se pudieron reasignar las cuentas creadas por este usuario.");
+
+      const { data: assignments, error: assignmentReadError } = await caller.from("ps4_game_folder_assignments").select("game_id,folder_id").eq("created_by", targetId);
+      if (assignmentReadError) throw new Error("No se pudieron revisar sus asignaciones de carpetas PS4.");
+      if (assignments?.length) {
+        const { data: removedAssignments, error: assignmentDeleteError } = await caller.from("ps4_game_folder_assignments").delete().eq("created_by", targetId).select("game_id");
+        if (assignmentDeleteError || removedAssignments?.length !== assignments.length) throw new Error("No se pudieron conservar todas las asignaciones PS4; la cuenta todavía sigue activa.");
+        const { error: assignmentInsertError } = await caller.from("ps4_game_folder_assignments").insert(assignments.map((item: { game_id: string; folder_id: string }) => ({ game_id: item.game_id, folder_id: item.folder_id, created_by: OWNER_ID })));
+        if (assignmentInsertError) throw new Error("No se pudieron restaurar las asignaciones PS4 bajo la cuenta dueña; la cuenta todavía sigue activa.");
+      }
+
+      const { error: deleteError } = await admin.auth.admin.deleteUser(targetId);
+      if (deleteError) return json({ error: `El contenido ya quedó preservado, pero Supabase no pudo cerrar la cuenta: ${deleteError.message}. La cuenta sigue activa; podés reintentar.` }, 500);
+      return json({ ok: true, username: target.username, preserved }, 200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo preparar la baja.";
+      return json({ error: message }, 500);
+    }
+  }
+
   if (input.action !== "create") return json({ error: "Acción inválida." }, 400);
   const authorization = req.headers.get("Authorization") || "", caller = createClient(url, anon, { global: { headers: { Authorization: authorization } } });
   const { data: { user }, error: authError } = await caller.auth.getUser();
-  if (authError || !user || user.id !== "3da2624d-d1cc-49e9-a536-ed8c0c480779") return json({ error: "Solo el dueño puede crear usuarios." }, 403);
+  if (authError || !user || user.id !== OWNER_ID) return json({ error: "Solo el dueño puede crear usuarios." }, 403);
   const password = input.password || "", role = input.role === "member" ? "member" : "collaborator";
   if (!/^[a-z0-9_]{3,24}$/.test(username)) return json({ error: "El usuario debe tener de 3 a 24 caracteres: letras, números o _." }, 400);
   if (password.length < 8) return json({ error: "La contraseña debe tener al menos 8 caracteres." }, 400);
