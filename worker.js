@@ -641,13 +641,26 @@ async function finishMigratedItem(env, session, state, item, newId, ctx) {
   ctx.aliasesChanged = true;
   item.newId = newId;
   item.state = "done";
-  if (state.deleteOriginals !== false && state.current?.source) {
+  // Persist aliases before deleting the source: old shared URLs and PS4 links
+  // must resolve to the new Drive ID even if this Worker invocation is interrupted.
+  let aliasesPersisted = false;
+  try {
+    await env.GOOGLE_OAUTH_STORE.put(`drive-aliases:${env.OWNER_USER_ID}`, JSON.stringify(ctx.aliases));
+    ctx.aliasesChanged = false;
+    aliasesPersisted = true;
+  } catch (error) {
+    item.aliasWarning = "No se pudo guardar todavía la compatibilidad de enlaces antiguos; se conserva el original.";
+    console.warn("Drive migration alias persistence failed", error instanceof Error ? error.message : "unknown error");
+  }
+  if (state.deleteOriginals !== false && state.current?.source && aliasesPersisted) {
     const source = ctx.previous.find(entry => entry.account.permissionId === state.current.source);
     if (source) {
       ctx.budget.fetches++;
       const deleted = await fetch(`${DRIVE_FILES}/${encodeURIComponent(item.oldId)}`, { method: "DELETE", headers: { Authorization: `Bearer ${source.token}` } }).catch(() => null);
       item.originalRemoved = Boolean(deleted && (deleted.ok || deleted.status === 404));
     }
+  } else if (state.deleteOriginals !== false && !aliasesPersisted) {
+    item.originalRemoved = false;
   }
   state.movedBytes = Number(state.movedBytes || 0) + Number(state.current?.size ?? item.size);
   state.current = null;
@@ -783,11 +796,16 @@ async function advanceDriveMigration(env, session) {
     }
   }
   if (state.index >= state.items.length) {
-    state.status = "complete";
+    const failedCount = state.items.filter(item => item.state === "failed").length;
+    state.status = failedCount ? "error" : "complete";
+    state.lastError = failedCount ? `Quedaron ${failedCount} archivo(s) sin migrar. Podés reintentar desde el panel de Google Drive; los originales no se borraron.` : null;
     state.finishedAt = new Date().toISOString();
     state.current = null;
   }
-  if (ctx.aliasesChanged) await env.GOOGLE_OAUTH_STORE.put(`drive-aliases:${env.OWNER_USER_ID}`, JSON.stringify(ctx.aliases));
+  if (ctx.aliasesChanged) {
+    try { await env.GOOGLE_OAUTH_STORE.put(`drive-aliases:${env.OWNER_USER_ID}`, JSON.stringify(ctx.aliases)); }
+    catch (error) { state.lastError = state.lastError || "No se pudieron guardar todos los enlaces antiguos; los originales se conservaron cuando correspondía."; console.warn("Drive alias map save failed", error instanceof Error ? error.message : "unknown error"); }
+  }
   await saveMigration(env, state);
   return state;
 }
