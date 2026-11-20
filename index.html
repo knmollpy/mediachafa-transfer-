@@ -874,7 +874,7 @@ async function loadGoogleDriveStatus() {
       usersModalRoot.querySelectorAll('[data-remove-user]').forEach(button=>{
         button.onclick=async()=>{
           const userId=button.getAttribute('data-remove-user'),username=button.getAttribute('data-remove-username')||'este usuario';
-          if(!window.confirm('Vas a eliminar permanentemente la cuenta «'+username+'». Se cerrarán sus sesiones y ya no podrá volver a entrar. Sus archivos, carpetas, enlaces y contenido de PS4 se conservarán bajo tu cuenta. También se quitarán sus datos personales asociados, como preferencias y presencia. ¿Continuar?'))return;
+          if(!window.confirm('Vas a eliminar permanentemente la cuenta «'+username+'». Se invalidarán sus sesiones de renovación y perderá el acceso a la biblioteca y al contenido privado; los tokens ya emitidos podrían seguir siendo válidos hasta que expiren. Sus archivos, carpetas, enlaces y contenido de PS4 se conservarán bajo tu cuenta. También se quitarán sus datos personales asociados, como preferencias y presencia. ¿Continuar?'))return;
           const backdrop=usersModalRoot.querySelector('.modal-backdrop'),submit=usersModalRoot.querySelector('.modal-actions .submit');
           if(backdrop)backdrop.dataset.locked='true';
           if(submit)submit.disabled=true;
