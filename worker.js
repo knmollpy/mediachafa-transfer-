@@ -874,9 +874,11 @@ export default {
         const tokens = await tokenResponse.json().catch(() => ({}));
         if (!tokenResponse.ok || !tokens.access_token) return new Response("Google no pudo completar la conexión. Volvé a intentarlo desde MediaChafa.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
         const existing = await env.GOOGLE_OAUTH_STORE.get(`refresh:${ownerId}`);
+        const switchRequest = await env.GOOGLE_OAUTH_STORE.get(`drive-switch:${ownerId}`, "json").catch(() => null);
+        if (switchRequest && !tokens.refresh_token) return new Response("Google no entregó un permiso persistente para el Gmail nuevo. La cuenta anterior sigue conectada. Revocá el acceso de MediaChafa en el Gmail nuevo y volvé a intentar la migración.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
         if (!tokens.refresh_token && !existing) return new Response("Google no entregó un permiso persistente. Revocá la conexión de MediaChafa en tu cuenta de Google y volvé a conectar.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
         const newAccount = await driveAccountInfo(tokens.access_token).catch(() => null);
-        const switchRequest = await env.GOOGLE_OAUTH_STORE.get(`drive-switch:${ownerId}`, "json").catch(() => null);
+        if (switchRequest && existing && !newAccount) return new Response("No se pudo identificar el Gmail nuevo. La cuenta anterior sigue conectada; volvé a intentar.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
         await env.GOOGLE_OAUTH_STORE.delete(`drive-switch:${ownerId}`);
         let switched = false;
         let previous = await previousDriveAccounts(env);
@@ -886,6 +888,7 @@ export default {
             try { oldAccount = await driveAccountInfo(await googleTokenFromRefresh(env, await decryptGoogleToken(existing, env))); }
             catch { oldAccount = null; }
           }
+          if (!oldAccount && switchRequest) return new Response("No se pudo verificar la cuenta anterior. No se cambió el Gmail conectado. Volvé a intentarlo.", { status: 502, headers: { "Content-Type": "text/plain; charset=utf-8" } });
           if (oldAccount && !sameDriveAccount(oldAccount, newAccount)) {
             previous = previous.filter(entry => !sameDriveAccount(entry, oldAccount));
             previous.unshift({ ...oldAccount, refresh: existing, replacedAt: new Date().toISOString() });
