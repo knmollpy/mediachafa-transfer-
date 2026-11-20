@@ -887,8 +887,8 @@ async function loadGoogleDriveStatus() {
             if(!response.ok)throw new Error(result.error||'No se pudo eliminar la cuenta.');
             usersModalRoot.replaceChildren();
             toast('Cuenta '+username+' eliminada. Se conservaron sus archivos y contenido.');
-            await loadLibrary();
-            showUsers();
+            try{await loadLibrary();showUsers();}
+            catch(reloadError){toast('La cuenta se eliminó, pero no se pudo actualizar la lista. Recargá la página.');}
           }catch(error){
             if(backdrop)backdrop.dataset.locked='false';
             if(submit)submit.disabled=false;
