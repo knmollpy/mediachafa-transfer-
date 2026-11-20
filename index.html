@@ -188,7 +188,7 @@
     </div>
   </section>
   <main id="app" class="app hidden">
-    <header class="topbar"><div class="brand"><img class="brand-mark" src="/icons/app.svg" alt=""> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button><button class="navitem" id="ps4-tab" type="button">Juegos PS4</button><button class="navitem hidden" id="beta-tab" type="button">Beta</button><button class="navitem hidden" id="dm-tab" type="button">DM</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar Google Drive">Vincular Drive</button><button class="navitem hidden" id="dm-top-button" type="button">DM</button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
+    <header class="topbar"><div class="brand"><img class="brand-mark" src="/icons/app.svg" alt=""> MediaChafa</div><nav class="topnav"><button class="navitem active" id="files-tab" type="button">Archivos</button><button class="navitem" id="links-tab" type="button">Enlaces</button><button class="navitem" id="ps4-tab" type="button">Juegos PS4</button><button class="navitem hidden" id="beta-tab" type="button">Beta</button><button class="navitem hidden" id="dm-tab" type="button">DM</button></nav><div class="topright"><span class="role-chip" id="role-chip">Dueño</span><span class="avatar" id="avatar">N</span><button class="theme-toggle" id="customize-button" type="button" title="Personalizar el fondo">Fondo</button><button class="theme-toggle hidden" id="drive-button" type="button" title="Conectar o reconectar Google Drive">Vincular Drive</button><button class="theme-toggle hidden" id="migrate-button" type="button" title="Migrar MediaChafa a otro Gmail">Migrar</button><button class="navitem hidden" id="dm-top-button" type="button">DM</button><button class="navitem hidden" id="users-button">Usuarios</button><button class="logout" id="logout">Cerrar sesión</button></div></header>
     <div class="wrap">
       <div class="welcome"><div><div class="eyebrow">ESPACIO PERSONAL</div><h1>Hola, <span id="welcome-name">nxmollpy</span></h1><p>Todo lo que compartís, organizado en un solo lugar.</p></div><div class="welcome-actions"><a class="install-mobile-option compact" href="/downloads/MediaChafa.apk?v=2.5.4-20261026" download="MediaChafa.apk"><span aria-hidden="true">↓</span> Descargar app móvil (APK)</a><a class="paypal-donation" href="https://www.paypal.com/donate/?hosted_button_id=SQ8YGTRGUYLGL" target="_blank" rel="noopener noreferrer" aria-label="Una mini donación por PayPal"><span>¿Una mini donación?</span><svg class="paypal-logo" viewBox="0 0 24 24" role="img" aria-label="PayPal"><path fill="#009cde" d="M8.7 3h7.2c3.3 0 5.1 1.8 4.5 4.8-.6 3.2-2.7 4.8-6.2 4.8h-2.1l-.9 5.5H6.7L9 4.1c.1-.7.5-1.1 1.2-1.1z"/><path fill="#003087" d="M6.1 5.1h7.2c3.3 0 5.1 1.8 4.5 4.8-.6 3.2-2.7 4.8-6.2 4.8H9.5l-.9 5.5H4.1L6.4 6.2c.1-.7.5-1.1 1.2-1.1z"/></svg></a><div class="date" id="today"></div></div></div>
       <section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#4285f4">◉</span> Google Drive compartido</div><div class="storage-amount"><strong id="drive-used-label">—</strong> de <strong id="drive-capacity-label">200 GB</strong></div></div><div class="bar"><div class="bar-fill" id="drive-bar-fill"></div></div><div class="storage-foot"><span id="drive-remaining-label">Cupo compartido con Gmail y Google Fotos</span></div></section><section class="storage"><div class="storage-head"><div class="storage-title"><span style="color:#3fc6ff">◉</span> Cloudflare R2</div><div class="storage-amount"><strong id="used-label">0 B</strong> de <strong id="r2-capacity-label">10 GB</strong></div></div><div class="bar"><div class="bar-fill" id="bar-fill"></div></div><div class="storage-foot"><span id="remaining-label">10 GB disponibles</span></div></section>
@@ -469,10 +469,22 @@ async function loadGoogleDriveStatus() {
       else if(driveMigrationPending(migration)){$('#drive-button').textContent=migration.status==='pending'?'Drive: mover archivos':'Drive: moviendo '+driveMigrationPercent(migration)+'%';$('#drive-button').title='Hay archivos por mover a la nueva cuenta de Drive';}
       else $('#drive-button').textContent='Drive conectado';
     }
-    async function switchDriveAccount({deleteOriginals=true}={}){
+    async function switchDriveAccount({deleteOriginals=false}={}){
       if(!ownerMode)throw new Error('Solo el dueño puede cambiar la cuenta de Google Drive.');
-      const result=await driveApi('/google/connect','POST',{switchAccount:true,deleteOriginals:deleteOriginals!==false});
+      const result=await driveApi('/google/connect','POST',{switchAccount:true,deleteOriginals:deleteOriginals===true});
       window.location.assign(result.url);
+    }
+    function openMigrationDialog(){
+      if(!ownerMode){toast('La migración solo está disponible para la cuenta dueña.');return;}
+      const status=googleDriveStatus||{},migration=status.migration;
+      if(!googleDriveAvailable){modal('Migrar MediaChafa',`<p class="sub">Primero necesitás tener Google Drive conectado. Si la sesión venció, usá <strong>Vincular Drive</strong> para reconectarlo; ese botón seguirá siendo únicamente para conexión.</p>`,'Entendido',root=>root.replaceChildren());return;}
+      const pending=driveMigrationPending(migration);
+      const note=pending?`<div class="notice" style="margin-top:12px">Hay una migración ${migration.status==='error'?'con archivos pendientes':migration.status==='paused'?'en pausa':'sin terminar'} (${migration.processed||0} de ${migration.total||0} archivos).</div>`:'';
+      modal('Migrar MediaChafa',`<p class="sub">Cuenta actual: <strong>${esc(status.account?.email||'Google Drive conectado')}</strong></p><p class="sub">Elegí el Gmail nuevo en la pantalla de Google. MediaChafa copiará a esa cuenta los archivos de tu biblioteca que actualmente están guardados en el Drive anterior, y actualizará sus referencias para conservar la biblioteca, carpetas, notas, imágenes y enlaces.</p>${note}<div class="notice" style="margin-top:12px">Los archivos que están en Cloudflare R2 no dependen del Gmail y permanecerán allí. Los documentos nativos de Google Docs, Sheets y Slides requieren una exportación especial y no están incluidos todavía.</div><label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:12px"><input type="checkbox" id="migration-delete-originals"> <span>Eliminar los originales del Drive anterior después de confirmar cada copia. Si lo dejás desmarcado, se conservan como respaldo.</span></label>`,'Elegir Gmail y migrar',async root=>{
+        const button=root.querySelector('.submit');button.disabled=true;button.textContent='Abriendo Google…';
+        try{await switchDriveAccount({deleteOriginals:root.querySelector('#migration-delete-originals').checked});}
+        catch(error){button.disabled=false;button.textContent='Elegir Gmail y migrar';toast(error.message||'No se pudo abrir Google.');}
+      });
     }
     function openDrivePanel(){
       const status=googleDriveStatus||{},account=status.account,migration=status.migration,previous=status.previousAccounts||[];
@@ -551,6 +563,7 @@ async function loadGoogleDriveStatus() {
       switchAccount:switchDriveAccount,
       startMigration:runDriveMigration,
     };
+    $('#migrate-button').onclick=openMigrationDialog;
     $('#drive-button').onclick=async()=>{
       if(!ownerMode){toast(googleDriveAvailable?'Google Drive está conectado por el dueño.':'El dueño debe conectar Google Drive desde su cuenta.');return;}
       if(googleDriveAvailable){if(driveMigrationRunning){toast('La mudanza de Drive está en marcha.');return;}openDrivePanel();return;}
@@ -651,6 +664,7 @@ async function loadGoogleDriveStatus() {
       $('#app > .topbar').classList.toggle('guest-only-hide',guestOnly); $('.welcome').classList.toggle('hidden',guestOnly);
       if(!guestOnly) { try { const health = await fetch(`${R2_WORKER_URL}/health`); const status = await health.json(); r2Available = health.ok && status.storage && status.configured; } catch { r2Available = false; } }
       $('#drive-button').classList.toggle('hidden',!ownerMode&&!uploaderMode);
+      $('#migrate-button').classList.toggle('hidden',!ownerMode);
       if(!guestOnly) await loadGoogleDriveStatus();
       if(new URLSearchParams(location.search).get('drive')==='connected'){
         const startMove=new URLSearchParams(location.search).get('migrate')==='1';
