@@ -903,7 +903,7 @@ export default {
             createdAt: new Date().toISOString(), items: [], index: 0, current: null, movedBytes: 0, totalBytes: 0, updatedAt: Date.now(),
           }));
         }
-        return Response.redirect(`https://mediachafa-transfer.vercel.app/?drive=connected${switched ? "&migrate=1" : ""}`, 302);
+        return Response.redirect(`https://mediachafa-transfer.pages.dev/?drive=connected${switched ? "&migrate=1" : ""}`, 302);
       }
 
       if (url.pathname === "/google/status" && request.method === "GET") {
