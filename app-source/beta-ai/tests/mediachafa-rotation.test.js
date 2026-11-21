@@ -169,7 +169,8 @@ test("Gemini 3.8 Flash receives multiple photos and is marked as vision-capable"
   const parts = requests[0].contents.at(-1).parts;
   assert.equal(parts.filter((part) => part.inlineData).length, 2);
   assert.equal(parts.filter((part) => part.text).length, 1);
-  assert.match(parts.find((part) => part.text)?.text || "", /Imagen 1: cumple\\.jpg[\\s\\S]*Imagen 2: familia\\.png/);
+  const geminiText = parts.find((part) => part.text)?.text || "";
+  assert.ok(geminiText.includes("Imagen 1: cumple.jpg") && geminiText.includes("Imagen 2: familia.png"));
   assert.equal(data.modelName, "Gemini 3.8 Flash");
   assert.equal(aiCalls, 0);
 });
@@ -188,7 +189,7 @@ test("OpenRouter vision models receive every attached photo without paid fallbac
   assert.equal(requests.length, 1);
   const content = requests[0].messages.at(-1).content;
   assert.equal(content.filter((part) => part.type === "image_url").length, 2);
-  assert.match(content[0].text, /Imagen 1: puerta\\.jpg[\\s\\S]*Imagen 2: ventana\\.webp/);
+  assert.ok(content[0].text.includes("Imagen 1: puerta.jpg") && content[0].text.includes("Imagen 2: ventana.webp"));
   assert.equal(requests[0].provider.allow_fallbacks, false);
   assert.equal(aiCalls, 0);
 });
