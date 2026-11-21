@@ -143,7 +143,13 @@ Para una página web pública: create_repository con visibility "public", despu�
   const HEALTH_FRESH_MS = 15 * 60 * 1000;
   const modelSelect = document.createElement('select');
   modelSelect.id = 'beta-model-select';
+  modelSelect.className = 'beta-model-native-select';
   modelSelect.setAttribute('aria-label', 'Modelo de inteligencia artificial');
+  const modelList = document.createElement('div');
+  modelList.id = 'beta-model-list';
+  modelList.className = 'beta-model-list';
+  modelList.setAttribute('role', 'listbox');
+  modelList.setAttribute('aria-label', 'Todos los modelos de inteligencia artificial');
    const geminiOptionStyle = document.createElement('style');
    geminiOptionStyle.textContent = '#beta-model-select option.beta-model-gemini38{color:#238fff;font-weight:800}#beta-model-select.beta-gemini38-selected{border-color:#278fff!important;color:#35a1ff!important;box-shadow:0 0 0 2px rgba(39,143,255,.18)}#beta-panel .beta-gemini-confirm{display:flex;align-items:flex-start;gap:8px;margin:9px 0;color:#b7cce0;font-size:11px;line-height:1.45}#beta-panel .beta-gemini-confirm input{width:16px;height:16px;flex:0 0 auto;margin:1px 0 0;accent-color:#238fff}';
    document.head.append(geminiOptionStyle);
@@ -176,7 +182,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     try { if (ownerId) localStorage.setItem(`mediachafa-beta-team6:${ownerId}`, useSixAgentTeam ? '1' : '0'); } catch {}
     setStatus(useSixAgentTeam ? 'Equipo de 6 IA activado para tus próximas consultas.' : 'Equipo de 6 IA desactivado: responderá solo la IA seleccionada.');
   });
-  modelControl.append(modelLabel, modelSelect, modelHealthNote, modelCount, modelProbe);
+  modelControl.append(modelLabel, modelSelect, modelList);
   // Fondo personal exclusivo de Beta: se guarda en el almacenamiento local de esta instalación.
   const betaSettings = $('#beta-settings');
   if (betaSettings && !$('#beta-wallpaper-picker')) {
@@ -565,6 +571,7 @@ Para una página web pública: create_repository con visibility "public", despu�
   function renderModelOptions() {
     if (!modelCatalog.length) {
       modelSelect.replaceChildren(new Option('No hay modelos disponibles ahora', ''));
+      modelList.replaceChildren();
       modelSelect.disabled = true;
       modelHealthNote.textContent = 'Conectá un proveedor para comprobar modelos.';
       modelHealthNote.dataset.state = 'unknown';
@@ -595,6 +602,69 @@ Para una página web pública: create_repository con visibility "public", despu�
      const selectedModel = modelCatalog.find(model => model.id === modelSelect.value);
      modelSelect.classList.toggle('beta-gemini38-selected', selectedModel?.apiProvider === 'gemini' && selectedModel?.nativeId === 'gemini-3.8-flash');
     modelSelect.disabled = !availableModel;
+    const listScrollTop = modelList.scrollTop;
+    modelList.replaceChildren(...modelCatalog.map(item => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'beta-model-option';
+      card.dataset.modelId = item.id;
+      card.setAttribute('role', 'option');
+      card.setAttribute('aria-selected', String(item.id === modelSelect.value));
+      const busy = busyTaskModels.has(item.id);
+      card.disabled = busy;
+      const healthInfo = modelHealthLabel(item.health || modelHealth[item.id]);
+      const heading = document.createElement('div');
+      heading.className = 'beta-model-option-head';
+      const name = document.createElement('strong');
+      name.className = 'beta-model-option-name';
+      name.textContent = `${item.own ? '⭐ ' : ''}${item.name || item.nativeId || item.id}`;
+      const provider = document.createElement('span');
+      provider.className = 'beta-model-provider';
+      provider.textContent = item.provider || item.apiProvider || 'Proveedor';
+      heading.append(name, provider);
+      const tags = document.createElement('div');
+      tags.className = 'beta-model-tags';
+      const addTag = (label, extra = '') => {
+        const tag = document.createElement('span');
+        tag.className = `beta-model-tag${extra ? ` ${extra}` : ''}`;
+        tag.textContent = label;
+        tags.append(tag);
+      };
+      addTag(`Pensamiento ${item.thinkingLevel || 'medio'}`);
+      if (item.vision) addTag('Visión');
+      if (item.audio) addTag('Audio');
+      if (item.keyless) addTag('Sin cuenta');
+      if (item.quotaManagedByProvider) addTag('Cuota del proveedor');
+      if (busy) addTag('Ocupada en Zona de trabajo', 'busy');
+      const quota = document.createElement('p');
+      quota.className = 'beta-model-option-quota';
+      if (item.unlimited) {
+        quota.textContent = `${item.usedToday || 0} consultas hoy · sin límite local`;
+      } else if (item.quotaManagedByProvider) {
+        quota.textContent = `${item.usedToday || 0} consultas registradas hoy · límites reales aplicados por Google (RPM/TPM/RPD)`;
+      } else if (Number.isFinite(item.dailyLimit)) {
+        const period = item.quotaPeriod === 'month' ? 'este mes' : 'hoy';
+        quota.textContent = `${item.usedToday || 0}/${item.dailyLimit} consultas ${period} · ${item.remaining ?? '—'} disponibles`;
+      } else {
+        quota.textContent = 'Consultas y disponibilidad según el proveedor';
+      }
+      const rate = document.createElement('small');
+      rate.className = 'beta-model-option-rate';
+      rate.textContent = item.rateLimit ? `Ritmo máximo: ${item.rateLimit}` : '';
+      const health = document.createElement('small');
+      health.className = `beta-model-option-health state-${healthInfo.state}`;
+      health.textContent = `${healthInfo.icon} ${healthInfo.text}`;
+      card.append(heading, tags, quota);
+      if (rate.textContent) card.append(rate);
+      card.append(health);
+      if (item.apiProvider === 'gemini' && item.nativeId === 'gemini-3.8-flash') card.classList.add('beta-model-gemini38');
+      card.addEventListener('click', () => {
+        modelSelect.value = item.id;
+        modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      return card;
+    }));
+    modelList.scrollTop = listScrollTop;
     const model = modelCatalog.find(item => item.id === modelSelect.value);
     const health = model ? modelHealthLabel(model.health || modelHealth[model.id]) : { state: 'unknown', text: 'Conectá un proveedor para comprobar modelos' };
     modelHealthNote.dataset.state = health.state;
@@ -620,8 +690,11 @@ Para una página web pública: create_repository con visibility "public", despu�
 
   const usageNote = document.createElement('p');
   usageNote.className = 'beta-model-note';
-  usageNote.textContent = 'El indicador refleja consultas reales recientes: verde respondió, rojo falló y gris significa sin probar o vencido (15 min). Probar envía una consulta real y consume 1 de la cuota mostrada. Las IAs ⭐ MediaChafa cambian solas de motor gratuito si uno se agota; los demás modelos no cambian de proveedor. Nunca se activan modelos pagos.';
-  modelControl.append(usageNote);
+  usageNote.textContent = 'El indicador refleja pruebas reales recientes: verde respondió, rojo falló y gris significa sin probar o vencido (15 min). Probar envía una consulta real y consume 1 consulta de la cuota indicada. Las IAs ⭐ MediaChafa rotan únicamente entre motores gratuitos y nunca activan modelos pagos.';
+  const modelFooter = document.createElement('div');
+  modelFooter.className = 'beta-model-footer';
+  modelFooter.append(modelHealthNote, modelCount, usageNote, modelProbe);
+  modelControl.append(modelFooter);
   modelProbe.addEventListener('click', () => {
     const model = modelCatalog.find(item => item.id === modelSelect.value);
     if (!model) return;
@@ -830,18 +903,41 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 #app.beta-mode #beta-panel .beta-chip:hover{background:#2b2b2b}
 #app.beta-mode #beta-panel .beta-chip span{overflow:hidden;text-overflow:ellipsis}
 #app.beta-mode #beta-panel .beta-workspace.beta-activity-open .beta-chip-activity{background:#3a1416;border-color:#7a2a2a}
-.beta-model-modal{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(3px)}
+.beta-model-modal{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;padding:12px;background:rgba(0,0,0,.72);backdrop-filter:blur(5px)}
 .beta-model-modal.open{display:flex}
-.beta-model-card{width:min(640px,92vw);max-height:86vh;overflow:auto;padding:22px;border-radius:18px;background:#1b1b1b;border:1px solid rgba(255,255,255,.12);box-shadow:0 30px 80px rgba(0,0,0,.6);color:#eee}
-.beta-model-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-size:17px;font-weight:700}
-.beta-model-card .beta-model-control{display:flex!important;flex-direction:column!important;gap:10px!important;width:100%!important;max-width:none!important;min-width:0!important;font-size:12px}
-.beta-model-card #beta-model-select{width:100%;padding:10px 12px;border-radius:12px;background:#121212;color:#fff;border:1px solid rgba(255,255,255,.14);font-size:14px}
-.beta-model-card #beta-model-select[size]{height:auto;max-height:52vh}
-.beta-model-card #beta-model-select option{padding:8px 10px;border-radius:8px}
-.beta-model-card .beta-model-health,.beta-model-card .beta-model-count,.beta-model-card .beta-model-note{display:block!important;white-space:normal!important;font-size:12px}
-.beta-model-card .beta-model-probe{align-self:flex-start;padding:8px 14px;border-radius:10px;background:#262626;color:#eee;border:1px solid rgba(255,255,255,.14);cursor:pointer}
-.beta-model-card .beta-x{width:32px;height:32px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:#222;color:#eee;font-size:16px;cursor:pointer}
-@media(max-width:820px){#app.beta-mode #beta-panel .beta-workspace.beta-split-mode.beta-activity-open #beta-browser-view{position:fixed;width:100%;border-radius:0}}
+.beta-model-card{display:flex;flex-direction:column;width:min(820px,96vw);height:min(88vh,900px);height:min(88dvh,900px);max-height:88vh;max-height:88dvh;overflow:hidden;padding:20px;border-radius:20px;background:#17191d;border:1px solid rgba(255,255,255,.14);box-shadow:0 30px 80px rgba(0,0,0,.7);color:#f4f6f8}
+.beta-model-card-head{display:flex;flex:none;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;font-size:18px;font-weight:750}
+.beta-model-card .beta-model-control{display:flex!important;flex:1;flex-direction:column!important;gap:10px!important;width:100%!important;max-width:none!important;min-width:0!important;min-height:0;overflow:hidden;font-size:13px}
+.beta-model-card .beta-model-native-select{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.beta-model-card .beta-model-list{display:flex;flex:1;flex-direction:column;gap:9px;min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain;padding:2px 5px 12px 2px;scrollbar-width:thin;scrollbar-color:#454b55 transparent}
+.beta-model-card .beta-model-option{display:flex;flex:none;flex-direction:column;align-items:stretch;gap:8px;width:100%;padding:13px 14px;border:1px solid rgba(255,255,255,.12);border-radius:13px;background:#202329;color:#e9edf2;text-align:left;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
+.beta-model-card .beta-model-option:hover{background:#272c34;border-color:rgba(255,255,255,.27)}
+.beta-model-card .beta-model-option[aria-selected="true"]{border-color:#398fff;background:linear-gradient(110deg,rgba(35,143,255,.16),#20252d 55%);box-shadow:inset 0 0 0 1px rgba(57,143,255,.24)}
+.beta-model-card .beta-model-option:disabled{opacity:.48;cursor:not-allowed}
+.beta-model-card .beta-model-option-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0}
+.beta-model-card .beta-model-option-name{min-width:0;color:#fff;font-size:14px;font-weight:750;line-height:1.4;overflow-wrap:anywhere;white-space:normal}
+.beta-model-card .beta-model-provider{flex:none;max-width:38%;padding:4px 8px;border:1px solid rgba(255,255,255,.12);border-radius:999px;color:#bfc8d4;font-size:10px;font-weight:650;overflow-wrap:anywhere;text-align:center}
+.beta-model-card .beta-model-tags{display:flex;flex-wrap:wrap;gap:5px}
+.beta-model-card .beta-model-tag{padding:4px 7px;border-radius:999px;background:#303640;color:#dce5f0;font-size:10px;font-weight:650}
+.beta-model-card .beta-model-tag.busy{background:#493331;color:#ffc4b7}
+.beta-model-card .beta-model-option-quota{margin:0;color:#d5dce5;font-size:12px;font-weight:650;line-height:1.45;overflow-wrap:anywhere}
+.beta-model-card .beta-model-option-rate,.beta-model-card .beta-model-option-health{color:#aeb7c3;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+.beta-model-card .beta-model-option-health.state-ok{color:#79dda0}
+.beta-model-card .beta-model-option-health.state-error{color:#ff8c8c}
+.beta-model-card .beta-model-option-health.state-stale{color:#c3c8d0}
+.beta-model-card .beta-model-option.beta-model-gemini38 .beta-model-option-name{color:#68b4ff}
+.beta-model-card .beta-model-footer{position:sticky;bottom:0;z-index:2;display:flex;flex:none;flex-direction:column;gap:7px;margin-top:8px;padding:12px 2px 2px;border-top:1px solid rgba(255,255,255,.13);background:linear-gradient(180deg,rgba(23,25,29,.96),#17191d 28%)}
+.beta-model-card .beta-model-health,.beta-model-card .beta-model-count,.beta-model-card .beta-model-note{display:block!important;margin:0;white-space:normal!important;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+.beta-model-card .beta-model-health{color:#c0cad5}
+.beta-model-card .beta-model-health[data-state="ok"]{color:#79dda0}
+.beta-model-card .beta-model-health[data-state="error"]{color:#ff8c8c}
+.beta-model-card .beta-model-count{color:#dbe4ee}
+.beta-model-card .beta-model-note{color:#9da8b5}
+.beta-model-card .beta-model-probe{align-self:stretch;width:100%;min-height:44px;padding:11px 16px;border-radius:11px;background:#1769c2;color:#fff;border:1px solid #398fff;font-size:13px;font-weight:750;cursor:pointer}
+.beta-model-card .beta-model-probe:hover{background:#217bd9}
+.beta-model-card .beta-model-probe:disabled{opacity:.45;cursor:not-allowed}
+.beta-model-card .beta-x{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:#252a32;color:#eee;font-size:16px;cursor:pointer}
+@media(max-width:600px){.beta-model-modal{align-items:center;padding:8px}.beta-model-card{width:100%;height:92vh;height:92dvh;max-height:92vh;max-height:92dvh;padding:15px;border-radius:17px}.beta-model-card-head{font-size:16px;margin-bottom:10px}.beta-model-card .beta-model-option{padding:11px 12px;gap:7px}.beta-model-card .beta-model-option-name{font-size:13px}.beta-model-card .beta-model-option-head{gap:7px}.beta-model-card .beta-model-provider{max-width:34%;font-size:9px}.beta-model-card .beta-model-footer{gap:6px;padding-top:10px}.beta-model-card .beta-model-note{font-size:10px}}
 `;
   betaTopStyle.textContent += `
 #app.beta-mode #beta-panel .beta-sidebar-recent{display:flex;flex-direction:column;gap:2px;padding:0!important;background:transparent!important;overflow:auto;min-height:0;flex:1}
@@ -899,13 +995,19 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     modelChipText.textContent = opt ? opt.textContent.split('·').slice(0, 2).join('·').trim() : 'Modelo de IA';
   };
   new MutationObserver(syncChip).observe(modelSelect, { childList: true, subtree: true, attributes: true });
-  modelSelect.addEventListener('change', () => { syncChip(); closeModelModal(); });
+  modelSelect.addEventListener('change', () => { syncChip(); });
   syncChip();
 
   function openModelModal() {
-    modelSelect.size = Math.min(Math.max(modelSelect.options.length, 2), 12);
+    modelSelect.removeAttribute('size');
     modelModal.classList.add('open');
-    modelSelect.focus();
+    const selectedCard = modelList.querySelector('[aria-selected="true"]');
+    if (selectedCard) {
+      selectedCard.scrollIntoView({ block: 'nearest' });
+      selectedCard.focus({ preventScroll: true });
+    } else {
+      modelClose.focus({ preventScroll: true });
+    }
   }
   function closeModelModal() { modelModal.classList.remove('open'); }
   modelChip.addEventListener('click', openModelModal);
