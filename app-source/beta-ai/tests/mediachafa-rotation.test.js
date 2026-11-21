@@ -67,6 +67,7 @@ function installFetch() {
       const body = JSON.parse(init.body || "{}");
       requests.push(body);
       return Response.json({ candidates: [{ content: { parts: [{ text: '{"answer":"respuesta Gemini","plan":[],"actions":[]}' }] } }] });
+    }
     if (url.hostname === "openrouter.ai" && url.pathname === "/api/v1/chat/completions") {
       const body = JSON.parse(init.body || "{}");
       requests.push(body);
