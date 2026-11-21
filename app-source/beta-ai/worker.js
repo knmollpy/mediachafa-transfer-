@@ -1526,6 +1526,7 @@ export default {
       for (const provider of MODEL_PROVIDERS) {
         const token = await storedToken(env, user.id, provider);
         if (!token) continue;
+         if (provider === "gemini" && !(await hasGeminiFreeTierConfirmation(env, user.id))) { catalogErrors.gemini = "Volvé a conectar Gemini y confirmá Free Tier sin facturación."; continue; }
         try {
           let providerQuota;
           if (provider === "openrouter") providerQuota = await openRouterQuota(token);
@@ -2101,8 +2102,8 @@ export default {
     if (modelProvider === "mediachafa") return mediachafaChat({ request, env, user, origin, payload, prompt, image, history, autonomous, variant: nativeModelId });
     if (!MODEL_PROVIDERS.includes(modelProvider) || !nativeModelId) return json({ error: "Elegí un modelo gratuito conectado." }, 409, origin);
     const token = await storedToken(env, user.id, modelProvider);
-    if (modelProvider === "gemini" && !(await hasGeminiFreeTierConfirmation(env, user.id))) return json({ error: "Volvé a conectar Gemini y confirmá que el proyecto es Free Tier sin facturación." }, 409, origin);
     if (!token) return json({ error: `Conectá la clave gratuita de ${modelProvider} en Integraciones.` }, 409, origin);
+    if (modelProvider === "gemini" && !(await hasGeminiFreeTierConfirmation(env, user.id))) return json({ error: "Volvé a conectar Gemini y confirmá que el proyecto es Free Tier sin facturación." }, 409, origin);
     let selectedModel;
     try { selectedModel = (await providerModelCatalog(modelProvider, token)).find((model) => model.id === modelId); }
     catch { return json({ error: `No se pudo verificar el catálogo gratuito de ${modelProvider}. La consulta se detuvo y no se probaron modelos pagos.` }, 503, origin); }
