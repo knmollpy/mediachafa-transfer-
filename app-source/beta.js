@@ -8,7 +8,7 @@
 
   // Las IAs MediaChafa usan la misma cuota diaria gratuita verificada de OpenRouter.
   function turnLimit(model) {
-    if (model?.unlimited) return OWN_MODEL_TURNS;
+    if (model?.unlimited || model?.quotaManagedByProvider) return OTHER_MODEL_TURNS;
     const remaining = Number(model?.remaining);
     return Math.max(1, Math.min(OTHER_MODEL_TURNS, Number.isFinite(remaining) ? remaining : 30));
   }
