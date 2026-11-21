@@ -129,19 +129,23 @@ const chat = (env, model = "mediachafa::pro", extra = {}) => worker.fetch(new Re
   body: JSON.stringify({ message: "hola", model, ...extra }),
 }), env);
 
-test("Gemini 3.8 Flash is exposed with high thinking and a 20-request Beta daily cap", async () => {
+test("Gemini 3.8 Flash uses Google project quotas without an artificial Beta cap", async () => {
   installFetch();
   const env = makeEnv();
   await connectFreeProvider(env, "gemini", "gemini-free-test-token-123456");
-  const response = await chat(env, "gemini::gemini-3.8-flash");
-  const data = await response.json();
-  assert.equal(response.status, 200, JSON.stringify(data));
+  let data;
+  for (let index = 0; index < 22; index += 1) {
+    const response = await chat(env, "gemini::gemini-3.8-flash");
+    data = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(data));
+  }
   assert.equal(data.modelName, "Gemini 3.8 Flash");
   assert.equal(data.thinkingLevel, "alto");
-  assert.equal(data.dailyLimit, 20);
-  assert.equal(data.usedToday, 1);
-  assert.equal(data.remaining, 19);
-  assert.equal(requests.length, 1);
+  assert.equal(data.dailyLimit, null);
+  assert.equal(data.remaining, null);
+  assert.equal(data.usedToday, 22);
+  assert.equal(data.quotaManagedByProvider, true);
+  assert.equal(requests.length, 22);
   assert.equal(requests[0].generationConfig.thinkingConfig.thinkingLevel, "HIGH");
   assert.equal(aiCalls, 0);
 });
