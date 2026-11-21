@@ -159,8 +159,8 @@ test("Gemini 3.8 Flash receives multiple photos and is marked as vision-capable"
   const gemini = catalog.models.find((model) => model.id === "gemini::gemini-3.8-flash");
   assert.equal(gemini?.vision, true);
   const images = [
-    { data: "data:image/jpeg;base64,/9j/AAAAAQ==" },
-    { data: "data:image/png;base64,iVBORw0KGgoAAA==" },
+    { data: "data:image/jpeg;base64,/9j/AAAAAQ==", name: "cumple.jpg" },
+    { data: "data:image/png;base64,iVBORw0KGgoAAA==", name: "familia.png" },
   ];
   const response = await chat(env, "gemini::gemini-3.8-flash", { message: "Ordená estas dos fotos.", images });
   const data = await response.json();
@@ -169,6 +169,7 @@ test("Gemini 3.8 Flash receives multiple photos and is marked as vision-capable"
   const parts = requests[0].contents.at(-1).parts;
   assert.equal(parts.filter((part) => part.inlineData).length, 2);
   assert.equal(parts.filter((part) => part.text).length, 1);
+  assert.match(parts.find((part) => part.text)?.text || "", /Imagen 1: cumple\\.jpg[\\s\\S]*Imagen 2: familia\\.png/);
   assert.equal(data.modelName, "Gemini 3.8 Flash");
   assert.equal(aiCalls, 0);
 });
@@ -178,8 +179,8 @@ test("OpenRouter vision models receive every attached photo without paid fallbac
   const env = makeEnv();
   await connectFreeOpenRouter(env);
   const images = [
-    { data: "data:image/jpeg;base64,/9j/AAAAAQ==" },
-    { data: "data:image/webp;base64,UklGRg==" },
+    { data: "data:image/jpeg;base64,/9j/AAAAAQ==", name: "puerta.jpg" },
+    { data: "data:image/webp;base64,UklGRg==", name: "ventana.webp" },
   ];
   const response = await chat(env, "openrouter::meta-llama/llama-4-scout:free", { message: "Compará estas fotos.", images });
   const data = await response.json();
@@ -187,6 +188,7 @@ test("OpenRouter vision models receive every attached photo without paid fallbac
   assert.equal(requests.length, 1);
   const content = requests[0].messages.at(-1).content;
   assert.equal(content.filter((part) => part.type === "image_url").length, 2);
+  assert.match(content[0].text, /Imagen 1: puerta\\.jpg[\\s\\S]*Imagen 2: ventana\\.webp/);
   assert.equal(requests[0].provider.allow_fallbacks, false);
   assert.equal(aiCalls, 0);
 });
