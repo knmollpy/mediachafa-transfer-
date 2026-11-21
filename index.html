@@ -481,7 +481,9 @@ async function loadGoogleDriveStatus() {
       const status=googleDriveStatus||{},migration=status.migration;
       if(!googleDriveAvailable){modal('Migrar MediaChafa',`<p class="sub">Primero necesitás tener Google Drive conectado. Si la sesión venció, usá <strong>Vincular Drive</strong> para reconectarlo; ese botón seguirá siendo únicamente para conexión.</p>`,'Entendido',root=>root.replaceChildren());return;}
       if(driveMigrationPending(migration)){
-        if(migration.status==='running'){toast('La migración ya está en marcha.');return;}
+        // "running" is persisted between requests, not a live background job.
+        // If the tab was closed or the connection dropped, call start again:
+        // the Worker will reopen the saved cursor and continue from its last file.
         runDriveMigration({deleteOriginals:migration.deleteOriginals===true,restart:migration.status==='error'}).catch(error=>toast(error.message||'No se pudo continuar la migración.'));
         return;
       }
