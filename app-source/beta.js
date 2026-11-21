@@ -144,6 +144,9 @@ Para una página web pública: create_repository con visibility "public", despu�
   const modelSelect = document.createElement('select');
   modelSelect.id = 'beta-model-select';
   modelSelect.setAttribute('aria-label', 'Modelo de inteligencia artificial');
+   const geminiOptionStyle = document.createElement('style');
+   geminiOptionStyle.textContent = '#beta-model-select option.beta-model-gemini38{color:#238fff;font-weight:800}#beta-model-select.beta-gemini38-selected{border-color:#278fff!important;color:#35a1ff!important;box-shadow:0 0 0 2px rgba(39,143,255,.18)}#beta-panel .beta-gemini-confirm{display:flex;align-items:flex-start;gap:8px;margin:9px 0;color:#b7cce0;font-size:11px;line-height:1.45}#beta-panel .beta-gemini-confirm input{width:16px;height:16px;flex:0 0 auto;margin:1px 0 0;accent-color:#238fff}';
+   document.head.append(geminiOptionStyle);
   const modelCount = document.createElement('small');
   modelCount.id = 'beta-model-count';
   modelCount.className = 'beta-model-count';
@@ -405,7 +408,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     openrouter: { title: 'OpenRouter · modelos :free', url: 'https://openrouter.ai/settings/keys', link: 'Crear API key', note: 'No compres créditos ni actives recargas. Solo se aceptan variantes :free con precios comprobados en cero; OpenRouter limita su pool gratuito a 50 solicitudes diarias compartidas.' },
     groq: { title: 'Groq · plan Free', url: 'https://console.groq.com/keys', link: 'Abrir claves de Groq', note: 'La cuenta conectada debe mantenerse en el plan Free. Beta solo ofrece modelos publicados en los límites gratuitos de tu cuenta y se detiene ante el límite del proveedor.' },
     cohere: { title: 'Cohere · clave Trial gratis', url: 'https://dashboard.cohere.com/api-keys', link: 'Abrir claves Trial', note: 'Usá una clave Trial de la cuenta gratuita; nunca una Production. Cohere indica un máximo de 1.000 llamadas al mes para claves Trial.' },
-    gemini: { title: 'Google AI Studio · Free Tier', url: 'https://aistudio.google.com/apikey', link: 'Abrir AI Studio', note: 'Solo conectes una API key de un proyecto que AI Studio muestre como Free Tier y sin facturación vinculada. Beta permite únicamente modelos de una lista gratuita cerrada.' },
+    gemini: { title: 'Google AI Studio · Gemini 3.8 Flash gratis', url: 'https://aistudio.google.com/apikey', link: 'Crear API key gratuita', note: 'Gemini 3.8 Flash con razonamiento alto. Beta impone un tope propio de 20 consultas por día; el cupo real de Google puede ser menor o variar. Solo Free Tier y sin facturación vinculada; si se agota la cuota, se detiene sin fallback pago. Google indica que el contenido del nivel gratuito puede usarse para mejorar sus productos: no envíes secretos ni datos sensibles.' },
     huggingface: { title: 'Hugging Face · Qwen Image 2.1 Uncensored', url: 'https://huggingface.co/settings/tokens', link: 'Crear token gratuito (Read)', note: 'Conectá tu cuenta gratuita con un token de solo lectura. Habilita la edición de imágenes Qwen en las tres IA de MediaChafa. ZeroGPU ofrece una cuota diaria gratuita compartida (5 minutos por cuenta Free); puede haber cola o disponibilidad variable. No se te pide tarjeta ni se activa facturación.' },
   };
   const connectorGrid = $('#beta-integrations-view .beta-connectors');
@@ -423,7 +426,8 @@ Para una página web pública: create_repository con visibility "public", despu�
     const disconnect = document.createElement('button'); disconnect.className = 'secondary hidden'; disconnect.type = 'button'; disconnect.dataset.betaDisconnect = provider; disconnect.textContent = 'Desconectar';
     actions.append(connect, disconnect);
     const connection = document.createElement('span'); connection.className = 'beta-connection-status'; connection.id = 'beta-connection-' + provider; connection.setAttribute('role', 'status'); connection.textContent = 'Sin conectar';
-    card.append(title, description, tokenInput, actions, connection); connectorGrid.append(card);
+    const freeConfirm = provider === 'gemini' ? document.createElement('label') : null; if (freeConfirm) { freeConfirm.className = 'beta-gemini-confirm'; const check = document.createElement('input'); check.type = 'checkbox'; check.id = 'beta-gemini-free-confirm'; freeConfirm.append(check, ' Confirmo que el proyecto está en Free Tier, no tiene facturación vinculada y no enviaré secretos ni datos sensibles.'); }
+    card.append(title, description, tokenInput, ...(freeConfirm ? [freeConfirm] : []), actions, connection); connectorGrid.append(card);
   }
 
   // GitHub Pages reutiliza la conexión de GitHub: no pide otro token.
@@ -577,15 +581,19 @@ Para una página web pública: create_repository con visibility "public", despu�
     modelSelect.replaceChildren(...modelCatalog.map(model => {
       const option = document.createElement('option');
       option.value = model.id;
+       const isGemini38 = model.apiProvider === 'gemini' && model.nativeId === 'gemini-3.8-flash';
+       if (isGemini38) option.className = 'beta-model-gemini38';
       const busy = busyTaskModels.has(model.id);
       const health = modelHealthLabel(model.health || modelHealth[model.id]);
       const quotaLabel = model.unlimited ? ` · ${model.usedToday || 0} hoy · sin límite` : Number.isFinite(model.dailyLimit) ? ` · ${model.usedToday || 0}/${model.dailyLimit} ${model.quotaPeriod === 'month' ? 'mes' : 'hoy'}` : '';
-      option.textContent = `${health.icon} ${model.own ? '⭐ ' : ''}${model.provider} · ${model.name} · pensamiento ${model.thinkingLevel || 'medio'}${quotaLabel}${busy ? ' · OCUPADA EN ZONA DE TRABAJO' : ''}`;
+      option.textContent = `${isGemini38 ? '🔵 ' : ''}${health.icon} ${model.own ? '⭐ ' : ''}${model.provider} · ${model.name} · pensamiento ${model.thinkingLevel || 'medio'}${quotaLabel}${busy ? ' · OCUPADA EN ZONA DE TRABAJO' : ''}`;
       option.disabled = busy;
       return option;
     }));
     const availableModel = modelCatalog.find(model => !busyTaskModels.has(model.id));
     modelSelect.value = modelCatalog.some(model => model.id === prior && !busyTaskModels.has(model.id)) ? prior : (availableModel?.id || modelCatalog[0].id);
+     const selectedModel = modelCatalog.find(model => model.id === modelSelect.value);
+     modelSelect.classList.toggle('beta-gemini38-selected', selectedModel?.apiProvider === 'gemini' && selectedModel?.nativeId === 'gemini-3.8-flash');
     modelSelect.disabled = !availableModel;
     const model = modelCatalog.find(item => item.id === modelSelect.value);
     const health = model ? modelHealthLabel(model.health || modelHealth[model.id]) : { state: 'unknown', text: 'Conectá un proveedor para comprobar modelos' };
@@ -3156,7 +3164,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     button.disabled = true;
     $(`#beta-connection-${provider}`).textContent = 'Validando y guardando cifrado…';
     try {
-      await api('/integrations/connect', { method: 'POST', body: JSON.stringify({ provider, token }) });
+      await api('/integrations/connect', { method: 'POST', body: JSON.stringify({ provider, token, freeTierConfirmed: provider === 'gemini' && $('#beta-gemini-free-confirm')?.checked === true }) });
       input.value = '';
       await loadIntegrations();
       if (['openrouter', 'groq', 'cohere', 'gemini'].includes(provider)) await refreshQuota();
