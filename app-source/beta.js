@@ -414,7 +414,7 @@ Para una página web pública: create_repository con visibility "public", despu�
     openrouter: { title: 'OpenRouter · modelos :free', url: 'https://openrouter.ai/settings/keys', link: 'Crear API key', note: 'No compres créditos ni actives recargas. Solo se aceptan variantes :free con precios comprobados en cero; OpenRouter limita su pool gratuito a 50 solicitudes diarias compartidas.' },
     groq: { title: 'Groq · plan Free', url: 'https://console.groq.com/keys', link: 'Abrir claves de Groq', note: 'La cuenta conectada debe mantenerse en el plan Free. Beta solo ofrece modelos publicados en los límites gratuitos de tu cuenta y se detiene ante el límite del proveedor.' },
     cohere: { title: 'Cohere · clave Trial gratis', url: 'https://dashboard.cohere.com/api-keys', link: 'Abrir claves Trial', note: 'Usá una clave Trial de la cuenta gratuita; nunca una Production. Cohere indica un máximo de 1.000 llamadas al mes para claves Trial.' },
-    gemini: { title: 'Google AI Studio · Gemini 3.8 Flash gratis', url: 'https://aistudio.google.com/apikey', link: 'Crear API key gratuita', note: 'Gemini 3.8 Flash con razonamiento alto. Beta impone un tope propio de 20 consultas por día; el cupo real de Google puede ser menor o variar. Solo Free Tier y sin facturación vinculada; si se agota la cuota, se detiene sin fallback pago. Google indica que el contenido del nivel gratuito puede usarse para mejorar sus productos: no envíes secretos ni datos sensibles.' },
+    gemini: { title: 'Google AI Studio · Gemini 3.8 Flash gratis', url: 'https://aistudio.google.com/apikey', link: 'Crear API key gratuita', note: 'Gemini 3.8 Flash con razonamiento alto. Beta no impone un tope artificial: Google aplica los límites reales de tu proyecto (RPM/TPM/RPD), que pueden variar. Solo Free Tier y sin facturación vinculada; si se agota la cuota, se detiene sin fallback pago. Google indica que el contenido del nivel gratuito puede usarse para mejorar sus productos: no envíes secretos ni datos sensibles.' },
     huggingface: { title: 'Hugging Face · Qwen Image 2.1 Uncensored', url: 'https://huggingface.co/settings/tokens', link: 'Crear token gratuito (Read)', note: 'Conectá tu cuenta gratuita con un token de solo lectura. Habilita la edición de imágenes Qwen en las tres IA de MediaChafa. ZeroGPU ofrece una cuota diaria gratuita compartida (5 minutos por cuenta Free); puede haber cola o disponibilidad variable. No se te pide tarjeta ni se activa facturación.' },
   };
   const connectorGrid = $('#beta-integrations-view .beta-connectors');
@@ -664,6 +664,51 @@ Para una página web pública: create_repository con visibility "public", despu�
       });
       return card;
     }));
+    if (!modelCatalog.some(item => item.apiProvider === 'gemini' && item.nativeId === 'gemini-3.8-flash')) {
+      const setup = document.createElement('button');
+      setup.type = 'button';
+      setup.className = 'beta-model-option beta-model-connect-gemini';
+      setup.setAttribute('role', 'option');
+      setup.setAttribute('aria-selected', 'false');
+      const heading = document.createElement('div');
+      heading.className = 'beta-model-option-head';
+      const name = document.createElement('strong');
+      name.className = 'beta-model-option-name';
+      name.textContent = '🔵 Gemini 3.8 Flash';
+      const provider = document.createElement('span');
+      provider.className = 'beta-model-provider';
+      provider.textContent = 'Google AI Studio';
+      heading.append(name, provider);
+      const tags = document.createElement('div');
+      tags.className = 'beta-model-tags';
+      for (const label of ['Free Tier', 'Pensamiento alto', '1M tokens de contexto']) {
+        const tag = document.createElement('span');
+        tag.className = 'beta-model-tag';
+        tag.textContent = label;
+        tags.append(tag);
+      }
+      const connected = providerQuotas.gemini?.connected === true;
+      const quota = document.createElement('p');
+      quota.className = 'beta-model-option-quota';
+      quota.textContent = connected
+        ? 'Google está conectado, pero no devolvió Gemini 3.8 Flash en el catálogo disponible.'
+        : 'La integración de Google todavía no está conectada. Necesita una API key de AI Studio Free Tier.';
+      const statusNote = document.createElement('small');
+      statusNote.className = 'beta-model-option-health state-stale';
+      statusNote.textContent = connected ? 'Revisá la conexión y los modelos habilitados en Google AI Studio.' : 'No consume consultas mientras no esté conectado.';
+      const action = document.createElement('small');
+      action.className = 'beta-model-connect-action';
+      action.textContent = connected ? 'Revisar conexión →' : 'Conectar Gemini en Integraciones →';
+      setup.append(heading, tags, quota, statusNote, action);
+      setup.addEventListener('click', () => {
+        closeModelModal();
+        document.querySelector('#beta-panel [data-beta-view="integrations"]')?.click();
+        const connection = $('#beta-connection-gemini')?.closest('.beta-connector') || $('#beta-token-gemini')?.closest('article');
+        connection?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        $('#beta-token-gemini')?.focus({ preventScroll: true });
+      });
+      modelList.append(setup);
+    }
     modelList.scrollTop = listScrollTop;
     const model = modelCatalog.find(item => item.id === modelSelect.value);
     const health = model ? modelHealthLabel(model.health || modelHealth[model.id]) : { state: 'unknown', text: 'Conectá un proveedor para comprobar modelos' };
@@ -926,6 +971,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
 .beta-model-card .beta-model-option-health.state-error{color:#ff8c8c}
 .beta-model-card .beta-model-option-health.state-stale{color:#c3c8d0}
 .beta-model-card .beta-model-option.beta-model-gemini38 .beta-model-option-name{color:#68b4ff}
+.beta-model-card .beta-model-connect-gemini{border-color:rgba(50,145,255,.5);background:linear-gradient(110deg,rgba(35,143,255,.12),#20252d 70%)}
+.beta-model-card .beta-model-connect-gemini .beta-model-option-name{color:#68b4ff}
+.beta-model-card .beta-model-connect-action{align-self:flex-start;color:#78baff;font-size:12px;font-weight:750}
 .beta-model-card .beta-model-footer{position:sticky;bottom:0;z-index:2;display:flex;flex:none;flex-direction:column;gap:7px;margin-top:8px;padding:12px 2px 2px;border-top:1px solid rgba(255,255,255,.13);background:linear-gradient(180deg,rgba(23,25,29,.96),#17191d 28%)}
 .beta-model-card .beta-model-health,.beta-model-card .beta-model-count,.beta-model-card .beta-model-note{display:block!important;margin:0;white-space:normal!important;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
 .beta-model-card .beta-model-health{color:#c0cad5}
