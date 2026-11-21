@@ -150,6 +150,46 @@ test("Gemini 3.8 Flash uses Google project quotas without an artificial Beta cap
   assert.equal(aiCalls, 0);
 });
 
+test("Gemini 3.8 Flash receives multiple photos and is marked as vision-capable", async () => {
+  installFetch();
+  const env = makeEnv();
+  await connectFreeProvider(env, "gemini", "gemini-free-test-token-123456");
+  const status = await worker.fetch(new Request(`${origin}/status`, { headers: { Origin: origin, Authorization: "Bearer t" } }), env);
+  const catalog = await status.json();
+  const gemini = catalog.models.find((model) => model.id === "gemini::gemini-3.8-flash");
+  assert.equal(gemini?.vision, true);
+  const images = [
+    { data: "data:image/jpeg;base64,/9j/AAAAAQ==" },
+    { data: "data:image/png;base64,iVBORw0KGgoAAA==" },
+  ];
+  const response = await chat(env, "gemini::gemini-3.8-flash", { message: "Ordená estas dos fotos.", images });
+  const data = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(data));
+  assert.equal(requests.length, 1);
+  const parts = requests[0].contents.at(-1).parts;
+  assert.equal(parts.filter((part) => part.inlineData).length, 2);
+  assert.equal(parts.filter((part) => part.text).length, 1);
+  assert.equal(data.modelName, "Gemini 3.8 Flash");
+  assert.equal(aiCalls, 0);
+});
+
+test("OpenRouter vision models receive every attached photo without paid fallbacks", async () => {
+  installFetch();
+  const env = makeEnv();
+  await connectFreeOpenRouter(env);
+  const images = [
+    { data: "data:image/jpeg;base64,/9j/AAAAAQ==" },
+    { data: "data:image/webp;base64,UklGRg==" },
+  ];
+  const response = await chat(env, "openrouter::meta-llama/llama-4-scout:free", { message: "Compará estas fotos.", images });
+  const data = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(data));
+  assert.equal(requests.length, 1);
+  const content = requests[0].messages.at(-1).content;
+  assert.equal(content.filter((part) => part.type === "image_url").length, 2);
+  assert.equal(requests[0].provider.allow_fallbacks, false);
+  assert.equal(aiCalls, 0);
+});
 test("Gemini refuses a stored key without explicit Free Tier confirmation", async () => {
   installFetch();
   const env = makeEnv();
