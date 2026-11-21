@@ -119,7 +119,7 @@ async function connectFreeProvider(env, provider, value) {
   env.__kv.set(`integration:owner:${provider}`, JSON.stringify({
     iv: Buffer.from(iv).toString("base64"),
     ciphertext: Buffer.from(new Uint8Array(encrypted)).toString("base64"),
-    version: 1,
+    version: 1, ...meta,
   }));
 }
 
