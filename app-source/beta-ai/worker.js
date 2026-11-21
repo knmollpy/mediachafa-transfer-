@@ -7,7 +7,9 @@ const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
 const SUPABASE_KEY = "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
 const OWNER_EMAIL = "nxmollpy@gmail.com";
 const DAILY_REQUEST_LIMIT = 50;
-const PROVIDER_DAILY_LIMITS = { openrouter: 50, groq: 7000, gemini: 20 };
+const PROVIDER_DAILY_LIMITS = { openrouter: 50, groq: 7000 };
+// Gemini expone límites variables por proyecto (RPM/TPM/RPD) en AI Studio, no mediante la API de modelos.
+// Beta registra uso, pero no impone un tope fijo: Google aplica la cuota real y devuelve 429 al agotarla.
 const COHERE_MONTHLY_LIMIT = 1000;
 const GROQ_FREE_MODELS = {
   "allam-2-7b": 7000,
@@ -895,7 +897,7 @@ async function agentModelTurn(env, state, requestSignal) {
       const model = catalog.find((item) => item.id === state.modelId && item.nativeId === "gemini-3.8-flash");
       if (!model) throw new Error("Gemini 3.8 Flash ya no está en el catálogo gratuito verificado.");
       const quota = await reserveRequest(env, state.userId, state.modelId);
-      if (!quota.allowed) throw new Error("Se agotó el tope gratuito de Gemini configurado en Beta.");
+      if (!quota.allowed) throw new Error("No se pudo registrar el uso de Gemini.");
       const fetchImpl = (input, init = {}) => globalThis.fetch(input, { ...init, signal: controller.signal });
       const call = await callModel(env, { provider: "gemini", nativeId: model.nativeId, token, thinkingLevel: "alto" }, messages, state.messages, instruction, null, 6000, fetchImpl);
       if (!call.ok) throw new Error("Gemini 3.8 Flash: " + String(call.detail || "falló la consulta gratuita").slice(0, 240));
@@ -978,9 +980,6 @@ async function agentStart(env, user, payload) {
     const catalog = await providerModelCatalog("gemini", token);
     model = catalog.find((item) => item.id === modelId && item.nativeId === "gemini-3.8-flash");
     if (!model) throw new Error("Gemini 3.8 Flash no está en el catálogo gratuito verificado.");
-    const date = new Date().toISOString().slice(0, 10);
-    const used = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${user.id}:gemini:day:${date}`) || 0);
-    if (used >= PROVIDER_DAILY_LIMITS.gemini) throw new Error("Se agotaron las 20 consultas diarias de Gemini configuradas en Beta.");
   } else {
     if (provider !== "openrouter" || !nativeModelId?.endsWith(":free")) throw new Error("El agente admite las IAs MediaChafa, Gemini 3.8 Flash Free Tier y modelos OpenRouter :free.");
     const token = await storedToken(env, user.id, provider);
@@ -1436,7 +1435,7 @@ async function reserveRequest(env, userId, modelId) {
   const [provider, nativeModel] = String(modelId).split("::", 2);
   const monthly = provider === "cohere";
   const bucket = monthly ? month : date;
-  const limit = monthly ? COHERE_MONTHLY_LIMIT : provider === "groq" ? (GROQ_FREE_MODELS[nativeModel] || 0) : PROVIDER_DAILY_LIMITS[provider];
+  const limit = provider === "gemini" ? Number.MAX_SAFE_INTEGER : monthly ? COHERE_MONTHLY_LIMIT : provider === "groq" ? (GROQ_FREE_MODELS[nativeModel] || 0) : PROVIDER_DAILY_LIMITS[provider];
   const scope = monthly ? "month" : provider === "groq" ? nativeModel : "day";
   const key = `beta-ai-requests:${userId}:${provider}:${scope}:${bucket}`;
   let current = Number(await env.BETA_LIMITS.get(key) || 0);
@@ -1444,7 +1443,7 @@ async function reserveRequest(env, userId, modelId) {
   if (current >= limit) return { allowed: false, usedToday: current, remaining: 0, dailyLimit: limit, quotaScope: provider, period: monthly ? "month" : "day", resetsAt: monthly ? `${month}-01T00:00:00Z` : `${date}T24:00:00Z` };
   const next = current + 1;
   await env.BETA_LIMITS.put(key, String(next), { expirationTtl: monthly ? 35 * 86400 : 172800 });
-  return { allowed: true, usedToday: next, remaining: limit - next, dailyLimit: limit, quotaScope: provider, period: monthly ? "month" : "day", resetsAt: monthly ? `${month}-01T00:00:00Z` : `${date}T24:00:00Z` };
+  return { allowed: true, usedToday: next, remaining: provider === "gemini" ? null : limit - next, dailyLimit: provider === "gemini" ? null : limit, quotaManagedByProvider: provider === "gemini", quotaScope: provider, period: monthly ? "month" : "day", resetsAt: monthly ? `${month}-01T00:00:00Z` : `${date}T24:00:00Z` };
 }
 
 async function freeModelCatalog(token) {
@@ -1485,7 +1484,7 @@ async function providerModelCatalog(provider, token) {
     if (!response.ok) throw new Error(`Gemini no pudo listar modelos (HTTP ${response.status}).`);
       return (data.models || []).filter((model) => GEMINI_FREE_MODELS.has(String(model.name || "").replace("models/", "")) && (model.supportedGenerationMethods || []).includes("generateContent")).map((model) => {
         const nativeId = String(model.name).replace("models/", "");
-        return { id: `gemini::${nativeId}`, nativeId, apiProvider: "gemini", name: nativeId === "gemini-3.8-flash" ? "Gemini 3.8 Flash" : model.displayName || model.name, provider: "Google AI Studio", vision: false, audio: false, thinkingLevel: /flash-lite/i.test(nativeId) ? "ligero" : "alto", dailyLimit: PROVIDER_DAILY_LIMITS.gemini };
+        return { id: `gemini::${nativeId}`, nativeId, apiProvider: "gemini", name: nativeId === "gemini-3.8-flash" ? "Gemini 3.8 Flash" : model.displayName || model.name, provider: "Google AI Studio", vision: false, audio: false, thinkingLevel: /flash-lite/i.test(nativeId) ? "ligero" : "alto", dailyLimit: null, quotaManagedByProvider: true };
       });
   }
   if (provider === "cohere") {
@@ -1540,8 +1539,8 @@ export default {
             let used = Number(await env.BETA_LIMITS.get(countKey) || 0);
             if (providerQuota) { used = providerQuota.used; limit = Math.min(limit, providerQuota.providerLimit); }
             model.usedToday = used;
-            model.dailyLimit = limit;
-            model.remaining = Math.max(0, limit - used);
+            if (provider === "gemini") { model.dailyLimit = null; model.remaining = null; model.quotaManagedByProvider = true; }
+            else { model.dailyLimit = limit; model.remaining = Math.max(0, limit - used); }
             model.quotaPeriod = monthly ? "month" : "day";
             models.push(model);
           }
@@ -1553,7 +1552,9 @@ export default {
             for (const model of catalog) used += Number(await env.BETA_LIMITS.get(`beta-ai-requests:${user.id}:groq:${model.nativeId}:${date}`) || 0);
           }
           const effectiveLimit = providerQuota ? providerQuota.providerLimit : (provider === "cohere" ? COHERE_MONTHLY_LIMIT : Math.max(0, ...limits));
-          quotas[provider] = { connected: true, used, limit: effectiveLimit, remaining: Math.max(0, effectiveLimit - used), period: "day" };
+          quotas[provider] = provider === "gemini"
+            ? { connected: true, used, limit: null, remaining: null, managedByProvider: true, period: "day", note: "Google aplica el límite real del proyecto (RPM/TPM/RPD)." }
+            : { connected: true, used, limit: effectiveLimit, remaining: Math.max(0, effectiveLimit - used), period: "day" };
         } catch (error) { catalogErrors[provider] = error.message; }
       }
       const openRouterQuotaSummary = quotas.openrouter || { used: 0, limit: 0, remaining: 0 };
@@ -2296,12 +2297,7 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
         // Evita volver a elegir durante un breve período modelos que acaban de responder 429.
         const cooldownKey = `beta-model-cooldown:${userId}:${provider}:${model.nativeId}`;
         if (await env.BETA_LIMITS.get(cooldownKey)) continue;
-        if (provider === "gemini") {
-          const limit = Number(PROVIDER_DAILY_LIMITS.gemini || 0);
-          const used = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${userId}:gemini:day:${date}`) || 0);
-          providerQuotaRemaining = limit - used;
-          if (providerQuotaRemaining <= 0) continue;
-        }
+        // Gemini: no se impone un límite local; la cuota real RPM/TPM/RPD la controla Google.
         eligible.push({
           provider,
           nativeId: model.nativeId || model.id.split("::")[1] || model.id,
