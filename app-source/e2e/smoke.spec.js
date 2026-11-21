@@ -49,6 +49,8 @@ test("Beta coloca el interruptor del equipo dentro de Ajustes, fuera del composi
     document.querySelector("#beta-panel")?.classList.remove("hidden");
   });
   await page.waitForSelector("#beta-panel .beta-sidebar", { state: "attached" });
+  await expect(page.locator("#beta-image")).toHaveAttribute("multiple", "");
+  await expect(page.locator('label[for="beta-image"]')).toContainText("Fotos");
   const debug = await page.evaluate(() => {
     const gear = document.querySelector("#beta-settings-toggle");
     const panel = document.querySelector("#beta-settings");
