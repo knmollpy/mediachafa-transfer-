@@ -585,7 +585,7 @@ Para una página web pública: create_repository con visibility "public", despu�
        if (isGemini38) option.className = 'beta-model-gemini38';
       const busy = busyTaskModels.has(model.id);
       const health = modelHealthLabel(model.health || modelHealth[model.id]);
-      const quotaLabel = model.unlimited ? ` · ${model.usedToday || 0} hoy · sin límite` : Number.isFinite(model.dailyLimit) ? ` · ${model.usedToday || 0}/${model.dailyLimit} ${model.quotaPeriod === 'month' ? 'mes' : 'hoy'}` : '';
+      const quotaLabel = model.unlimited ? ` · ${model.usedToday || 0} hoy · sin límite` : model.quotaManagedByProvider ? ` · ${model.usedToday || 0} hoy · cuota según Google` : Number.isFinite(model.dailyLimit) ? ` · ${model.usedToday || 0}/${model.dailyLimit} ${model.quotaPeriod === 'month' ? 'mes' : 'hoy'}` : '';
       option.textContent = `${isGemini38 ? '🔵 ' : ''}${health.icon} ${model.own ? '⭐ ' : ''}${model.provider} · ${model.name} · pensamiento ${model.thinkingLevel || 'medio'}${quotaLabel}${busy ? ' · OCUPADA EN ZONA DE TRABAJO' : ''}`;
       option.disabled = busy;
       return option;
@@ -602,10 +602,10 @@ Para una página web pública: create_repository con visibility "public", despu�
     const errorCount = modelCatalog.filter(item => modelHealthLabel(item.health || modelHealth[item.id]).state === 'error').length;
     const unknownCount = Math.max(0, modelCatalog.length - goodCount - errorCount);
     modelHealthNote.textContent = model ? `${health.icon} ${health.text} · ahora: ${goodCount} responden, ${errorCount} con error, ${unknownCount} sin probar/vencidos (15 min).` : health.text;
-    modelProbe.disabled = !model || (!model.unlimited && Number(model.remaining) <= 0);
+    modelProbe.disabled = !model || (!model.unlimited && !model.quotaManagedByProvider && Number(model.remaining) <= 0);
     const periodLabel = model?.quotaPeriod === 'month' ? 'este mes' : 'hoy';
-    modelCount.textContent = model?.unlimited ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0} consultas hoy · sin límite · solo tu cuenta` : model ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0}/${model.dailyLimit || '—'} ${periodLabel}${model.rateLimit ? ` · ritmo: ${model.rateLimit}` : ''}${model.keyless ? ' · sin cuenta' : ''}` : 'Conectá proveedores para ver modelos gratuitos';
-    $('#beta-count').textContent = model?.unlimited ? `${model.name}: IA propia de MediaChafa. Rota únicamente entre modelos gratuitos verificados de OpenRouter, Groq Free y Gemini Free Tier conectados. Respeta las cuotas disponibles y nunca activa modelos pagos.` : model ? `${model.usedToday || 0} de ${model.dailyLimit || '—'} consultas gratuitas usadas ${periodLabel} en ${model.provider}; ${model.remaining ?? '—'} disponibles para este modelo/proveedor.${model.rateLimit ? ` Límite del proveedor: ${model.rateLimit}.` : ''}` : 'Sin modelo seleccionado.';
+    modelCount.textContent = model?.unlimited ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0} consultas hoy · sin límite · solo tu cuenta` : model?.quotaManagedByProvider ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0} consultas hoy · cuota y ritmo aplicados por Google según tu proyecto` : model ? `Pensamiento ${model.thinkingLevel || 'medio'} · ${model.provider} · ${model.usedToday || 0}/${model.dailyLimit || '—'} ${periodLabel}${model.rateLimit ? ` · ritmo: ${model.rateLimit}` : ''}${model.keyless ? ' · sin cuenta' : ''}` : 'Conectá proveedores para ver modelos gratuitos';
+    $('#beta-count').textContent = model?.unlimited ? `${model.name}: IA propia de MediaChafa. Rota únicamente entre modelos gratuitos verificados de OpenRouter, Groq Free y Gemini Free Tier conectados. Respeta las cuotas disponibles y nunca activa modelos pagos.` : model?.quotaManagedByProvider ? `${model.usedToday || 0} consultas registradas hoy en ${model.provider}. El límite real (RPM/TPM/RPD) lo aplica Google por proyecto; Beta no agrega un tope artificial.` : model ? `${model.usedToday || 0} de ${model.dailyLimit || '—'} consultas gratuitas usadas ${periodLabel} en ${model.provider}; ${model.remaining ?? '—'} disponibles para este modelo/proveedor.${model.rateLimit ? ` Límite del proveedor: ${model.rateLimit}.` : ''}` : 'Sin modelo seleccionado.';
     const imageLabel = document.querySelector('label[for="beta-image"]');
     const audioLabel = document.querySelector('label[for="beta-audio"]');
     const imageAllowed = Boolean(model?.vision);
@@ -1404,7 +1404,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   // Pide la explicación a la IA elegida; si no responde, prueba con las nuestras
   // (MediaChafa IA Rápida, Pro y Código). Si ninguna responde, queda la explicación básica.
   function explainCandidates() {
-    const usable = model => model && (model.unlimited || Number(model.remaining) > 0);
+    const usable = model => model && (model.unlimited || model.quotaManagedByProvider || Number(model.remaining) > 0);
     const chosen = modelCatalog.find(item => item.id === modelSelect.value);
     const ours = ['rapida', 'pro', 'codigo'].map(variant => modelCatalog.find(item => item.id === `mediachafa::${variant}`) || { id: `mediachafa::${variant}`, name: `MediaChafa IA ${variant === 'rapida' ? 'Rápida' : variant === 'pro' ? 'Pro' : 'Código'}`, unlimited: false, remaining: 0, vision: false, audio: false });
     const seen = new Set();
@@ -2644,7 +2644,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
     const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
     if (!selectedModel) { setStatus('Elegí un modelo de IA disponible en el selector.', 'error'); return; }
-    if (!selectedModel.unlimited && Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
+    if (!selectedModel.unlimited && !selectedModel.quotaManagedByProvider && Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
     if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
     if (pendingAudio && !selectedModel?.audio) { setStatus('Este modelo no admite audio. Elegí uno que indique audio.', 'error'); return; }
     // Los pedidos explícitos de APK/PKG de las IAs MediaChafa siempre usan el agente persistente,
