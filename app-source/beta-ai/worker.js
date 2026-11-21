@@ -7,7 +7,7 @@ const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
 const SUPABASE_KEY = "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
 const OWNER_EMAIL = "nxmollpy@gmail.com";
 const DAILY_REQUEST_LIMIT = 50;
-const PROVIDER_DAILY_LIMITS = { openrouter: 50, groq: 7000, gemini: 50 };
+const PROVIDER_DAILY_LIMITS = { openrouter: 50, groq: 7000, gemini: 20 };
 const COHERE_MONTHLY_LIMIT = 1000;
 const GROQ_FREE_MODELS = {
   "allam-2-7b": 7000,
@@ -17,7 +17,7 @@ const GROQ_FREE_MODELS = {
 };
 // Google documents these models as available on its no-billing Free Tier.
 // Keep this list small and explicit: the model-list API does not expose price data.
-const GEMINI_FREE_MODELS = new Set(["gemini-3.1-flash-lite", "gemini-3-flash-preview"]);
+const GEMINI_FREE_MODELS = new Set(["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-3.8-flash"]);
 const MODEL_DIRECTORY = "https://openrouter.ai/api/v1/models";
 const OPENROUTER_CHAT = "https://openrouter.ai/api/v1/chat/completions";
 const THINKING_LEVELS = [
@@ -852,7 +852,7 @@ function applyPendingAgentInstructions(state) {
 }
 
 async function agentModelTurn(env, state, requestSignal) {
-  if (state.provider !== "mediachafa" && state.provider !== "openrouter") throw new Error("Proveedor de agente no admitido.");
+  if (!["mediachafa", "openrouter", "gemini"].includes(state.provider)) throw new Error("Proveedor de agente no admitido.");
   const tools = agentToolDescriptions(state);
   const systemPrompt = "Sos un agente de software de MediaChafa. Ejecutá tareas completas con herramientas reales, verificá cada resultado, mantené los cambios en una rama aislada y nunca afirmes acciones no realizadas.";
   const buildInstruction = state.goalKind ? "OBJETIVO DE COMPILACIÓN OBLIGATORIO: " + state.goalKind.toUpperCase() + ". No uses github_run_checks ni github_check_status. Orden: asegurar y leer el proyecto en " + (state.goalKind === "apk" ? "app-source/apk/beta" : "app-source/ps4/beta") + "; escribir el proyecto completo y hacer commit con github_write_files en la rama aislada; llamar a " + (state.goalKind === "apk" ? "github_build_android_apk" : "github_build_ps4_pkg") + " con project_path " + (state.goalKind === "apk" ? "app-source/apk/beta" : "app-source/ps4/beta") + "; el backend consultará github_build_status automáticamente. No finalices hasta que buildReady sea true, conclusion=success y haya artifact real. No ejecutes beta-agent-tests.yml durante una compilación." : "";
@@ -888,6 +888,18 @@ async function agentModelTurn(env, state, requestSignal) {
         if (requestSignal.aborted) throw new Error("La ejecución fue cancelada.");
       }
       if (!result) throw new Error("Ningún modelo gratuito conectado pudo continuar: " + failures.slice(0, 4).join("; "));
+    } else if (state.provider === "gemini") {
+      const token = await storedToken(env, state.userId, "gemini");
+      if (!token || !(await hasGeminiFreeTierConfirmation(env, state.userId))) throw new Error("La integración gratuita de Google AI Studio se desconectó o requiere confirmación Free Tier.");
+      const catalog = await providerModelCatalog("gemini", token);
+      const model = catalog.find((item) => item.id === state.modelId && item.nativeId === "gemini-3.8-flash");
+      if (!model) throw new Error("Gemini 3.8 Flash ya no está en el catálogo gratuito verificado.");
+      const quota = await reserveRequest(env, state.userId, state.modelId);
+      if (!quota.allowed) throw new Error("Se agotó el tope gratuito de Gemini configurado en Beta.");
+      const fetchImpl = (input, init = {}) => globalThis.fetch(input, { ...init, signal: controller.signal });
+      const call = await callModel(env, { provider: "gemini", nativeId: model.nativeId, token, thinkingLevel: "alto" }, messages, state.messages, instruction, null, 6000, fetchImpl);
+      if (!call.ok) throw new Error("Gemini 3.8 Flash: " + String(call.detail || "falló la consulta gratuita").slice(0, 240));
+      result = { text: call.text, usage: {} };
     } else {
       // Preserve the legacy OpenRouter gates: encrypted token, verified :free catalog, external quota, and reserveRequest.
       const token = await storedToken(env, state.userId, state.provider);
@@ -959,8 +971,18 @@ async function agentStart(env, user, payload) {
     const candidates = await mediachafaCandidates(env, user.id, variant, false);
     if (!candidates.length) throw new Error("No hay modelos gratuitos disponibles para esta IA de MediaChafa. Revisá las integraciones gratuitas conectadas y sus cuotas.");
     model = { id: modelId, name: MEDIACHAFA_MODELS[variant].name };
+  } else if (provider === "gemini") {
+    if (nativeModelId !== "gemini-3.8-flash") throw new Error("El agente solo admite Gemini 3.8 Flash en su lista Free Tier.");
+    const token = await storedToken(env, user.id, "gemini");
+    if (!token || !(await hasGeminiFreeTierConfirmation(env, user.id))) throw new Error("Conectá Gemini desde Google AI Studio y confirmá Free Tier sin facturación.");
+    const catalog = await providerModelCatalog("gemini", token);
+    model = catalog.find((item) => item.id === modelId && item.nativeId === "gemini-3.8-flash");
+    if (!model) throw new Error("Gemini 3.8 Flash no está en el catálogo gratuito verificado.");
+    const date = new Date().toISOString().slice(0, 10);
+    const used = Number(await env.BETA_LIMITS.get(`beta-ai-requests:${user.id}:gemini:day:${date}`) || 0);
+    if (used >= PROVIDER_DAILY_LIMITS.gemini) throw new Error("Se agotaron las 20 consultas diarias de Gemini configuradas en Beta.");
   } else {
-    if (provider !== "openrouter" || !nativeModelId?.endsWith(":free")) throw new Error("El agente admite las IAs MediaChafa y modelos OpenRouter :free.");
+    if (provider !== "openrouter" || !nativeModelId?.endsWith(":free")) throw new Error("El agente admite las IAs MediaChafa, Gemini 3.8 Flash Free Tier y modelos OpenRouter :free.");
     const token = await storedToken(env, user.id, provider);
     if (!token) throw new Error("Conectá una clave gratuita de OpenRouter.");
     const catalog = await providerModelCatalog(provider, token);
@@ -1243,6 +1265,12 @@ async function storedToken(env, userId, provider) {
   return decryptToken(env, value);
 }
 
+async function hasGeminiFreeTierConfirmation(env, userId) {
+  const raw = await env.BETA_LIMITS.get(`integration:${userId}:gemini`);
+  if (!raw) return false;
+  try { return JSON.parse(raw)?.meta?.freeTierConfirmed === true; } catch { return false; }
+}
+
 async function verifyProvider(provider, token) {
   if (provider === "huggingface") {
     const response = await fetch("https://huggingface.co/api/whoami-v2", { headers: { Authorization: `Bearer ${token}` } });
@@ -1455,7 +1483,10 @@ async function providerModelCatalog(provider, token) {
     const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models", { headers: { "x-goog-api-key": token } });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(`Gemini no pudo listar modelos (HTTP ${response.status}).`);
-    return (data.models || []).filter((model) => GEMINI_FREE_MODELS.has(String(model.name || "").replace(/^models\//, "")) && (model.supportedGenerationMethods || []).includes("generateContent")).map((model) => ({ id: `gemini::${String(model.name).replace(/^models\//, "")}`, nativeId: String(model.name).replace(/^models\//, ""), apiProvider: "gemini", name: model.displayName || model.name, provider: "Google AI Studio", vision: false, audio: false, thinkingLevel: /flash-lite/i.test(model.name) ? "ligero" : "alto" }));
+      return (data.models || []).filter((model) => GEMINI_FREE_MODELS.has(String(model.name || "").replace("models/", "")) && (model.supportedGenerationMethods || []).includes("generateContent")).map((model) => {
+        const nativeId = String(model.name).replace("models/", "");
+        return { id: `gemini::${nativeId}`, nativeId, apiProvider: "gemini", name: nativeId === "gemini-3.8-flash" ? "Gemini 3.8 Flash" : model.displayName || model.name, provider: "Google AI Studio", vision: false, audio: false, thinkingLevel: /flash-lite/i.test(nativeId) ? "ligero" : "alto", dailyLimit: PROVIDER_DAILY_LIMITS.gemini };
+      });
   }
   if (provider === "cohere") {
     const response = await fetch("https://api.cohere.com/v1/models?endpoint=chat&page_size=1000", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
@@ -1675,11 +1706,12 @@ export default {
         const provider = String(payload.provider || "").toLowerCase();
         const token = String(payload.token || "").trim();
         if (!PROVIDERS.includes(provider) || token.length < 12 || token.length > 4096) return json({ error: "Proveedor o token inválido." }, 400, origin);
+        if (provider === "gemini" && payload.freeTierConfirmed !== true) return json({ error: "Antes de conectar Gemini, confirmá que el proyecto está en Free Tier y no tiene facturación vinculada." }, 400, origin);
         try {
           const verified = await verifyProvider(provider, token);
           if (!verified.ok) return json({ error: verified.error }, 400, origin);
           const encrypted = JSON.parse(await encryptToken(env, token));
-          const meta = { detail: verified.detail, connectedAt: new Date().toISOString(), capabilities: verified.capabilities || {} };
+          const meta = { detail: verified.detail, connectedAt: new Date().toISOString(), capabilities: verified.capabilities || {}, ...(provider === "gemini" ? { freeTierConfirmed: true } : {}) };
           await env.BETA_LIMITS.put(`integration:${user.id}:${provider}`, JSON.stringify({ ...encrypted, meta }));
           if (provider === "github") await env.BETA_LIMITS.delete(`beta-project-map:${user.id}`);
           return json({ provider, connected: true, detail: verified.detail, capabilities: meta.capabilities }, 200, origin);
@@ -2069,6 +2101,7 @@ export default {
     if (modelProvider === "mediachafa") return mediachafaChat({ request, env, user, origin, payload, prompt, image, history, autonomous, variant: nativeModelId });
     if (!MODEL_PROVIDERS.includes(modelProvider) || !nativeModelId) return json({ error: "Elegí un modelo gratuito conectado." }, 409, origin);
     const token = await storedToken(env, user.id, modelProvider);
+    if (modelProvider === "gemini" && !(await hasGeminiFreeTierConfirmation(env, user.id))) return json({ error: "Volvé a conectar Gemini y confirmá que el proyecto es Free Tier sin facturación." }, 409, origin);
     if (!token) return json({ error: `Conectá la clave gratuita de ${modelProvider} en Integraciones.` }, 409, origin);
     let selectedModel;
     try { selectedModel = (await providerModelCatalog(modelProvider, token)).find((model) => model.id === modelId); }
@@ -2153,7 +2186,8 @@ export default {
         const contents = [...history, { role: "user", content: prompt || "Analizá el adjunto." }].map((message) => ({ role: message.role === "assistant" ? "model" : "user", parts: [{ text: String(message.content || "") }] }));
         if (image) contents[contents.length - 1].parts.push({ inlineData: { mimeType: image.match(/^data:([^;]+)/)?.[1] || "image/jpeg", data: image.split(",", 2)[1] } });
         const system = messages.filter((message) => message.role === "system").map((message) => message.content).join("\n\n");
-        result = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(nativeModelId)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": token, "Content-Type": "application/json" }, body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { responseMimeType: "application/json", maxOutputTokens: 2400, temperature: 0.5 } }) });
+        const thinkingConfig = nativeModelId === "gemini-3.8-flash" ? { thinkingConfig: { thinkingLevel: "HIGH" } } : {};
+        result = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(nativeModelId)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": token, "Content-Type": "application/json" }, body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { responseMimeType: "application/json", maxOutputTokens: 2400, temperature: 0.5, ...thinkingConfig } }) });
         responseData = await result.json().catch(() => ({}));
         if (result.ok) rawAnswer = (responseData?.candidates?.[0]?.content?.parts || []).map((part) => part.text || "").join("\n");
       }
@@ -2220,7 +2254,8 @@ async function callModel(env, candidate, messages, history, promptText, image, m
     const contents = [...history, { role: "user", content: promptText }].map((message) => ({ role: message.role === "assistant" ? "model" : "user", parts: [{ text: String(message.content || "") }] }));
     if (image) contents[contents.length - 1].parts.push({ inlineData: { mimeType: image.match(/^data:([^;]+)/)?.[1] || "image/jpeg", data: image.split(",", 2)[1] } });
     const system = messages.filter((message) => message.role === "system").map((message) => message.content).join("\n\n");
-    result = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(nativeId)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": token, "Content-Type": "application/json" }, body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { responseMimeType: "application/json", maxOutputTokens: maxTokens, temperature: 0.5 } }) });
+     const thinkingConfig = nativeId === "gemini-3.8-flash" ? { thinkingConfig: { thinkingLevel: "HIGH" } } : {};
+     result = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(nativeId)}:generateContent`, { method: "POST", headers: { "x-goog-api-key": token, "Content-Type": "application/json" }, body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents, generationConfig: { responseMimeType: "application/json", maxOutputTokens: maxTokens, temperature: 0.5, ...thinkingConfig } }) });
     data = await result.json().catch(() => ({}));
     if (result.ok) text = (data?.candidates?.[0]?.content?.parts || []).map((part) => part.text || "").join("\n");
   } else return { ok: false, status: 400, detail: "Proveedor desconocido." };
@@ -2237,6 +2272,7 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
   for (const provider of ["openrouter", "groq", "gemini"]) {
     const token = await storedToken(env, userId, provider);
     if (!token) continue;
+    if (provider === "gemini" && !(await hasGeminiFreeTierConfirmation(env, userId))) continue;
     try {
       const date = new Date().toISOString().slice(0, 10);
       let providerRemaining = Infinity;
