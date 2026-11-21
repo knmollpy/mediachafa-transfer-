@@ -125,8 +125,13 @@ Para una página web pública: create_repository con visibility "public", despu�
   const sendButton = $('#beta-send');
   const status = $('#beta-status');
   const imageInput = $('#beta-image');
+  imageInput.multiple = true;
+  imageInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
   const audioInput = $('#beta-audio');
   let pendingImage;
+  let pendingImages = [];
+  let pendingImagePayloads = [];
+  let imageSelectionVersion = 0;
   let pendingAudio;
   let history = [];
   let remaining = 50;
@@ -631,7 +636,8 @@ Para una página web pública: create_repository con visibility "public", despu�
         tags.append(tag);
       };
       addTag(`Pensamiento ${item.thinkingLevel || 'medio'}`);
-      if (item.vision) addTag('Visión');
+      if (item.vision) addTag('Visión · admite fotos');
+      else addTag('Solo texto');
       if (item.audio) addTag('Audio');
       if (item.keyless) addTag('Sin cuenta');
       if (item.quotaManagedByProvider) addTag('Cuota del proveedor');
@@ -1724,6 +1730,50 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     return readPromise;
   }
 
+  async function blobToDataUrl(blob) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    return `data:${blob.type || 'image/webp'};base64,${btoa(binary)}`;
+  }
+
+  async function prepareChatImage(file) {
+    if (!file || !/^image\\/(png|jpeg|webp|gif)$/i.test(file.type || '')) throw new Error('Adjuntá imágenes PNG, JPEG, WebP o GIF.');
+    if (file.size > 5 * 1024 * 1024) throw new Error(`${file.name}: supera los 5 MB por foto.`);
+    if (file.size > 1.5 * 1024 * 1024 && file.type !== 'image/gif' && typeof createImageBitmap === 'function') {
+      let bitmap;
+      try {
+        bitmap = await createImageBitmap(file);
+        const scale = Math.min(1, 2560 / Math.max(bitmap.width, bitmap.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        const context = canvas.getContext('2d');
+        if (context) {
+          context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+          const type = file.type === 'image/png' ? 'image/png' : 'image/webp';
+          const compressed = await new Promise(resolve => canvas.toBlob(resolve, type, 0.88));
+          if (compressed && compressed.size > 0 && compressed.size < file.size && compressed.size <= 5 * 1024 * 1024) return await blobToDataUrl(compressed);
+        }
+      } catch {} finally { bitmap?.close?.(); }
+    }
+    return await fileToBase64(file);
+  }
+
+  async function prepareChatImages(files) {
+    if (files.length > 10) throw new Error('Podés adjuntar hasta 10 fotos por mensaje.');
+    const payloads = [];
+    let totalBytes = 0;
+    for (const file of files) {
+      const data = await prepareChatImage(file);
+      const base64 = data.split(',', 2)[1] || '';
+      totalBytes += Math.floor(base64.length * 3 / 4);
+      if (totalBytes > 9 * 1024 * 1024) throw new Error('Las fotos superan los 9 MB combinados. Se optimizan automáticamente; si sigue pasando, dividí la selección en dos mensajes.');
+      payloads.push({ data, name: file.name });
+    }
+    return payloads;
+  }
+
   async function readFileToBase64(file) {
     if (!file || typeof file.size !== 'number' || file.size <= 0) throw new Error('El archivo está vacío o ya no está disponible. Volvé a adjuntarlo.');
     if (file.size > 5 * 1024 * 1024) throw new Error('El archivo supera el límite de 5 MB.');
@@ -1818,7 +1868,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     const canGenerate = ['qwen21', 'mossImage'].includes(selected);
     imageCreateButton.classList.toggle('hidden', !canGenerate);
     imageCreateButton.title = canGenerate ? 'Crear una imagen desde texto con ' + (imageEditorModelNames[selected] || imageEditorModelNames.qwen21) : 'La creación desde texto está disponible con los modelos Qwen y MOSS.';
-    imageEditButton.classList.toggle('hidden', !pendingImage || selected === 'mossImage');
+    imageEditButton.classList.toggle('hidden', !pendingImage || pendingImages.length !== 1 || selected === 'mossImage');
   };
   imageEditorModelSelect?.addEventListener('change', updateImageActionButtons);
   updateImageActionButtons();
@@ -1918,6 +1968,8 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       saveHistory();
       input.value = '';
       pendingImage = undefined;
+      pendingImages = [];
+      pendingImagePayloads = [];
       imageInput.value = '';
       attachmentLabel(undefined, '#beta-image-name');
       imageEditButton.classList.add('hidden');
@@ -1932,20 +1984,29 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   });
 
   imageInput.addEventListener('change', () => {
-    pendingImage = imageInput.files?.[0];
-    if (pendingImage && pendingImage.size > 5 * 1024 * 1024) { pendingImage = undefined; imageInput.value = ''; setStatus('La imagen supera el límite de 5 MB.', 'error'); }
-    attachmentLabel(pendingImage, '#beta-image-name');
-    imageEditButton.classList.toggle('hidden', !pendingImage || imageEditorModelSelect?.value === 'mossImage');
-    if (pendingImage) {
-      // Snapshot the selected file immediately. Android document providers can
-      // revoke the temporary File handle before the user presses Edit or Send.
-      setStatus('Leyendo imagen adjunta…');
-      void fileToBase64(pendingImage).then(() => {
-        if (pendingImage === imageInput.files?.[0]) setStatus(imageEditorModelSelect?.value === 'mossImage' ? 'Imagen adjunta. MOSS solo crea desde texto; elegí Qwen para editarla.' : 'Imagen lista para editar o enviar.');
-      }).catch((error) => {
-        if (pendingImage === imageInput.files?.[0]) setStatus(error.message || 'No se pudo leer la imagen. Guardala en el dispositivo y volvé a adjuntarla.', 'error');
-      });
-    }
+    const files = Array.from(imageInput.files || []);
+    imageSelectionVersion += 1;
+    const selection = imageSelectionVersion;
+    if (files.length > 10) { imageInput.value = ''; pendingImage = undefined; pendingImages = []; pendingImagePayloads = []; attachmentLabel(undefined, '#beta-image-name'); setStatus('Podés adjuntar hasta 10 fotos por mensaje.', 'error'); return; }
+    const invalid = files.find(file => !/^image\\/(png|jpeg|webp|gif)$/i.test(file.type || '') || file.size <= 0 || file.size > 5 * 1024 * 1024);
+    if (invalid) { imageInput.value = ''; pendingImage = undefined; pendingImages = []; pendingImagePayloads = []; attachmentLabel(undefined, '#beta-image-name'); setStatus(`${invalid.name}: usá PNG, JPEG, WebP o GIF de hasta 5 MB.`, 'error'); return; }
+    pendingImages = files;
+    pendingImage = files[0];
+    pendingImagePayloads = [];
+    const imageName = $('#beta-image-name');
+    if (imageName) imageName.textContent = files.length === 1 ? `Adjunta: ${files[0].name}` : `Adjuntas ${files.length} fotos: ${files.map(file => file.name).join(', ')}`;
+    imageEditButton.classList.toggle('hidden', files.length !== 1 || imageEditorModelSelect?.value === 'mossImage');
+    if (!files.length) { setStatus('Se quitaron las fotos adjuntas.'); return; }
+    setStatus(`Preparando ${files.length} foto${files.length === 1 ? '' : 's'} para la IA…`);
+    void prepareChatImages(files).then(payloads => {
+      if (selection !== imageSelectionVersion) return;
+      pendingImagePayloads = payloads;
+      setStatus(`${payloads.length} foto${payloads.length === 1 ? '' : 's'} lista${payloads.length === 1 ? '' : 's'} para enviar. Elegí una IA con visión.`);
+    }).catch(error => {
+      if (selection !== imageSelectionVersion) return;
+      pendingImagePayloads = [];
+      setStatus(error.message || 'No se pudieron preparar las fotos. Volvé a seleccionarlas.', 'error');
+    });
   });
   audioInput.addEventListener('change', () => {
     pendingAudio = audioInput.files?.[0];
@@ -2752,14 +2813,20 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     saveHistory();
     let attachments = {};
     try {
-      if (pendingImage) attachments.image = { data: await fileToBase64(pendingImage) };
+      if (pendingImages.length) {
+        if (pendingImagePayloads.length !== pendingImages.length) throw new Error('Las fotos todavía se están preparando. Esperá a que termine y volvé a enviar.');
+        attachments.images = pendingImagePayloads.map(({ data }) => ({ data }));
+      }
       if (pendingAudio) attachments.audio = { data: (await fileToBase64(pendingAudio)).split(',')[1], mime: pendingAudio.type || 'audio/mpeg' };
     } catch (error) { setStatus(error.message, 'error'); return; }
-    pendingImage = pendingAudio = undefined;
+    pendingImage = undefined;
+    pendingImages = [];
+    pendingImagePayloads = [];
+    pendingAudio = undefined;
     imageInput.value = audioInput.value = '';
     attachmentLabel(undefined, '#beta-image-name');
     attachmentLabel(undefined, '#beta-audio-name');
-    if (!attachments.image && !attachments.audio && isMediaChafaBuildRequest(userText, selectedModel)) {
+    if (!attachments.images?.length && !attachments.audio && isMediaChafaBuildRequest(userText, selectedModel)) {
       await runPersistentBuildAgent({ userText, model: selectedModel });
       return;
     }
@@ -2791,23 +2858,25 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       return;
     }
     const prompt = input.value.trim();
-    if (!prompt && !pendingImage && !pendingAudio) { setStatus('Escribí algo o adjuntá una imagen o audio.', 'error'); return; }
+    if (!prompt && !pendingImages.length && !pendingAudio) { setStatus('Escribí algo o adjuntá fotos o audio.', 'error'); return; }
     const selectedModel = modelCatalog.find(item => item.id === modelSelect.value);
     if (!selectedModel) { setStatus('Elegí un modelo de IA disponible en el selector.', 'error'); return; }
     if (!selectedModel.unlimited && !selectedModel.quotaManagedByProvider && Number(selectedModel.remaining) <= 0) { setStatus(`Se agotó la cuota gratuita de ${selectedModel.provider} para este modelo o proveedor. Cambiá a otra IA gratuita; Beta no probará una opción paga.`, 'error'); return; }
-    if (pendingImage && !selectedModel?.vision) { setStatus('Este modelo no admite imágenes. Elegí uno que indique visión.', 'error'); return; }
+    if (pendingImages.length && !selectedModel?.vision) { setStatus('Este modelo no admite fotos. Elegí una IA que indique “Visión · admite fotos”.', 'error'); return; }
+    if (pendingImages.length && pendingImagePayloads.length !== pendingImages.length) { setStatus('Las fotos todavía se están preparando. Esperá a que termine y volvé a enviar.', 'error'); return; }
     if (pendingAudio && !selectedModel?.audio) { setStatus('Este modelo no admite audio. Elegí uno que indique audio.', 'error'); return; }
     // Los pedidos explícitos de APK/PKG de las IAs MediaChafa siempre usan el agente persistente,
     // incluso si la interfaz está en modo Normal. No deben caer en una respuesta de chat/propuesta.
-    if (!pendingImage && !pendingAudio && isMediaChafaBuildRequest(prompt, selectedModel)) {
+    if (!pendingImages.length && !pendingAudio && isMediaChafaBuildRequest(prompt, selectedModel)) {
       input.value = '';
       await startAutonomousFromForm({ userText: prompt, displayText: prompt, selectedModel });
       return;
     }
     if (agent) {
       input.value = '';
-      const goalText = prompt || (pendingImage ? 'Analizá la imagen adjunta.' : 'Transcribí y analizá el audio adjunto.');
-      const goalDisplay = `${goalText}${pendingImage ? `\n[Imagen: ${pendingImage.name}]` : ''}${pendingAudio ? `\n[Audio: ${pendingAudio.name}]` : ''}`;
+      const goalText = prompt || (pendingImages.length ? 'Analizá y organizá las fotos adjuntas.' : 'Transcribí y analizá el audio adjunto.');
+      const imageNames = pendingImages.map(file => file.name).join(', ');
+      const goalDisplay = `${goalText}${pendingImages.length ? `\n[Fotos (${pendingImages.length}): ${imageNames}]` : ''}${pendingAudio ? `\n[Audio: ${pendingAudio.name}]` : ''}`;
       await startAutonomousFromForm({ userText: goalText, displayText: goalDisplay, selectedModel });
       return;
     }
@@ -2815,8 +2884,9 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     sendButton.disabled = true;
     setStatus('Validando sesión…');
     activity('Validando tu sesión de MediaChafa.');
-    const userText = prompt || (pendingImage ? 'Analizá la imagen adjunta.' : 'Transcribí y analizá el audio adjunto.');
-    const displayText = `${userText}${pendingImage ? `\n[Imagen: ${pendingImage.name}]` : ''}${pendingAudio ? `\n[Audio: ${pendingAudio.name}]` : ''}`;
+    const userText = prompt || (pendingImages.length ? 'Analizá y organizá las fotos adjuntas.' : 'Transcribí y analizá el audio adjunto.');
+    const imageNames = pendingImages.map(file => file.name).join(', ');
+    const displayText = `${userText}${pendingImages.length ? `\n[Fotos (${pendingImages.length}): ${imageNames}]` : ''}${pendingAudio ? `\n[Audio: ${pendingAudio.name}]` : ''}`;
     const previousHistory = history.slice(-8);
     let modelRequestStarted = false;
     const userMessage = addMessage('user', displayText);
@@ -2938,7 +3008,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     try {
       const auth = await currentSession();
       updateProgress('Preparando adjuntos…');
-      const image = pendingImage ? { data: await fileToBase64(pendingImage) } : undefined;
+      const images = pendingImagePayloads.map(({ data }) => ({ data }));
       const audio = pendingAudio ? { data: (await fileToBase64(pendingAudio)).split(',')[1], mime: pendingAudio.type || 'audio/mpeg' } : undefined;
       updateProgress('Enviando la consulta a Beta…');
       const pollCollaboration = async () => {
@@ -2969,7 +3039,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
         response = await fetch(`${API}/chat`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: userText, history: previousHistory, image, audio, model: modelSelect.value, progressId, collaborationEnabled: useSixAgentTeam && String(modelSelect.value || '').startsWith('mediachafa::') }),
+          body: JSON.stringify({ message: userText, history: previousHistory, images, audio, model: modelSelect.value, progressId, collaborationEnabled: useSixAgentTeam && String(modelSelect.value || '').startsWith('mediachafa::') }),
           signal: chatController.signal,
         });
       } catch (error) {
@@ -3027,7 +3097,10 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
       renderModelOptions();
       if (!data.proposals?.length) setStatus(preparationErrors.length ? 'La consulta terminó; revisá los permisos indicados para GitHub.' : 'Respuesta recibida.', preparationErrors.length ? 'error' : 'idle');
       activity('Respuesta recibida y mostrada en el chat.', 'done');
-      pendingImage = pendingAudio = undefined;
+      pendingImage = undefined;
+      pendingImages = [];
+      pendingImagePayloads = [];
+      pendingAudio = undefined;
       imageInput.value = audioInput.value = '';
       attachmentLabel(undefined, '#beta-image-name');
       attachmentLabel(undefined, '#beta-audio-name');
