@@ -61,9 +61,10 @@ function installFetch() {
       return Response.json({ choices: [{ message: { content: '{"answer":"respuesta Groq","plan":[],"actions":[]}' } }] });
     }
     if (url.hostname === "generativelanguage.googleapis.com" && url.pathname === "/v1beta/models") {
-      return Response.json({ models: ["gemini-3.1-flash-lite", "gemini-3-flash-preview"].map((name) => ({ name: "models/" + name, displayName: name, supportedGenerationMethods: ["generateContent"] })) });
+      return Response.json({ models: ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-3.8-flash"].map((name) => ({ name: "models/" + name, displayName: name, supportedGenerationMethods: ["generateContent"] })) });
     }
-    if (url.hostname === "generativelanguage.googleapis.com" && url.pathname.includes(":generateContent")) {
+      const body = JSON.parse(init.body || "{}");
+      requests.push(body);
       return Response.json({ candidates: [{ content: { parts: [{ text: '{"answer":"respuesta Gemini","plan":[],"actions":[]}' }] } }] });
     }
     if (url.hostname === "openrouter.ai" && url.pathname === "/api/v1/chat/completions") {
@@ -113,6 +114,7 @@ async function connectFreeProvider(env, provider, value) {
   const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt"]);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(value));
+  const meta = provider === "gemini" ? { meta: { freeTierConfirmed: true, detail: "Gemini Free Tier test fixture" } } : {};
   env.__kv.set(`integration:owner:${provider}`, JSON.stringify({
     iv: Buffer.from(iv).toString("base64"),
     ciphertext: Buffer.from(new Uint8Array(encrypted)).toString("base64"),
@@ -125,6 +127,37 @@ const chat = (env, model = "mediachafa::pro", extra = {}) => worker.fetch(new Re
   headers: { Origin: origin, Authorization: "Bearer t", "Content-Type": "application/json" },
   body: JSON.stringify({ message: "hola", model, ...extra }),
 }), env);
+
+test("Gemini 3.8 Flash is exposed with high thinking and a 20-request Beta daily cap", async () => {
+  installFetch();
+  const env = makeEnv();
+  await connectFreeProvider(env, "gemini", "gemini-free-test-token-123456");
+  const response = await chat(env, "gemini::gemini-3.8-flash");
+  const data = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(data));
+  assert.equal(data.modelName, "Gemini 3.8 Flash");
+  assert.equal(data.thinkingLevel, "alto");
+  assert.equal(data.dailyLimit, 20);
+  assert.equal(data.usedToday, 1);
+  assert.equal(data.remaining, 19);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].generationConfig.thinkingConfig.thinkingLevel, "HIGH");
+  assert.equal(aiCalls, 0);
+});
+
+test("Gemini refuses a stored key without explicit Free Tier confirmation", async () => {
+  installFetch();
+  const env = makeEnv();
+  const raw = Buffer.from(env.TOKEN_ENCRYPTION_KEY, "base64");
+  const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode("gemini-free-test-token-123456"));
+  env.__kv.set("integration:owner:gemini", JSON.stringify({ iv: Buffer.from(iv).toString("base64"), ciphertext: Buffer.from(new Uint8Array(encrypted)).toString("base64"), version: 1 }));
+  const response = await chat(env, "gemini::gemini-3.8-flash");
+  assert.equal(response.status, 409);
+  assert.equal(requests.length, 0);
+  assert.equal(aiCalls, 0);
+});
 
 test("status shows the three MediaChafa roles as quota-limited, never unlimited", async () => {
   installFetch();
