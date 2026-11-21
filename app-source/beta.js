@@ -2815,7 +2815,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     try {
       if (pendingImages.length) {
         if (pendingImagePayloads.length !== pendingImages.length) throw new Error('Las fotos todavía se están preparando. Esperá a que termine y volvé a enviar.');
-        attachments.images = pendingImagePayloads.map(({ data }) => ({ data }));
+        attachments.images = pendingImagePayloads.map(({ data, name }) => ({ data, name }));
       }
       if (pendingAudio) attachments.audio = { data: (await fileToBase64(pendingAudio)).split(',')[1], mime: pendingAudio.type || 'audio/mpeg' };
     } catch (error) { setStatus(error.message, 'error'); return; }
@@ -3008,7 +3008,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     try {
       const auth = await currentSession();
       updateProgress('Preparando adjuntos…');
-      const images = pendingImagePayloads.map(({ data }) => ({ data }));
+      const images = pendingImagePayloads.map(({ data, name }) => ({ data, name }));
       const audio = pendingAudio ? { data: (await fileToBase64(pendingAudio)).split(',')[1], mime: pendingAudio.type || 'audio/mpeg' } : undefined;
       updateProgress('Enviando la consulta a Beta…');
       const pollCollaboration = async () => {
