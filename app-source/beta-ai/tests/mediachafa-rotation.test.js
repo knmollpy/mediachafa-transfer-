@@ -63,10 +63,10 @@ function installFetch() {
     if (url.hostname === "generativelanguage.googleapis.com" && url.pathname === "/v1beta/models") {
       return Response.json({ models: ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-3.8-flash"].map((name) => ({ name: "models/" + name, displayName: name, supportedGenerationMethods: ["generateContent"] })) });
     }
+    if (url.hostname === "generativelanguage.googleapis.com" && url.pathname.includes(":generateContent")) {
       const body = JSON.parse(init.body || "{}");
       requests.push(body);
       return Response.json({ candidates: [{ content: { parts: [{ text: '{"answer":"respuesta Gemini","plan":[],"actions":[]}' }] } }] });
-    }
     if (url.hostname === "openrouter.ai" && url.pathname === "/api/v1/chat/completions") {
       const body = JSON.parse(init.body || "{}");
       requests.push(body);
