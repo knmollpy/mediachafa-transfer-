@@ -1994,7 +1994,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     pendingImage = files[0];
     pendingImagePayloads = [];
     const imageName = $('#beta-image-name');
-    if (imageName) imageName.textContent = files.length === 1 ? `Adjunta: ${files[0].name}` : `Adjuntas ${files.length} fotos: ${files.map(file => file.name).join(', ')}`;
+    if (imageName) imageName.textContent = !files.length ? '' : files.length === 1 ? `Adjunta: ${files[0].name}` : `Adjuntas ${files.length} fotos: ${files.map(file => file.name).join(', ')}`;
     imageEditButton.classList.toggle('hidden', files.length !== 1 || imageEditorModelSelect?.value === 'mossImage');
     if (!files.length) { setStatus('Se quitaron las fotos adjuntas.'); return; }
     setStatus(`Preparando ${files.length} foto${files.length === 1 ? '' : 's'} para la IA…`);
