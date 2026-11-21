@@ -1738,7 +1738,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
   }
 
   async function prepareChatImage(file) {
-    if (!file || !/^image\\/(png|jpeg|webp|gif)$/i.test(file.type || '')) throw new Error('Adjuntá imágenes PNG, JPEG, WebP o GIF.');
+    if (!file || !/^image\/(png|jpeg|webp|gif)$/i.test(file.type || '')) throw new Error('Adjuntá imágenes PNG, JPEG, WebP o GIF.');
     if (file.size > 5 * 1024 * 1024) throw new Error(`${file.name}: supera los 5 MB por foto.`);
     if (file.size > 1.5 * 1024 * 1024 && file.type !== 'image/gif' && typeof createImageBitmap === 'function') {
       let bitmap;
@@ -1988,7 +1988,7 @@ html.beta-fullscreen,html.beta-fullscreen body{height:100%;overflow:hidden!impor
     imageSelectionVersion += 1;
     const selection = imageSelectionVersion;
     if (files.length > 10) { imageInput.value = ''; pendingImage = undefined; pendingImages = []; pendingImagePayloads = []; attachmentLabel(undefined, '#beta-image-name'); setStatus('Podés adjuntar hasta 10 fotos por mensaje.', 'error'); return; }
-    const invalid = files.find(file => !/^image\\/(png|jpeg|webp|gif)$/i.test(file.type || '') || file.size <= 0 || file.size > 5 * 1024 * 1024);
+    const invalid = files.find(file => !/^image\/(png|jpeg|webp|gif)$/i.test(file.type || '') || file.size <= 0 || file.size > 5 * 1024 * 1024);
     if (invalid) { imageInput.value = ''; pendingImage = undefined; pendingImages = []; pendingImagePayloads = []; attachmentLabel(undefined, '#beta-image-name'); setStatus(`${invalid.name}: usá PNG, JPEG, WebP o GIF de hasta 5 MB.`, 'error'); return; }
     pendingImages = files;
     pendingImage = files[0];
