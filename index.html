@@ -194,6 +194,14 @@
     :root[data-theme="dark"] .downloader-result-check{background:#263a2c;color:#a8dfb5}
     @media(max-width:600px){.downloader-input-row{flex-direction:column}.downloader-input-row .add-btn{width:100%;min-height:44px}.downloader-result{padding:15px}.downloader-source{width:100%;margin-left:0}.downloader-actions .secondary{flex:1}}
 
+  
+    .downloader-fallback{margin-top:14px;padding:15px 16px;border:1px solid #ead9b3;border-radius:11px;background:#fff9eb;color:#785a20}
+    .downloader-fallback strong{display:block;font:700 13px Manrope,sans-serif}
+    .downloader-fallback p{margin:7px 0 12px;font-size:11px;line-height:1.55;color:#806b45}
+    .downloader-fallback-link{display:inline-flex;width:auto;margin:0;padding:10px 14px;text-decoration:none}
+    :root[data-theme="dark"] .downloader-fallback{border-color:#67532e;background:#302918;color:#f0cf82}
+    :root[data-theme="dark"] .downloader-fallback p{color:#d4bd88}
+
   </style>
 </head>
 <body>
@@ -242,6 +250,11 @@
             <div class="downloader-hint" id="downloader-hint">Escribí solo los números. No necesitás pegar el enlace completo.</div>
           </form>
           <div class="downloader-status notice" id="downloader-status" role="status" aria-live="polite">Ingresá un código para consultar su destino.</div>
+          <div class="downloader-fallback hidden" id="downloader-fallback">
+            <strong>No pudimos consultar el código automáticamente.</strong>
+            <p>AFTVnews no respondió al servidor de MediaChafa. Podés abrir el mismo código en su página oficial: allí se muestra la dirección de destino antes de continuar.</p>
+            <a class="add-btn downloader-fallback-link" id="downloader-fallback-link" href="https://go.aftvnews.com/" target="_blank" rel="noopener noreferrer">Abrir código en AFTVnews ↗</a>
+          </div>
           <div class="downloader-result hidden" id="downloader-result">
             <div class="downloader-result-head">
               <div><span class="downloader-result-kicker">DESTINO ENCONTRADO</span><strong id="downloader-host"></strong></div>
@@ -994,11 +1007,15 @@ async function loadGoogleDriveStatus() {
     const downloaderCode=$('#downloader-code');
     const downloaderStatus=$('#downloader-status');
     const downloaderResult=$('#downloader-result');
+    const downloaderFallback=$('#downloader-fallback');
+    const downloaderFallbackLink=$('#downloader-fallback-link');
     downloaderCode.addEventListener('input',()=>{downloaderCode.value=downloaderCode.value.replace(/\D/g,'').slice(0,12);});
     downloaderForm.addEventListener('submit',async event=>{
       event.preventDefault();
       const code=downloaderCode.value.trim();
       downloaderResult.classList.add('hidden');
+      downloaderFallback.classList.add('hidden');
+      downloaderFallbackLink.href='https://go.aftvnews.com/'+encodeURIComponent(code);
       downloaderStatus.dataset.state='';
       if(!/^\d{3,12}$/.test(code)){
         downloaderStatus.dataset.state='error';
@@ -1021,17 +1038,21 @@ async function loadGoogleDriveStatus() {
         $('#downloader-destination').href=destination.href;
         $('#downloader-destination').textContent=destination.href;
         $('#downloader-open').href=destination.href;
-        $('#downloader-source').href=data.sourceUrl||('https://aftv.news/'+code);
+        $('#downloader-source').href=data.sourceUrl||('https://go.aftvnews.com/'+code);
         $('#downloader-copy').onclick=async()=>{
           try{await navigator.clipboard.writeText(destination.href);toast('Enlace copiado.');}
           catch{toast('No se pudo copiar automáticamente; mantené presionado el enlace para copiarlo.');}
         };
         downloaderResult.classList.remove('hidden');
+        downloaderFallback.classList.add('hidden');
         downloaderStatus.dataset.state='';
         downloaderStatus.textContent='Código '+code+' resuelto. El destino es externo a MediaChafa; revisá el dominio antes de abrirlo.';
       }catch(error){
         downloaderStatus.dataset.state='error';
-        downloaderStatus.textContent=error?.message||'No se pudo consultar el código. Intentá nuevamente.';
+        const message=error?.message||'No se pudo consultar el código. Intentá nuevamente.';
+        downloaderStatus.textContent=message;
+        downloaderFallbackLink.href='https://go.aftvnews.com/'+encodeURIComponent(code);
+        downloaderFallback.classList.remove('hidden');
       }finally{
         submit.disabled=false;
         submit.textContent='Buscar código';
