@@ -8,8 +8,9 @@ This bot is implemented inside the `mediachafa-beta-ai` Worker and a SQLite-back
 - Ignores bots, webhooks, empty messages, duplicate events, and rapid repeats from the same user.
 - Answers catalog questions in Spanish; lists public games; returns a download URL only when explicitly requested.
 - Reads only `public.ps4_games` through the public/anonymous Data API and relies on the existing RLS policy. It does not query `media_links`, private rows, user profiles, or private project context.
-- Uses MediaChafa's already-connected, zero-cost-verified inference providers only to classify ambiguous game-title queries. The model can select exact titles from the supplied public list; the server validates every title and obtains the actual URL itself.
-- Does not expose the owner's chat endpoint, saved memory, tools, integrations, or administrative actions.
+- Uses the owner's already-connected private API credentials only as server-side inference capacity, and reserves usage against the owner's existing provider quotas. It uses only providers/models whose zero-cost eligibility is verified; it never switches to paid models. A local title search answers straightforward requests without consuming an AI call. AI is used only when title matching needs help.
+- The AI request contains only the Discord user's current question and up to 200 public game titles. The model response can select exact titles only; the server validates every title and retrieves the corresponding public download URL itself. No private MediaChafa content, chat history, memory, files, integrations, source code, admin context, or private catalog rows are sent to the model.
+- Does not expose the owner's chat endpoint, saved memory, tools, integrations, or administrative actions. Discord users cannot invoke the owner's private MediaChafa AI chat or inspect its data.
 
 ## Required Cloudflare configuration
 
