@@ -48,6 +48,7 @@ test("Discord uses private inference quota but sends only the question and publi
   const env = {
     DISCORD_GUILD_ID: "guild-public",
     DISCORD_CHANNEL_ID: "channel-requests",
+    DISCORD_OWNER_USER_ID: ownerId,
     DISCORD_BOT_TOKEN: "test-discord-token",
     TOKEN_ENCRYPTION_KEY: Buffer.from(encryptionBytes).toString("base64"),
     BETA_LIMITS: {
@@ -117,4 +118,13 @@ test("Discord uses private inference quota but sends only the question and publi
   assert.ok(discordReply.content.includes("https://downloads.example/public-gta-v"));
   assert.deepEqual(discordReply.allowed_mentions, { parse: [] });
   assert.equal([...values.keys()].some((key) => key.includes(privateSentinel)), false);
+});
+
+
+test("Durable Object exposes status through its fetch interface", async () => {
+  const { ctx } = makeContext();
+  const gateway = new DiscordGateway(ctx, {});
+  const response = await gateway.fetch(new Request("https://discord.internal/status"));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { state: "stopped" });
 });
