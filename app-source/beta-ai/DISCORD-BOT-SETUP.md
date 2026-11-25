@@ -16,10 +16,12 @@ This bot is implemented inside the `mediachafa-beta-ai` Worker and a SQLite-back
 
 Set these as Worker secrets/variables in the `mediachafa-beta-ai` environment:
 
-- Secret `DISCORD_BOT_TOKEN`: bot token from Discord Developer Portal. Never commit or paste it into chat.
+- Secret `DISCORD_BOT_TOKEN`: bot token from Discord Developer Portal. Never store it as plain text, commit it, or paste it into chat.
 - Secret `DISCORD_CONTROL_SECRET`: long random control secret (at least 32 random bytes, base64 or hex encoded).
 - Variable `DISCORD_GUILD_ID`: numeric ID of the Discord server.
 - Variable `DISCORD_CHANNEL_ID`: numeric ID of the dedicated game-requests channel.
+- Variable `DISCORD_OWNER_USER_ID`: UUID of the MediaChafa owner used only to load already-connected provider credentials and reserve the owner's existing free quotas.
+- Variable `DISCORD_AUTOSTART`: set to `true`; the five-minute Cron Trigger starts or recovers the Gateway connection.
 
 The Wrangler Durable Object binding and SQLite migration are declared in `wrangler.toml`.
 
