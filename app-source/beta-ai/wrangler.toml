@@ -16,3 +16,11 @@ directory = "./static"
 run_worker_first = false
 html_handling = "none"
 not_found_handling = "none"
+
+[[durable_objects.bindings]]
+name = "DISCORD_GATEWAY"
+class_name = "DiscordGateway"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DiscordGateway"]
