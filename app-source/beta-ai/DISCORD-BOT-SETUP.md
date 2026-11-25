@@ -16,7 +16,7 @@ This bot is implemented inside the `mediachafa-beta-ai` Worker and a SQLite-back
 
 Set these as Worker secrets/variables in the `mediachafa-beta-ai` environment:
 
-- Secret `DISCORD_BOT_TOKEN`: bot token from Discord Developer Portal. Never store it as plain text, commit it, or paste it into chat.
+- Secret `DISCORD_BOT_TOKEN_SECRET`: newly regenerated bot token from Discord Developer Portal. Never store it as plain text, commit it, or paste it into chat.
 - Secret `DISCORD_CONTROL_SECRET`: long random control secret (at least 32 random bytes, base64 or hex encoded).
 - Variable `DISCORD_GUILD_ID`: numeric ID of the Discord server.
 - Variable `DISCORD_CHANNEL_ID`: numeric ID of the dedicated game-requests channel.
