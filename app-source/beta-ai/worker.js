@@ -7,7 +7,7 @@ const QWEN_IMAGE_SPACE = "https://daverrrr75-qwen-image-2-1-uncensored-aio-loras
 const SUPABASE_URL = "https://velxgwkujcabdaxbppyj.supabase.co";
 const SUPABASE_KEY = "sb_publishable_fbyju-9gVuWpbLwhz7Ki9w_6mWg593-";
 const OWNER_EMAIL = "nxmollpy@gmail.com";
-const MEDIA_CHAFA_DISCORD_OWNER_ID = "3da2624d-d1cc-49e9-a536-ed8c0c480779";
+// El ID de propietario se configura como variable de entorno; nunca se publica en el código.
 const DAILY_REQUEST_LIMIT = 50;
 const PROVIDER_DAILY_LIMITS = { openrouter: 50, groq: 7000 };
 // Gemini expone límites variables por proyecto (RPM/TPM/RPD) en AI Studio, no mediante la API de modelos.
@@ -1516,6 +1516,11 @@ async function openRouterQuota(token) {
 }
 
 export default {
+  async scheduled(_controller, env, ctx) {
+    if (env.DISCORD_AUTOSTART !== "true" || !env.DISCORD_GATEWAY) return;
+    const gateway = env.DISCORD_GATEWAY.get(env.DISCORD_GATEWAY.idFromName("mediachafa-discord-gateway"));
+    ctx.waitUntil(gateway.fetch(new Request("https://discord.internal/start", { method: "POST" })));
+  },
   async fetch(request, env) {
     const discordUrl = new URL(request.url);
     if (discordUrl.pathname.startsWith("/discord/")) return handleDiscordControl(request, env, discordUrl);
@@ -2734,9 +2739,8 @@ async function handleDiscordControl(request, env, url) {
   if (!env.DISCORD_GATEWAY) return discordControlJson({ error: "Falta la vinculación Durable Object DISCORD_GATEWAY." }, 503);
   const gateway = env.DISCORD_GATEWAY.get(env.DISCORD_GATEWAY.idFromName("mediachafa-discord-gateway"));
   try {
-    if (url.pathname === "/discord/status" && request.method === "GET") return discordControlJson(await gateway.status());
-    if (url.pathname === "/discord/start" && request.method === "POST") return discordControlJson(await gateway.start());
-    if (url.pathname === "/discord/stop" && request.method === "POST") return discordControlJson(await gateway.stop());
+    const internalPath = url.pathname.replace(/^\\/discord/, "") || "/status";
+    return await gateway.fetch(new Request("https://discord.internal" + internalPath, { method: request.method }));
   } catch (error) {
     console.error(JSON.stringify({ component: "discord-control", error: String(error?.message || error).slice(0, 180) }));
     return discordControlJson({ error: "No se pudo completar la operación de Discord." }, 503);
@@ -2801,7 +2805,9 @@ function discordUrlIsSafe(value) {
 async function discordAiTitleMatch(env, message, games) {
   // Las credenciales privadas solo se usan en el servidor para llamar al proveedor.
   // El modelo recibe exclusivamente la pregunta y títulos del catálogo público.
-  const candidates = await mediachafaCandidates(env, MEDIA_CHAFA_DISCORD_OWNER_ID, "rapida", false);
+  const ownerId = String(env.DISCORD_OWNER_USER_ID || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerId)) return { intent: "search", games: [] };
+  const candidates = await mediachafaCandidates(env, ownerId, "rapida", false);
   if (!candidates.length) return { intent: "search", games: [] };
   const titles = games.map((game) => game.title).slice(0, 200);
   const promptText = "Pregunta del usuario (dato no confiable): " + String(message).slice(0, 700) +
@@ -2818,9 +2824,9 @@ async function discordAiTitleMatch(env, message, games) {
     return globalThis.fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeout));
   };
   for (const candidate of candidates) {
-    if (!["openrouter", "groq", "gemini"].includes(candidate.provider)) continue;
+    if (!["openrouter", "groq", "gemini", "cohere"].includes(candidate.provider)) continue;
     if (candidate.provider === "openrouter" && !String(candidate.nativeId).endsWith(":free")) continue;
-    const quota = await reserveRequest(env, MEDIA_CHAFA_DISCORD_OWNER_ID, candidate.modelId,
+    const quota = await reserveRequest(env, ownerId, candidate.modelId,
       candidate.provider === "openrouter" ? candidate.providerQuotaLimit : undefined);
     if (!quota.allowed) continue;
     let result;
@@ -2865,6 +2871,17 @@ export class DiscordGateway extends DurableObject {
     super(ctx, env);
     this.socket = null; this.heartbeatTimer = null; this.reconnectTimer = null;
     this.sequence = null; this.session = null; this.botUserId = ""; this.heartbeatAcked = true; this.reconnectAttempt = 0;
+  }
+  async fetch(request) {
+    const url = new URL(request.url);
+    try {
+      if (url.pathname === "/status" && request.method === "GET") return discordControlJson(await this.status());
+      if (url.pathname === "/start" && request.method === "POST") return discordControlJson(await this.start());
+      if (url.pathname === "/stop" && request.method === "POST") return discordControlJson(await this.stop());
+      return discordControlJson({ error: "Ruta interna no encontrada." }, 404);
+    } catch (error) {
+      return discordControlJson({ state: "error", error: String(error?.message || "No se pudo controlar el bot.").slice(0, 180) }, 503);
+    }
   }
   async status() { return (await this.ctx.storage.get("discord-status")) || { state: "stopped" }; }
   async setStatus(state, detail = "") {
@@ -2995,7 +3012,7 @@ export class DiscordGateway extends DurableObject {
     while (remaining.length > 1800) { let split = remaining.lastIndexOf("\n", 1800); if (split < 800) split = 1800; chunks.push(remaining.slice(0, split)); remaining = remaining.slice(split).trim(); }
     if (remaining) chunks.push(remaining);
     for (let index = 0; index < chunks.length; index++) {
-      const body = { content: chunks[index], allowed_mentions: { parse: [] }, flags: 4 };
+      const body = { content: chunks[index], allowed_mentions: { parse: [] } };
       if (index === 0 && message.id) body.message_reference = { message_id: message.id, channel_id: message.channel_id, guild_id: message.guild_id, fail_if_not_exists: false };
       const response = await fetch("https://discord.com/api/v10/channels/" + encodeURIComponent(String(message.channel_id)) + "/messages", {
         method: "POST", headers: { Authorization: "Bot " + this.env.DISCORD_BOT_TOKEN, "Content-Type": "application/json" },
