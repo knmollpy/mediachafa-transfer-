@@ -1268,6 +1268,12 @@ async function storedToken(env, userId, provider) {
   return decryptToken(env, value);
 }
 
+async function hasCohereFreeTrialConfirmation(env, userId) {
+  const raw = await env.BETA_LIMITS.get(`integration:${userId}:cohere`);
+  if (!raw) return false;
+  try { return JSON.parse(raw)?.meta?.capabilities?.freeTrial === true; } catch { return false; }
+}
+
 async function hasGeminiFreeTierConfirmation(env, userId) {
   const raw = await env.BETA_LIMITS.get(`integration:${userId}:gemini`);
   if (!raw) return false;
@@ -2290,10 +2296,11 @@ async function mediachafaCandidates(env, userId, variant, needsVision) {
   // Catálogos cerrados de modelos gratuitos: OpenRouter :free, allowlist Groq Free
   // y allowlist Gemini Free Tier (la conexión exige confirmación explícita del dueño).
   const eligible = [];
-  for (const provider of ["openrouter", "groq", "gemini"]) {
+  for (const provider of ["openrouter", "groq", "gemini", "cohere"]) {
     const token = await storedToken(env, userId, provider);
     if (!token) continue;
     if (provider === "gemini" && !(await hasGeminiFreeTierConfirmation(env, userId))) continue;
+    if (provider === "cohere" && !(await hasCohereFreeTrialConfirmation(env, userId))) continue;
     try {
       const date = new Date().toISOString().slice(0, 10);
       let providerRemaining = Infinity;
