@@ -2739,7 +2739,7 @@ async function handleDiscordControl(request, env, url) {
   if (!env.DISCORD_GATEWAY) return discordControlJson({ error: "Falta la vinculación Durable Object DISCORD_GATEWAY." }, 503);
   const gateway = env.DISCORD_GATEWAY.get(env.DISCORD_GATEWAY.idFromName("mediachafa-discord-gateway"));
   try {
-    const internalPath = url.pathname.replace(/^\\/discord/, "") || "/status";
+    const internalPath = url.pathname.slice("/discord".length) || "/status";
     return await gateway.fetch(new Request("https://discord.internal" + internalPath, { method: request.method }));
   } catch (error) {
     console.error(JSON.stringify({ component: "discord-control", error: String(error?.message || error).slice(0, 180) }));
