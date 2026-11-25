@@ -835,6 +835,65 @@ async function handleDriveMigrationRoutes(request, env, url) {
   return json({ error: "Ruta de mudanza no encontrada." }, 404);
 }
 
+
+function isAftvnewsHost(hostname) {
+  const host = String(hostname || "").toLowerCase().replace(/\.$/, "");
+  return host === "aftv.news" || host.endsWith(".aftv.news") ||
+    host === "aftvnews.com" || host.endsWith(".aftvnews.com");
+}
+
+function decodeAftvHtml(value) {
+  return String(value || "")
+    .replace(/\\u0026/gi, "&").replace(/\\u003a/gi, ":")
+    .replace(/\\u002f/gi, "/").replace(/\\\//g, "/")
+    .replace(/&amp;/gi, "&").replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'").replace(/&colon;/gi, ":")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)));
+}
+
+function safeAftvDestination(candidate, baseUrl) {
+  if (typeof candidate !== "string" || !candidate.trim()) return null;
+  const cleaned = decodeAftvHtml(candidate.trim()).replace(/^[\s"']+|[\s"']+$/g, "").replace(/[),.;]+$/g, "");
+  try {
+    const destination = new URL(cleaned, baseUrl);
+    if (!["http:", "https:"].includes(destination.protocol) || destination.username || destination.password) return null;
+    if (isAftvnewsHost(destination.hostname)) return null;
+    return destination.href;
+  } catch {
+    return null;
+  }
+}
+
+function extractAftvDestination(html, baseUrl) {
+  const source = decodeAftvHtml(html);
+  const patterns = [
+    /<meta[^>]+http-equiv\s*=\s*["']?refresh["']?[^>]+content\s*=\s*["'][^"']*?url\s*=\s*([^"';>]+)/i,
+    /(?:window\.)?location(?:\.href)?\s*=\s*["']([^"']+)["']/i,
+    /location\.(?:replace|assign)\(\s*["']([^"']+)["']\s*\)/i,
+    /(?:redirectUrl|redirect_url|destinationUrl|destination_url|targetUrl)\s*[:=]\s*["']([^"']+)["']/i,
+    /redirecting\s+in\s+\d+\s+seconds?\s+to\s*:\s*(https?:\/\/[^\s<>"']+)/i
+  ];
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    const destination = match ? safeAftvDestination(match[1], baseUrl) : null;
+    if (destination) return destination;
+  }
+  const visibleText = source.replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const textMatch = visibleText.match(/redirecting\s+in\s+\d+\s+seconds?\s+to\s*:\s*(https?:\/\/[^\s<>"']+)/i);
+  if (textMatch) {
+    const destination = safeAftvDestination(textMatch[1], baseUrl);
+    if (destination) return destination;
+  }
+  for (const match of source.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi)) {
+    const destination = safeAftvDestination(match[1], baseUrl);
+    if (destination) return destination;
+  }
+  return null;
+}
+
 export default {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
@@ -842,6 +901,51 @@ export default {
     try {
       const migrationResponse = await handleDriveMigrationRoutes(request, env, url);
       if (migrationResponse) return migrationResponse;
+
+      const downloaderMatch = url.pathname.match(/^\/downloader\/resolve\/(\d{3,12})$/);
+      if (downloaderMatch && request.method === "GET") {
+        const code = downloaderMatch[1];
+        let upstreamUrl = "https://go.aftvnews.com/" + code;
+        try {
+          for (let hop = 0; hop < 4; hop++) {
+            const upstream = await fetchWithTimeout(upstreamUrl, {
+              method: "GET",
+              redirect: "manual",
+              headers: { "User-Agent": "Mozilla/5.0 (compatible; MediaChafaDownloader/1.0)", "Accept": "text/html,application/xhtml+xml,*/*;q=0.8" }
+            }, 12000);
+            const location = upstream.headers.get("Location");
+            if (location) {
+              let nextUrl;
+              try { nextUrl = new URL(location, upstreamUrl); } catch { return json({ ok: false, error: "AFTVnews devolvió una redirección inválida." }, 502); }
+              if (!["http:", "https:"].includes(nextUrl.protocol) || nextUrl.username || nextUrl.password) {
+                return json({ ok: false, error: "AFTVnews devolvió un destino no compatible." }, 502);
+              }
+              if (!isAftvnewsHost(nextUrl.hostname)) {
+                return json({ ok: true, code, destinationUrl: nextUrl.href, sourceUrl: "https://aftv.news/" + code });
+              }
+              upstreamUrl = nextUrl.href;
+              continue;
+            }
+            if (!upstream.ok) {
+              return json({ ok: false, error: upstream.status === 404 ? "Ese código no existe o fue desactivado en AFTVnews." : "AFTVnews respondió con el error " + upstream.status + "." }, upstream.status === 404 ? 404 : 502);
+            }
+            const contentType = upstream.headers.get("Content-Type") || "";
+            if (!contentType.includes("text/html") && !contentType.includes("application/xhtml")) {
+              return json({ ok: false, error: "AFTVnews no devolvió una página de destino reconocible para ese código." }, 502);
+            }
+            const html = await upstream.text();
+            const destinationUrl = extractAftvDestination(html, upstreamUrl);
+            if (destinationUrl) {
+              return json({ ok: true, code, destinationUrl, sourceUrl: "https://aftv.news/" + code });
+            }
+            return json({ ok: false, error: "No se pudo leer el destino. El código puede ser inválido, estar desactivado o usar un formato que AFTVnews no muestra." }, 404);
+          }
+          return json({ ok: false, error: "AFTVnews realizó demasiadas redirecciones para este código." }, 502);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "No se pudo conectar con AFTVnews.";
+          return json({ ok: false, error: message }, 502);
+        }
+      }
 
       if (url.pathname === "/health" && request.method === "GET") {
         return json({ ok: true, storage: Boolean(env.MEDIA_BUCKET), configured: Boolean(env.SUPABASE_URL && env.SUPABASE_PUBLISHABLE_KEY && env.OWNER_USER_ID && env.SHARE_SIGNING_SECRET), googleConfigured: Boolean(env.GOOGLE_CLIENT_SECRET && env.GOOGLE_TOKEN_ENCRYPTION_KEY && env.GOOGLE_OAUTH_STORE) });
