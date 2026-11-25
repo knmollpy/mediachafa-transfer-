@@ -921,7 +921,7 @@ export default {
                 return json({ ok: false, error: "AFTVnews devolvió un destino no compatible." }, 502);
               }
               if (!isAftvnewsHost(nextUrl.hostname)) {
-                return json({ ok: true, code, destinationUrl: nextUrl.href, sourceUrl: "https://aftv.news/" + code });
+                return json({ ok: true, code, destinationUrl: nextUrl.href, sourceUrl: "https://go.aftvnews.com/" + code });
               }
               upstreamUrl = nextUrl.href;
               continue;
@@ -936,7 +936,7 @@ export default {
             const html = await upstream.text();
             const destinationUrl = extractAftvDestination(html, upstreamUrl);
             if (destinationUrl) {
-              return json({ ok: true, code, destinationUrl, sourceUrl: "https://aftv.news/" + code });
+              return json({ ok: true, code, destinationUrl, sourceUrl: "https://go.aftvnews.com/" + code });
             }
             return json({ ok: false, error: "No se pudo leer el destino. El código puede ser inválido, estar desactivado o usar un formato que AFTVnews no muestra." }, 404);
           }
