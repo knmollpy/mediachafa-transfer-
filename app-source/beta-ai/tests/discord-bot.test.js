@@ -100,7 +100,7 @@ test("Discord uses private inference quota but sends only the question and publi
     guild_id: "guild-public",
     channel_id: "channel-requests",
     author: { id: "discord-user", bot: false },
-    content: "gta",
+    content: "gta pasame el link",
   });
 
   assert.ok(inferenceBody, "the AI provider should receive an ambiguous game-name query");
