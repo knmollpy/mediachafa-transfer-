@@ -2888,7 +2888,7 @@ export class DiscordGateway extends DurableObject {
     await this.ctx.storage.put("discord-status", { state, detail: String(detail).slice(0, 240), updatedAt: new Date().toISOString() });
   }
   async start() {
-    if (!this.env.DISCORD_BOT_TOKEN) return { state: "error", error: "Falta DISCORD_BOT_TOKEN en Cloudflare." };
+    if (!this.env.DISCORD_BOT_TOKEN_SECRET) return { state: "error", error: "Falta DISCORD_BOT_TOKEN_SECRET en Cloudflare." };
     if (!this.env.DISCORD_GUILD_ID || !this.env.DISCORD_CHANNEL_ID) return { state: "error", error: "Faltan DISCORD_GUILD_ID o DISCORD_CHANNEL_ID." };
     await this.ctx.storage.put("discord-running", true);
     await this.ctx.storage.setAlarm(Date.now() + 60000);
@@ -2912,11 +2912,11 @@ export class DiscordGateway extends DurableObject {
   }
   async connect() {
     if (!(await this.ctx.storage.get("discord-running"))) return;
-    if (!this.env.DISCORD_BOT_TOKEN) throw new Error("Falta DISCORD_BOT_TOKEN.");
+    if (!this.env.DISCORD_BOT_TOKEN_SECRET) throw new Error("Falta DISCORD_BOT_TOKEN_SECRET.");
     if (this.socket && this.socket.readyState < 2) return;
     await this.setStatus("connecting");
     const response = await fetch("https://discord.com/api/v10/gateway/bot", {
-      headers: { Authorization: "Bot " + this.env.DISCORD_BOT_TOKEN }, signal: AbortSignal.timeout(12000),
+      headers: { Authorization: "Bot " + this.env.DISCORD_BOT_TOKEN_SECRET }, signal: AbortSignal.timeout(12000),
     });
     const gatewayInfo = await response.json().catch(() => ({}));
     if (!response.ok || !gatewayInfo.url) throw new Error("Discord rechazó la conexión Gateway (HTTP " + response.status + ").");
@@ -2950,10 +2950,10 @@ export class DiscordGateway extends DurableObject {
       };
       this.heartbeatTimer = setTimeout(() => { heartbeat(); this.heartbeatTimer = setInterval(heartbeat, interval); }, Math.floor(Math.random() * interval));
       if (this.session?.sessionId && this.sequence !== null) {
-        this.sendGateway({ op: 6, d: { token: this.env.DISCORD_BOT_TOKEN, session_id: this.session.sessionId, seq: this.sequence } });
+        this.sendGateway({ op: 6, d: { token: this.env.DISCORD_BOT_TOKEN_SECRET, session_id: this.session.sessionId, seq: this.sequence } });
       } else {
         this.session = null;
-        this.sendGateway({ op: 2, d: { token: this.env.DISCORD_BOT_TOKEN, intents: 33281, properties: { os: "cloudflare-workers", browser: "MediaChafa", device: "MediaChafa" } } });
+        this.sendGateway({ op: 2, d: { token: this.env.DISCORD_BOT_TOKEN_SECRET, intents: 33281, properties: { os: "cloudflare-workers", browser: "MediaChafa", device: "MediaChafa" } } });
       }
       return;
     }
@@ -3015,7 +3015,7 @@ export class DiscordGateway extends DurableObject {
       const body = { content: chunks[index], allowed_mentions: { parse: [] } };
       if (index === 0 && message.id) body.message_reference = { message_id: message.id, channel_id: message.channel_id, guild_id: message.guild_id, fail_if_not_exists: false };
       const response = await fetch("https://discord.com/api/v10/channels/" + encodeURIComponent(String(message.channel_id)) + "/messages", {
-        method: "POST", headers: { Authorization: "Bot " + this.env.DISCORD_BOT_TOKEN, "Content-Type": "application/json" },
+        method: "POST", headers: { Authorization: "Bot " + this.env.DISCORD_BOT_TOKEN_SECRET, "Content-Type": "application/json" },
         body: JSON.stringify(body), signal: AbortSignal.timeout(12000),
       });
       if (!response.ok) {
