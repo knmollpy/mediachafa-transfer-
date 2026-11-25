@@ -49,7 +49,7 @@ test("Discord uses private inference quota but sends only the question and publi
     DISCORD_GUILD_ID: "guild-public",
     DISCORD_CHANNEL_ID: "channel-requests",
     DISCORD_OWNER_USER_ID: ownerId,
-    DISCORD_BOT_TOKEN: "test-discord-token",
+    DISCORD_BOT_TOKEN_SECRET: "test-discord-secret",
     TOKEN_ENCRYPTION_KEY: Buffer.from(encryptionBytes).toString("base64"),
     BETA_LIMITS: {
       get: async (key) => kv.get(key) ?? null,
@@ -111,7 +111,7 @@ test("Discord uses private inference quota but sends only the question and publi
   assert.ok(prompt.includes("Grand Theft Auto V"));
   assert.ok(!prompt.includes(privateSentinel));
   assert.ok(!prompt.includes("test-private-provider-token"));
-  assert.ok(!prompt.includes("test-discord-token"));
+  assert.ok(!prompt.includes("test-discord-secret"));
   assert.ok(!prompt.includes("https://downloads.example/public-gta-v"));
   assert.equal(kv.get("beta-ai-requests:" + ownerId + ":openrouter:day:" + new Date().toISOString().slice(0, 10)), "1");
   assert.ok(discordReply.content.includes("Grand Theft Auto V"));
